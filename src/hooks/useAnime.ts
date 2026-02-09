@@ -1,0 +1,70 @@
+import { useQuery } from "@tanstack/react-query";
+import {
+  getTopAnime,
+  getSeasonNow,
+  getAnimeById,
+  getAnimeEpisodes,
+  searchAnime,
+  getGenres,
+  getAnimeByGenre,
+} from "@/lib/jikan";
+
+export function useTopAnime(page = 1, filter?: string) {
+  return useQuery({
+    queryKey: ["top-anime", page, filter],
+    queryFn: () => getTopAnime(page, filter),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useSeasonNow(page = 1) {
+  return useQuery({
+    queryKey: ["season-now", page],
+    queryFn: () => getSeasonNow(page),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useAnimeById(id: number) {
+  return useQuery({
+    queryKey: ["anime", id],
+    queryFn: () => getAnimeById(id),
+    enabled: !!id,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useAnimeEpisodes(id: number, page = 1) {
+  return useQuery({
+    queryKey: ["anime-episodes", id, page],
+    queryFn: () => getAnimeEpisodes(id, page),
+    enabled: !!id,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useSearchAnime(query: string, page = 1) {
+  return useQuery({
+    queryKey: ["search-anime", query, page],
+    queryFn: () => searchAnime(query, page),
+    enabled: query.length >= 2,
+    staleTime: 3 * 60 * 1000,
+  });
+}
+
+export function useGenres() {
+  return useQuery({
+    queryKey: ["genres"],
+    queryFn: getGenres,
+    staleTime: 60 * 60 * 1000,
+  });
+}
+
+export function useAnimeByGenre(genreId: number, page = 1) {
+  return useQuery({
+    queryKey: ["anime-genre", genreId, page],
+    queryFn: () => getAnimeByGenre(genreId, page),
+    enabled: !!genreId,
+    staleTime: 5 * 60 * 1000,
+  });
+}

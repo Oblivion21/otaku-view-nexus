@@ -1,13 +1,34 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import Layout from "@/components/Layout";
+import HeroCarousel from "@/components/HeroCarousel";
+import AnimeGrid from "@/components/AnimeGrid";
+import { useTopAnime, useSeasonNow } from "@/hooks/useAnime";
 
 const Index = () => {
+  const { data: popular, isLoading: loadingPopular } = useTopAnime(1, "bypopularity");
+  const { data: seasonal, isLoading: loadingSeasonal } = useSeasonNow();
+  const { data: top, isLoading: loadingTop } = useTopAnime(1);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+    <Layout>
+      <HeroCarousel />
+      <div className="container py-8 space-y-10">
+        <AnimeGrid
+          title="الموسم الحالي"
+          anime={seasonal?.data?.slice(0, 12)}
+          isLoading={loadingSeasonal}
+        />
+        <AnimeGrid
+          title="الأكثر شعبية"
+          anime={popular?.data?.slice(0, 12)}
+          isLoading={loadingPopular}
+        />
+        <AnimeGrid
+          title="الأعلى تقييماً"
+          anime={top?.data?.slice(0, 12)}
+          isLoading={loadingTop}
+        />
       </div>
-    </div>
+    </Layout>
   );
 };
 
