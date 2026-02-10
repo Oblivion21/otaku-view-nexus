@@ -11,6 +11,7 @@ import {
   getAnimeRecommendations,
   getAnimeCharacters,
   getAnimeThemes,
+  getAnimeRelations,
 } from "@/lib/jikan";
 
 export function useTopAnime(page = 1, filter?: string) {
@@ -103,6 +104,15 @@ export function useAnimeThemes(id: number) {
   return useQuery({
     queryKey: ["anime-themes", id],
     queryFn: () => getAnimeThemes(id),
+    enabled: !!id,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useAnimeRelations(id: number) {
+  return useQuery({
+    queryKey: ["anime-relations", id],
+    queryFn: () => getAnimeRelations(id),
     enabled: !!id,
     staleTime: 10 * 60 * 1000,
   });

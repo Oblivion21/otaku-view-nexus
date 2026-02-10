@@ -131,6 +131,29 @@ export async function getAnimeThemes(id: number) {
   return fetchJikan<JikanThemes>(`/anime/${id}/themes`);
 }
 
+export interface JikanRelationEntry {
+  relation: string;
+  entry: { mal_id: number; type: string; name: string; url: string }[];
+}
+
+export async function getAnimeRelations(id: number) {
+  return fetchJikan<JikanRelationEntry[]>(`/anime/${id}/relations`);
+}
+
+export const RELATION_TYPE_AR: Record<string, string> = {
+  Sequel: "تتمة",
+  Prequel: "ما قبل",
+  "Side Story": "قصة جانبية",
+  "Alternative Version": "نسخة بديلة",
+  "Alternative Setting": "إطار بديل",
+  Summary: "ملخص",
+  "Full Story": "القصة الكاملة",
+  "Spin-off": "عمل مشتق",
+  "Parent Story": "القصة الأصلية",
+  Character: "شخصية",
+  Other: "أخرى",
+};
+
 export const STATUS_MAP: Record<string, string> = {
   "Currently Airing": "يعرض حالياً",
   "Finished Airing": "مكتمل",
