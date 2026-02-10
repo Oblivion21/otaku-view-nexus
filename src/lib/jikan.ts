@@ -101,6 +101,36 @@ export async function getGenres() {
   return fetchJikan<{ mal_id: number; name: string; count: number }[]>("/genres/anime");
 }
 
+export interface JikanCharacterEntry {
+  character: {
+    mal_id: number;
+    name: string;
+    images: { jpg: { image_url: string }; webp: { image_url: string; small_image_url: string } };
+  };
+  role: string;
+  voice_actors: {
+    person: {
+      mal_id: number;
+      name: string;
+      images: { jpg: { image_url: string } };
+    };
+    language: string;
+  }[];
+}
+
+export interface JikanThemes {
+  openings: string[];
+  endings: string[];
+}
+
+export async function getAnimeCharacters(id: number) {
+  return fetchJikan<JikanCharacterEntry[]>(`/anime/${id}/characters`);
+}
+
+export async function getAnimeThemes(id: number) {
+  return fetchJikan<JikanThemes>(`/anime/${id}/themes`);
+}
+
 export const STATUS_MAP: Record<string, string> = {
   "Currently Airing": "يعرض حالياً",
   "Finished Airing": "مكتمل",

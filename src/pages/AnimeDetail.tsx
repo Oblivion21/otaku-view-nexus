@@ -1,10 +1,10 @@
 import { useParams, Link } from "react-router-dom";
-import { Star, Calendar, Film, Clock, Building2 } from "lucide-react";
+import { Star, Calendar, Film, Clock, Building2, Music } from "lucide-react";
 import Layout from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations } from "@/hooks/useAnime";
+import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import type { JikanAnime } from "@/lib/jikan";
 import { STATUS_MAP, TYPE_MAP, GENRE_AR } from "@/lib/jikan";
@@ -17,6 +17,8 @@ export default function AnimeDetail() {
   const [epPage, setEpPage] = useState(1);
   const { data: episodes, isLoading: loadingEp } = useAnimeEpisodes(animeId, epPage);
   const { data: recommendations, isLoading: loadingRec } = useAnimeRecommendations(animeId);
+  const { data: characters, isLoading: loadingChars } = useAnimeCharacters(animeId);
+  const { data: themes, isLoading: loadingThemes } = useAnimeThemes(animeId);
 
   if (isLoading) {
     return (
@@ -32,6 +34,12 @@ export default function AnimeDetail() {
 
   const anime = data?.data;
   if (!anime) return <Layout><div className="container py-16 text-center">لم يتم العثور على الأنمي</div></Layout>;
+
+  const sortedCharacters = characters?.data
+    ? [...characters.data]
+        .sort((a, b) => (a.role === "Main" ? -1 : 1) - (b.role === "Main" ? -1 : 1))
+        .slice(0, 12)
+    : [];
 
   return (
     <Layout>
@@ -160,6 +168,114 @@ export default function AnimeDetail() {
             </>
           ) : (
             <p className="text-sm text-muted-foreground">لا توجد حلقات متاحة</p>
+          )}
+        </div>
+
+        {/* Characters & Voice Actors */}
+        <div className="mt-10 space-y-4">
+          <h2 className="text-xl font-bold border-r-4 border-primary pr-3">الشخصيات والممثلين الصوتيين</h2>
+
+          {loadingChars ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-24 rounded-lg" />
+              ))}
+            </div>
+          ) : sortedCharacters.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {sortedCharacters.map((entry) => {
+                const japaneseVA = entry.voice_actors?.find((va) => va.language === "Japanese");
+                return (
+                  <div
+                    key={entry.character.mal_id}
+                    className="flex items-center gap-0 rounded-lg bg-card border border-border overflow-hidden hover:border-primary/40 transition-colors"
+                  >
+                    {/* Character side */}
+                    <div className="flex items-center gap-3 flex-1 p-3">
+                      <img
+                        src={entry.character.images?.webp?.image_url || entry.character.images?.jpg?.image_url}
+                        alt={entry.character.name}
+                        className="w-14 h-14 rounded-md object-cover shrink-0"
+                        loading="lazy"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold line-clamp-1">{entry.character.name}</p>
+                        <Badge variant={entry.role === "Main" ? "default" : "secondary"} className="text-[10px] mt-1">
+                          {entry.role === "Main" ? "رئيسي" : "ثانوي"}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* VA side */}
+                    {japaneseVA && (
+                      <div className="flex items-center gap-3 flex-1 p-3 border-r border-border justify-end text-left">
+                        <div className="min-w-0 text-left">
+                          <p className="text-sm text-muted-foreground line-clamp-1">{japaneseVA.person.name}</p>
+                          <p className="text-[10px] text-muted-foreground/60 mt-0.5">ممثل صوتي</p>
+                        </div>
+                        <img
+                          src={japaneseVA.person.images?.jpg?.image_url}
+                          alt={japaneseVA.person.name}
+                          className="w-14 h-14 rounded-md object-cover shrink-0"
+                          loading="lazy"
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">لا توجد بيانات شخصيات متاحة</p>
+          )}
+        </div>
+
+        {/* Theme Songs */}
+        <div className="mt-10 space-y-6">
+          {loadingThemes ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 rounded-lg" />
+              ))}
+            </div>
+          ) : themes?.data && (themes.data.openings?.length > 0 || themes.data.endings?.length > 0) ? (
+            <>
+              {themes.data.openings?.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-xl font-bold border-r-4 border-primary pr-3 flex items-center gap-2">
+                    <Music className="h-5 w-5 text-primary" />
+                    أغاني الافتتاح
+                  </h2>
+                  <div className="space-y-1.5">
+                    {themes.data.openings.map((op, i) => (
+                      <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-card border border-border">
+                        <span className="text-primary font-bold text-sm w-6 text-center shrink-0">{i + 1}</span>
+                        <span className="text-sm line-clamp-1">{op}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {themes.data.endings?.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-xl font-bold border-r-4 border-primary pr-3 flex items-center gap-2">
+                    <Music className="h-5 w-5 text-primary" />
+                    أغاني الختام
+                  </h2>
+                  <div className="space-y-1.5">
+                    {themes.data.endings.map((ed, i) => (
+                      <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-card border border-border">
+                        <span className="text-primary font-bold text-sm w-6 text-center shrink-0">{i + 1}</span>
+                        <span className="text-sm line-clamp-1">{ed}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">لا توجد أغاني متاحة</p>
           )}
         </div>
 
