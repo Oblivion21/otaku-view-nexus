@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
+import RelatedAnimeCard from "@/components/RelatedAnimeCard";
 import type { JikanAnime } from "@/lib/jikan";
 import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR } from "@/lib/jikan";
 import { useState } from "react";
@@ -127,9 +128,12 @@ export default function AnimeDetail() {
         <div className="mt-10 space-y-4">
           <h2 className="text-xl font-bold border-r-4 border-primary pr-3">المواسم والأفلام المرتبطة</h2>
           {loadingRelations ? (
-            <div className="space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 rounded-lg" />
+            <div className="flex gap-4 overflow-hidden">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="w-[120px] shrink-0 space-y-2">
+                  <Skeleton className="aspect-[3/4] rounded-lg" />
+                  <Skeleton className="h-3 w-3/4" />
+                </div>
               ))}
             </div>
           ) : relations?.data && relations.data.length > 0 ? (
@@ -137,23 +141,18 @@ export default function AnimeDetail() {
               {relations.data.map((group) => {
                 const animeEntries = group.entry.filter((e) => e.type === "anime");
                 if (animeEntries.length === 0) return null;
+                const label = RELATION_TYPE_AR[group.relation] || group.relation;
                 return (
                   <div key={group.relation} className="space-y-2">
-                    <h3 className="text-sm font-semibold text-muted-foreground">
-                      {RELATION_TYPE_AR[group.relation] || group.relation}
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
+                    <h3 className="text-sm font-semibold text-muted-foreground">{label}</h3>
+                    <div className="flex gap-4 overflow-x-auto pb-2">
                       {animeEntries.map((entry) => (
-                        <Link
+                        <RelatedAnimeCard
                           key={entry.mal_id}
-                          to={`/anime/${entry.mal_id}`}
-                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card border border-border hover:border-primary/50 hover:bg-secondary transition-colors"
-                        >
-                          <span className="text-sm">{entry.name}</span>
-                          <Badge variant="outline" className="text-[10px] shrink-0">
-                            {RELATION_TYPE_AR[group.relation] || group.relation}
-                          </Badge>
-                        </Link>
+                          mal_id={entry.mal_id}
+                          name={entry.name}
+                          relationLabel={label}
+                        />
                       ))}
                     </div>
                   </div>
