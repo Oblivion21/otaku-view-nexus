@@ -1,59 +1,50 @@
 
 
-# Add Characters, Voice Actors, and Theme Songs to Anime Detail Page
+# Add Related Seasons and Movies to Anime Detail Page
 
-## Overview
-Add two new sections to the Anime Detail page: a "Characters & Voice Actors" grid and an "Opening & Ending Themes" list, both fetched from the Jikan MAL API.
+## What This Does
+Adds a new "المواسم والأفلام المرتبطة" (Related Seasons & Movies) section to each anime's detail page. This section shows all sequels, prequels, side stories, movies, and other related entries -- making it easy to navigate between different parts of the same franchise.
 
----
+## How It Works
+The Jikan API provides a `/anime/{id}/relations` endpoint that returns grouped relations (e.g., Sequel, Prequel, Side Story, Alternative Version, Movie, etc.). Each group contains entries with their MAL IDs, names, and types (anime/manga). We filter to show only anime entries (not manga) and display them grouped by relation type.
 
-## 1. API Layer (`src/lib/jikan.ts`)
+## Changes
 
-Add two new functions and interfaces:
+### 1. API Layer (`src/lib/jikan.ts`)
+- Add a `JikanRelationEntry` interface for the relation data structure
+- Add `getAnimeRelations(id)` function calling `/anime/{id}/relations`
 
-- **`getAnimeCharacters(id)`** -- calls `/anime/{id}/characters`
-  - Returns array of `{ character: { mal_id, name, images, ... }, role, voice_actors: [{ person: { mal_id, name, images }, language }] }`
-- **`getAnimeThemes(id)`** -- calls `/anime/{id}/themes`
-  - Returns `{ openings: string[], endings: string[] }`
+### 2. React Query Hook (`src/hooks/useAnime.ts`)
+- Add `useAnimeRelations(id)` hook with caching
 
-New interfaces:
-- `JikanCharacter` with character info, role (Main/Supporting), and voice actors array
-- `JikanThemes` with openings and endings string arrays
-
-## 2. React Query Hooks (`src/hooks/useAnime.ts`)
-
-- Add `useAnimeCharacters(id)` hook
-- Add `useAnimeThemes(id)` hook
-
-Both with `staleTime: 10 * 60 * 1000` matching existing detail hooks.
-
-## 3. Anime Detail Page (`src/pages/AnimeDetail.tsx`)
-
-### Characters & Voice Actors Section
-- Placed between the episode list and recommendations sections
-- Section title: "الشخصيات والممثلين الصوتيين" (Characters & Voice Actors)
-- Grid layout showing character cards, each with:
-  - Character image (left) and Japanese voice actor image (right) side by side
-  - Character name and role (Main = "رئيسي", Supporting = "ثانوي") below character image
-  - Voice actor name below their image
-  - Filter to show only Japanese voice actors by default
-- Show up to 12 characters initially, sorted by role (Main first)
+### 3. Anime Detail Page (`src/pages/AnimeDetail.tsx`)
+- Add a new section titled "المواسم والأفلام المرتبطة" placed after the main info area and before episodes
+- Relations grouped by type (Sequel, Prequel, Side Story, etc.) with Arabic labels
+- Each related anime entry is a clickable link to its detail page (`/anime/{mal_id}`)
+- Manga entries are filtered out (only anime relations shown)
 - Loading skeletons while fetching
 
-### Theme Songs Section
-- Placed after Characters section, before Recommendations
-- Section title split into two sub-sections:
-  - "أغاني الافتتاح" (Opening Themes) with a music icon
-  - "أغاني الختام" (Ending Themes) with a music icon
-- Each theme displayed as a styled list item with the theme number and song title
-- Clean card-based design matching the page style
+### Visual Design
+- Each relation group has a labeled header (e.g., "تتمة" for Sequel, "ما قبل" for Prequel)
+- Entries displayed as styled cards/links with the anime title and type badge
+- Consistent styling with existing sections (border-r-4 border-primary section headers)
 
-## Technical Details
+### Relation Type Arabic Labels
+| English | Arabic |
+|---------|--------|
+| Sequel | تتمة |
+| Prequel | ما قبل |
+| Side Story | قصة جانبية |
+| Alternative Version | نسخة بديلة |
+| Alternative Setting | إطار بديل |
+| Summary | ملخص |
+| Full Story | القصة الكاملة |
+| Spin-off | عمل مشتق |
+| Parent Story | القصة الأصلية |
+| Character | شخصية |
+| Other | أخرى |
 
-- Jikan endpoints used:
-  - `GET /anime/{id}/characters` -- characters and voice actors
-  - `GET /anime/{id}/themes` -- OP/ED theme songs
-- Voice actors are filtered to `language === "Japanese"` to show only the primary VA
-- Characters sorted: Main role first, then Supporting
-- Theme strings come pre-formatted from MAL (e.g., `"1: \"Guren no Yumiya\" by Linked Horizon"`)
-
+## Technical Notes
+- The `/anime/{id}/relations` response shape: `{ data: [{ relation: string, entry: [{ mal_id, type, name, url }] }] }`
+- Filter entries where `type === "anime"` to exclude manga relations
+- React Query staleTime set to 10 minutes matching other detail hooks
