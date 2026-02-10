@@ -124,46 +124,6 @@ export default function AnimeDetail() {
           </div>
         </div>
 
-        {/* Related Seasons & Movies */}
-        <div className="mt-10 space-y-4">
-          <h2 className="text-xl font-bold border-r-4 border-primary pr-3">المواسم والأفلام المرتبطة</h2>
-          {loadingRelations ? (
-            <div className="flex gap-4 overflow-hidden">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="w-[120px] shrink-0 space-y-2">
-                  <Skeleton className="aspect-[3/4] rounded-lg" />
-                  <Skeleton className="h-3 w-3/4" />
-                </div>
-              ))}
-            </div>
-          ) : relations?.data && relations.data.length > 0 ? (
-            <div className="space-y-4">
-              {relations.data.map((group) => {
-                const animeEntries = group.entry.filter((e) => e.type === "anime");
-                if (animeEntries.length === 0) return null;
-                const label = RELATION_TYPE_AR[group.relation] || group.relation;
-                return (
-                  <div key={group.relation} className="space-y-2">
-                    <h3 className="text-sm font-semibold text-muted-foreground">{label}</h3>
-                    <div className="flex gap-4 overflow-x-auto pb-2">
-                      {animeEntries.map((entry) => (
-                        <RelatedAnimeCard
-                          key={entry.mal_id}
-                          mal_id={entry.mal_id}
-                          name={entry.name}
-                          relationLabel={label}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">لا توجد أعمال مرتبطة</p>
-          )}
-        </div>
-
         {/* Episode list */}
         <div className="mt-10 space-y-4">
           <h2 className="text-xl font-bold border-r-4 border-primary pr-3">قائمة الحلقات</h2>
@@ -318,6 +278,46 @@ export default function AnimeDetail() {
             </>
           ) : (
             <p className="text-sm text-muted-foreground">لا توجد أغاني متاحة</p>
+          )}
+        </div>
+
+        {/* Related Seasons & Movies */}
+        <div className="mt-10 space-y-4">
+          <h2 className="text-xl font-bold border-r-4 border-primary pr-3">المواسم والأفلام المرتبطة</h2>
+          {loadingRelations ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="space-y-2">
+                  <Skeleton className="aspect-[3/4] rounded-lg" />
+                  <Skeleton className="h-4 w-3/4" />
+                </div>
+              ))}
+            </div>
+          ) : relations?.data && relations.data.length > 0 ? (
+            <div className="space-y-4">
+              {relations.data.map((group) => {
+                const animeEntries = group.entry.filter((e) => e.type === "anime");
+                if (animeEntries.length === 0) return null;
+                const label = RELATION_TYPE_AR[group.relation] || group.relation;
+                return (
+                  <div key={group.relation} className="space-y-2">
+                    <h3 className="text-sm font-semibold text-muted-foreground">{label}</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                      {animeEntries.map((entry) => (
+                        <RelatedAnimeCard
+                          key={entry.mal_id}
+                          mal_id={entry.mal_id}
+                          name={entry.name}
+                          relationLabel={label}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">لا توجد أعمال مرتبطة</p>
           )}
         </div>
 
