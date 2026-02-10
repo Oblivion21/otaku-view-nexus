@@ -4,10 +4,10 @@ import Layout from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes } from "@/hooks/useAnime";
+import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import type { JikanAnime } from "@/lib/jikan";
-import { STATUS_MAP, TYPE_MAP, GENRE_AR } from "@/lib/jikan";
+import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR } from "@/lib/jikan";
 import { useState } from "react";
 
 export default function AnimeDetail() {
@@ -19,6 +19,7 @@ export default function AnimeDetail() {
   const { data: recommendations, isLoading: loadingRec } = useAnimeRecommendations(animeId);
   const { data: characters, isLoading: loadingChars } = useAnimeCharacters(animeId);
   const { data: themes, isLoading: loadingThemes } = useAnimeThemes(animeId);
+  const { data: relations, isLoading: loadingRelations } = useAnimeRelations(animeId);
 
   if (isLoading) {
     return (
@@ -120,6 +121,48 @@ export default function AnimeDetail() {
               </Button>
             )}
           </div>
+        </div>
+
+        {/* Related Seasons & Movies */}
+        <div className="mt-10 space-y-4">
+          <h2 className="text-xl font-bold border-r-4 border-primary pr-3">المواسم والأفلام المرتبطة</h2>
+          {loadingRelations ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 rounded-lg" />
+              ))}
+            </div>
+          ) : relations?.data && relations.data.length > 0 ? (
+            <div className="space-y-4">
+              {relations.data.map((group) => {
+                const animeEntries = group.entry.filter((e) => e.type === "anime");
+                if (animeEntries.length === 0) return null;
+                return (
+                  <div key={group.relation} className="space-y-2">
+                    <h3 className="text-sm font-semibold text-muted-foreground">
+                      {RELATION_TYPE_AR[group.relation] || group.relation}
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {animeEntries.map((entry) => (
+                        <Link
+                          key={entry.mal_id}
+                          to={`/anime/${entry.mal_id}`}
+                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card border border-border hover:border-primary/50 hover:bg-secondary transition-colors"
+                        >
+                          <span className="text-sm">{entry.name}</span>
+                          <Badge variant="outline" className="text-[10px] shrink-0">
+                            {RELATION_TYPE_AR[group.relation] || group.relation}
+                          </Badge>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">لا توجد أعمال مرتبطة</p>
+          )}
         </div>
 
         {/* Episode list */}
