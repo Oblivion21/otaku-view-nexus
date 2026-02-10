@@ -7,6 +7,8 @@ import {
   searchAnime,
   getGenres,
   getAnimeByGenre,
+  getTopMovies,
+  getAnimeRecommendations,
 } from "@/lib/jikan";
 
 export function useTopAnime(page = 1, filter?: string) {
@@ -66,5 +68,22 @@ export function useAnimeByGenre(genreId: number, page = 1) {
     queryFn: () => getAnimeByGenre(genreId, page),
     enabled: !!genreId,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useTopMovies(page = 1) {
+  return useQuery({
+    queryKey: ["top-movies", page],
+    queryFn: () => getTopMovies(page),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useAnimeRecommendations(id: number) {
+  return useQuery({
+    queryKey: ["anime-recommendations", id],
+    queryFn: () => getAnimeRecommendations(id),
+    enabled: !!id,
+    staleTime: 10 * 60 * 1000,
   });
 }
