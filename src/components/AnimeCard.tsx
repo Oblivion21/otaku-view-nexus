@@ -54,7 +54,7 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
           {anime.title}
         </h3>
         <div className="flex flex-wrap gap-1 mt-1.5">
-          {anime.genres.slice(0, 2).map((g) => (
+          {anime.genres?.slice(0, 2).map((g) => (
             <span key={g.mal_id} className="text-[10px] text-muted-foreground bg-secondary rounded px-1.5 py-0.5">
               {GENRE_AR[g.name] || g.name}
             </span>
