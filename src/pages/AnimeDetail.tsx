@@ -47,10 +47,22 @@ export default function AnimeDetail() {
     <Layout>
       {/* Banner */}
       <div className="relative h-[300px] md:h-[400px] overflow-hidden">
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${anime.images.webp.large_image_url})` }}
-        />
+        {anime.trailer?.youtube_id ? (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <iframe
+              src={`https://www.youtube.com/embed/${anime.trailer.youtube_id}?autoplay=1&mute=1&controls=0&showinfo=0&modestbranding=1&rel=0&loop=1&playlist=${anime.trailer.youtube_id}&vq=hd1080&start=0&end=15&playsinline=1`}
+              allow="autoplay; encrypted-media"
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300%] h-[300%] md:w-[200%] md:h-[200%] scale-125"
+              style={{ border: 'none' }}
+              title="Trailer"
+            />
+          </div>
+        ) : (
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: `url(${anime.images.webp.large_image_url})` }}
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/30" />
       </div>
 
