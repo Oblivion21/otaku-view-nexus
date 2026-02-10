@@ -89,6 +89,14 @@ export async function getAnimeByGenre(genreId: number, page = 1) {
   return fetchJikan<JikanAnime[]>(`/anime?genres=${genreId}&page=${page}&limit=24&order_by=score&sort=desc&sfw=true`);
 }
 
+export async function getTopMovies(page = 1) {
+  return fetchJikan<JikanAnime[]>(`/top/anime?type=movie&page=${page}&limit=24`);
+}
+
+export async function getAnimeRecommendations(id: number) {
+  return fetchJikan<{ entry: JikanAnime; votes: number }[]>(`/anime/${id}/recommendations`);
+}
+
 export async function getGenres() {
   return fetchJikan<{ mal_id: number; name: string; count: number }[]>("/genres/anime");
 }

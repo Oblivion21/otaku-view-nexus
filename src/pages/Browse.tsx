@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import Layout from "@/components/Layout";
 import AnimeGrid from "@/components/AnimeGrid";
 import { Button } from "@/components/ui/button";
-import { useTopAnime, useSeasonNow, useAnimeByGenre, useGenres } from "@/hooks/useAnime";
+import { useTopAnime, useSeasonNow, useAnimeByGenre, useGenres, useTopMovies } from "@/hooks/useAnime";
 import { GENRE_AR } from "@/lib/jikan";
 
 export default function Browse() {
@@ -16,6 +16,7 @@ export default function Browse() {
 
   const isPopular = filter === "popular";
   const isSeasonal = filter === "seasonal";
+  const isMovies = filter === "movies";
 
   const { data: topData, isLoading: loadingTop } = useTopAnime(
     page,
@@ -23,20 +24,27 @@ export default function Browse() {
   );
   const { data: seasonalData, isLoading: loadingSeasonal } = useSeasonNow(page);
   const { data: genreData, isLoading: loadingGenre } = useAnimeByGenre(selectedGenre || 0, page);
+  const { data: moviesData, isLoading: loadingMovies } = useTopMovies(page);
 
   const activeData = selectedGenre
     ? genreData
+    : isMovies
+    ? moviesData
     : isSeasonal
     ? seasonalData
     : topData;
   const activeLoading = selectedGenre
     ? loadingGenre
+    : isMovies
+    ? loadingMovies
     : isSeasonal
     ? loadingSeasonal
     : loadingTop;
 
   const title = selectedGenre
     ? `تصنيف: ${GENRE_AR[genres?.data?.find((g) => g.mal_id === selectedGenre)?.name || ""] || genres?.data?.find((g) => g.mal_id === selectedGenre)?.name}`
+    : isMovies
+    ? "افضل أفلام الأنمي"
     : isSeasonal
     ? "الأنمي الموسمي"
     : isPopular

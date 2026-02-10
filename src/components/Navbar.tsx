@@ -15,6 +15,9 @@ const NAV_LINKS = [{
 }, {
   label: "الأكثر شعبية",
   to: "/browse?filter=popular"
+}, {
+  label: "أفلام الأنمي",
+  to: "/browse?filter=movies"
 }];
 export default function Navbar() {
   const [query, setQuery] = useState("");

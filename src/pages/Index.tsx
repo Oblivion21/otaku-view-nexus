@@ -1,12 +1,13 @@
 import Layout from "@/components/Layout";
 import HeroCarousel from "@/components/HeroCarousel";
 import AnimeGrid from "@/components/AnimeGrid";
-import { useTopAnime, useSeasonNow } from "@/hooks/useAnime";
+import { useTopAnime, useSeasonNow, useTopMovies } from "@/hooks/useAnime";
 
 const Index = () => {
   const { data: popular, isLoading: loadingPopular } = useTopAnime(1, "bypopularity");
   const { data: seasonal, isLoading: loadingSeasonal } = useSeasonNow();
   const { data: top, isLoading: loadingTop } = useTopAnime(1);
+  const { data: movies, isLoading: loadingMovies } = useTopMovies();
 
   return (
     <Layout>
@@ -26,6 +27,11 @@ const Index = () => {
           title="الأعلى تقييماً"
           anime={top?.data?.slice(0, 12)}
           isLoading={loadingTop}
+        />
+        <AnimeGrid
+          title="افضل افلام الأنمي"
+          anime={movies?.data?.slice(0, 12)}
+          isLoading={loadingMovies}
         />
       </div>
     </Layout>

@@ -4,7 +4,9 @@ import Layout from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAnimeById, useAnimeEpisodes } from "@/hooks/useAnime";
+import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations } from "@/hooks/useAnime";
+import AnimeCard from "@/components/AnimeCard";
+import type { JikanAnime } from "@/lib/jikan";
 import { STATUS_MAP, TYPE_MAP, GENRE_AR } from "@/lib/jikan";
 import { useState } from "react";
 
@@ -14,6 +16,7 @@ export default function AnimeDetail() {
   const { data, isLoading } = useAnimeById(animeId);
   const [epPage, setEpPage] = useState(1);
   const { data: episodes, isLoading: loadingEp } = useAnimeEpisodes(animeId, epPage);
+  const { data: recommendations, isLoading: loadingRec } = useAnimeRecommendations(animeId);
 
   if (isLoading) {
     return (
@@ -157,6 +160,29 @@ export default function AnimeDetail() {
             </>
           ) : (
             <p className="text-sm text-muted-foreground">لا توجد حلقات متاحة</p>
+          )}
+        </div>
+
+        {/* Related Recommendations */}
+        <div className="mt-10 space-y-4">
+          <h2 className="text-xl font-bold border-r-4 border-primary pr-3">أنمي مشابه</h2>
+          {loadingRec ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="space-y-2">
+                  <Skeleton className="aspect-[3/4] rounded-lg" />
+                  <Skeleton className="h-4 w-3/4" />
+                </div>
+              ))}
+            </div>
+          ) : recommendations?.data && recommendations.data.length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {recommendations.data.slice(0, 12).map((rec) => (
+                <AnimeCard key={rec.entry.mal_id} anime={rec.entry as JikanAnime} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">لا توجد توصيات متاحة</p>
           )}
         </div>
       </div>
