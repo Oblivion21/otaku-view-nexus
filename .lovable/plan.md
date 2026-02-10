@@ -1,56 +1,48 @@
 
 
-# Anime3rb Clone — Arabic Anime Streaming Site
+# Add Best Anime Movies Tab + Related Recommendations
 
-## Overview
-A full-featured Arabic anime browsing and streaming site, closely matching the anime3rb.com design — dark theme, RTL layout, with anime data from the Jikan API (MyAnimeList) and YouTube video embeds for playback.
+## 1. Best Anime Movies section on Homepage
 
----
+Add a new "افضل افلام الأنمي" (Best Anime Movies) section to the homepage using the Jikan API endpoint `/top/anime?type=movie` to fetch top-rated movies.
 
-## Pages & Features
+**Changes to `src/lib/jikan.ts`:**
+- Add `getTopMovies(page)` function that calls `/top/anime?type=movie&page={page}&limit=24`
+- Add `getAnimeRecommendations(id)` function that calls `/anime/{id}/recommendations`
 
-### 1. Homepage
-- **Hero slider/carousel** showcasing featured/trending anime with cover images, title, genres, rating, and episode count (in Arabic)
-- **Sections**: Recently added episodes, popular anime, seasonal anime — displayed as card grids
-- **Top navigation bar** with logo, search bar, genre dropdown, and navigation links (all RTL)
-- **Footer** with links and site info
+**Changes to `src/hooks/useAnime.ts`:**
+- Add `useTopMovies(page)` hook
+- Add `useAnimeRecommendations(id)` hook
 
-### 2. Anime Listing / Browse Page
-- Grid of anime cards with poster image, title, rating, and genre tags
-- **Filters**: by genre, season, year, status (airing/completed), and type (TV/Movie/OVA)
-- **Search** with instant results
-- Pagination or infinite scroll
+**Changes to `src/pages/Index.tsx`:**
+- Add a 4th grid section "افضل افلام الأنمي" using the new `useTopMovies` hook, showing 12 movies
 
-### 3. Anime Detail Page
-- Large banner/cover image
-- Title (Japanese + Arabic), synopsis, genres, rating, studio, episode count, status, airing dates
-- **Episode list** — clickable list of episodes
+## 2. Browse page: Movies filter tab
 
-### 4. Episode Watch Page
-- **YouTube embed player** for the selected episode (using trailer/related YouTube videos from Jikan API)
-- Episode navigation (previous/next)
-- Anime info sidebar
-- Episode list below the player
+Add a "أفلام" (Movies) nav link or allow filtering by type=movie on the Browse page. The existing genre filter bar will get a new quick-access button for movies.
 
-### 5. Search Results Page
-- Real-time search powered by Jikan API
-- Results displayed as anime cards
+**Changes to `src/components/Navbar.tsx`:**
+- Add a new nav link: `{ label: "أفلام الأنمي", to: "/browse?filter=movies" }`
 
----
+**Changes to `src/pages/Browse.tsx`:**
+- Handle `filter=movies` by using the new `useTopMovies` hook
+- Set title to "افضل أفلام الأنمي" when movies filter is active
 
-## Design & Layout
-- **Dark theme** with deep navy/black backgrounds matching the original site
-- **RTL (right-to-left)** layout throughout — Arabic text direction
-- Anime card grid design with hover effects
-- Responsive design for mobile and desktop
-- Color scheme: dark backgrounds with accent colors for ratings, genres, and CTAs
+## 3. Related Recommendations on Anime Detail page
 
-## Data Source
-- **Jikan API** (free, no API key required) — fetches anime info, episodes, search, seasonal anime, and genres from MyAnimeList
-- YouTube trailer embeds from Jikan's trailer data for video playback
+Add a "أنمي مشابه" (Related Anime) section at the bottom of the AnimeDetail page using the Jikan `/anime/{id}/recommendations` endpoint.
 
-## Technical Notes
-- No backend or database needed — purely frontend
-- All data fetched client-side via Jikan REST API using React Query for caching
-- No user authentication required
+**Changes to `src/pages/AnimeDetail.tsx`:**
+- Import and use `useAnimeRecommendations(animeId)`
+- After the episode list section, render a horizontal grid of recommended anime cards (reusing `AnimeCard` component)
+- Each recommendation links to its own detail page
+- Show loading skeletons while fetching
+
+## Technical Details
+
+- **Jikan API endpoints used:**
+  - `GET /top/anime?type=movie` -- top rated movies
+  - `GET /anime/{id}/recommendations` -- related anime recommendations (returns array of `{ entry: { mal_id, title, images, ... }, votes }`)
+- Recommendations response shape differs slightly from standard anime, so the component will map `entry` fields to match `JikanAnime` interface
+- Rate limiting: Jikan has a 3 req/sec limit; React Query's staleTime caching already helps avoid redundant calls
 
