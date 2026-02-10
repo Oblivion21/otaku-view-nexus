@@ -177,9 +177,17 @@ export default function AnimeDetail() {
             </div>
           ) : recommendations?.data && recommendations.data.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {recommendations.data.slice(0, 12).map((rec) => (
-                <AnimeCard key={rec.entry.mal_id} anime={rec.entry as JikanAnime} />
-              ))}
+              {[...recommendations.data]
+                .sort((a, b) => b.votes - a.votes)
+                .slice(0, 12)
+                .map((rec, index) => (
+                  <div key={rec.entry.mal_id} className="relative">
+                    <div className="absolute top-2 left-2 z-10 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shadow-lg ring-2 ring-background">
+                      {index + 1}
+                    </div>
+                    <AnimeCard anime={rec.entry as JikanAnime} />
+                  </div>
+                ))}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">لا توجد توصيات متاحة</p>
