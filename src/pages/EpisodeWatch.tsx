@@ -6,7 +6,41 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAnimeById, useAnimeEpisodes } from "@/hooks/useAnime";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
-import { getEpisodeUrl, getAnimeEpisodes } from "@/lib/supabase";
+import { getEpisodeUrl, getAnimeEpisodes, type EpisodeCategory } from "@/lib/supabase";
+
+// Helper function to get category styling
+function getCategoryStyle(category: EpisodeCategory) {
+  if (!category) return { bg: '', border: '', text: '', label: '' };
+
+  const styles = {
+    black_org: {
+      bg: 'bg-blue-500/10',
+      border: 'border-blue-500/50',
+      text: 'text-blue-400',
+      label: '🔵'
+    },
+    main_story: {
+      bg: 'bg-green-500/10',
+      border: 'border-green-500/50',
+      text: 'text-green-400',
+      label: '🟢'
+    },
+    featured: {
+      bg: 'bg-orange-500/10',
+      border: 'border-orange-500/50',
+      text: 'text-orange-400',
+      label: '🟠'
+    },
+    regular: {
+      bg: 'bg-gray-500/10',
+      border: 'border-gray-500/50',
+      text: 'text-gray-400',
+      label: '⚪'
+    }
+  };
+
+  return styles[category] || { bg: '', border: '', text: '', label: '' };
+}
 
 export default function EpisodeWatch() {
   const { id, episode } = useParams<{ id: string; episode: string }>();
@@ -19,7 +53,7 @@ export default function EpisodeWatch() {
 
   // State for episode video URL from database
   const [episodeVideoUrl, setEpisodeVideoUrl] = useState<string | null>(null);
-  const [availableEpisodes, setAvailableEpisodes] = useState<number[]>([]);
+  const [availableEpisodes, setAvailableEpisodes] = useState<any[]>([]);
   const [loadingVideo, setLoadingVideo] = useState(false);
 
   const anime = animeData?.data;
@@ -44,8 +78,7 @@ export default function EpisodeWatch() {
       if (!animeId) return;
 
       const dbEpisodes = await getAnimeEpisodes(animeId);
-      const episodeNumbers = dbEpisodes.map(ep => ep.episode_number);
-      setAvailableEpisodes(episodeNumbers);
+      setAvailableEpisodes(dbEpisodes);
     }
 
     fetchAvailableEpisodes();
@@ -195,20 +228,43 @@ export default function EpisodeWatch() {
             <h2 className="text-lg font-bold border-r-4 border-primary pr-3">
               الحلقات المتوفرة ({availableEpisodes.length})
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {availableEpisodes.map((episodeNum) => (
-                <Link
-                  key={episodeNum}
-                  to={`/watch/${animeId}/${episodeNum}`}
-                  className={`p-2 rounded text-center text-sm border transition-colors ${
-                    episodeNum === epNum
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-card border-border hover:border-primary/50"
-                  }`}
-                >
-                  {episodeNum}
-                </Link>
-              ))}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              {availableEpisodes.map((ep) => {
+                const categoryStyle = getCategoryStyle(ep.category);
+                const isCurrentEpisode = ep.episode_number === epNum;
+
+                return (
+                  <Link
+                    key={ep.id}
+                    to={`/watch/${animeId}/${ep.episode_number}`}
+                    className={`p-3 rounded-lg border transition-all hover:scale-105 ${
+                      isCurrentEpisode
+                        ? "bg-primary text-primary-foreground border-primary ring-2 ring-primary/50"
+                        : `bg-card border-border hover:border-primary/50 ${categoryStyle.bg} ${categoryStyle.border}`
+                    }`}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-lg font-bold ${!isCurrentEpisode && categoryStyle.text}`}>
+                          {ep.episode_number}
+                        </span>
+                        {categoryStyle.label && !isCurrentEpisode && (
+                          <span className="text-sm">{categoryStyle.label}</span>
+                        )}
+                      </div>
+                      {ep.tags && ep.tags.length > 0 && (
+                        <div className="flex gap-1 flex-wrap">
+                          {ep.tags.map((tag: string) => (
+                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              {tag === 'filler' ? 'F' : tag === 'manga' ? 'M' : 'خاص'}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </div>
         )}

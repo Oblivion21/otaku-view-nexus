@@ -12,6 +12,9 @@ export const supabase = supabaseUrl && supabaseAnonKey
   : null
 
 // Database types
+export type EpisodeCategory = 'black_org' | 'main_story' | 'featured' | 'regular' | null
+export type EpisodeTag = 'filler' | 'manga' | 'special'
+
 export interface AnimeEpisode {
   id: string
   mal_id: number
@@ -20,6 +23,8 @@ export interface AnimeEpisode {
   quality: string
   subtitle_language: string
   is_active: boolean
+  category: EpisodeCategory
+  tags: EpisodeTag[]
   created_at: string
   updated_at: string
 }
