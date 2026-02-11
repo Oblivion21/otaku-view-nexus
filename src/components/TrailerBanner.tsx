@@ -6,13 +6,29 @@ interface TrailerBannerProps {
   height?: string;
 }
 
+// Detect if user is on mobile device
+const isMobileDevice = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
 export function TrailerBanner({ youtubeId, posterUrl, height = '400px' }: TrailerBannerProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const playerRef = useRef<any>(null);
   const loopTimerRef = useRef<number | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [showPlayButton, setShowPlayButton] = useState(false);
 
   useEffect(() => {
+    // Detect mobile on component mount
+    setIsMobile(isMobileDevice());
+
+    // On mobile, show play button after a brief delay
+    if (isMobileDevice()) {
+      setTimeout(() => setShowPlayButton(true), 1000);
+    }
+
     // Set up error detection timeout - if video doesn't load in 5 seconds, show poster
     const errorTimeout = setTimeout(() => {
       if (!isLoaded) {
@@ -26,7 +42,7 @@ export function TrailerBanner({ youtubeId, posterUrl, height = '400px' }: Traile
         const currentSrc = iframeRef.current.src;
         iframeRef.current.src = currentSrc;
       }
-    }, 25000); // 25 seconds
+    }, 28000); // 28 seconds
 
     return () => {
       clearTimeout(errorTimeout);
@@ -92,12 +108,36 @@ export function TrailerBanner({ youtubeId, posterUrl, height = '400px' }: Traile
               height: '56.25vw', // 16:9 aspect ratio
               minWidth: '177.77vh',
               minHeight: '100vh',
-              pointerEvents: 'none',
+              pointerEvents: isMobile ? 'auto' : 'none',
             }}
             title={`Trailer ${youtubeId}`}
             onLoad={handleLoad}
             onError={handleError}
           />
+        </div>
+      )}
+
+      {/* Mobile Play Button Overlay */}
+      {isMobile && showPlayButton && !isLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/30 backdrop-blur-sm">
+          <button
+            onClick={() => {
+              setShowPlayButton(false);
+              // Try to trigger autoplay by reloading iframe
+              if (iframeRef.current) {
+                const currentSrc = iframeRef.current.src;
+                iframeRef.current.src = currentSrc;
+              }
+            }}
+            className="flex flex-col items-center gap-3 text-white hover:scale-110 transition-transform"
+          >
+            <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border-2 border-white/50">
+              <svg className="w-10 h-10 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+            <span className="text-sm font-medium">اضغط لتشغيل العرض الدعائي</span>
+          </button>
         </div>
       )}
 
