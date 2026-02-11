@@ -41,7 +41,11 @@ export default function Navbar() {
       <div className="container flex h-14 items-center justify-between gap-4">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-1 font-bold shrink-0">
-          <span className="text-accent text-xl">أنمي</span><span className="text-primary text-2xl">zero</span>
+          <span className="text-accent text-xl">أنمي</span><span className="text-3xl font-extrabold uppercase tracking-wide" style={{
+            color: '#00ffff',
+            textShadow: '0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 30px #00ffff, 0 0 40px #0ff, 0 0 70px #0ff, 0 0 80px #0ff, 0 0 100px #0ff',
+            fontFamily: '"Orbitron", "Rajdhani", sans-serif'
+          }}>zero</span>
         </Link>
 
         {/* Desktop nav */}

@@ -7,7 +7,11 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
             <h3 className="font-bold mb-3">
-              <span className="text-accent text-lg">أنمي</span><span className="text-primary text-xl">zero</span>
+              <span className="text-accent text-lg">أنمي</span><span className="text-2xl font-extrabold uppercase tracking-wide" style={{
+                color: '#00ffff',
+                textShadow: '0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 30px #00ffff, 0 0 40px #0ff',
+                fontFamily: '"Orbitron", "Rajdhani", sans-serif'
+              }}>zero</span>
             </h3>
             <p className="text-sm text-muted-foreground">
               موقعك المفضل لمشاهدة الأنمي المترجم بجودة عالية
