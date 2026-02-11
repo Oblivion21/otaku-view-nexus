@@ -112,6 +112,11 @@ export default function EpisodeWatch() {
     const isDirectVideo = url.match(/\.(mp4|webm|ogg|m3u8|mpd)/i);
 
     if (isDirectVideo) {
+      // Determine video type
+      const videoType = url.match(/\.m3u8/i) ? 'application/x-mpegURL' :
+                       url.match(/\.mpd/i) ? 'application/dash+xml' :
+                       'video/mp4';
+
       // Direct video file - use HTML5 video player
       return (
         <video
@@ -120,9 +125,10 @@ export default function EpisodeWatch() {
           autoPlay
           controlsList="nodownload"
           onContextMenu={(e) => e.preventDefault()}
-          preload="metadata"
+          preload="auto"
+          crossOrigin="anonymous"
         >
-          <source src={url} type="video/mp4" />
+          <source src={url} type={videoType} />
           <p className="text-center text-white p-8">
             متصفحك لا يدعم تشغيل الفيديو. جرب متصفح آخر.
           </p>
@@ -136,8 +142,8 @@ export default function EpisodeWatch() {
           title={title}
           className="absolute inset-0 w-full h-full"
           allowFullScreen
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-presentation allow-top-navigation-by-user-activation"
         />
       );
     }
