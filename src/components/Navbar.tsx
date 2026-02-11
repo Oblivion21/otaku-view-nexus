@@ -42,8 +42,8 @@ export default function Navbar() {
         {/* Logo */}
         <Link to="/" className="flex items-center gap-1 font-bold shrink-0">
           <span className="text-accent text-xl">أنمي</span><span className="text-2xl font-bold uppercase tracking-wide" style={{
-            color: '#06b6d4',
-            textShadow: '0 0 8px rgba(6, 182, 212, 0.5), 0 0 15px rgba(6, 182, 212, 0.3)',
+            color: '#00D0FF',
+            textShadow: '0 0 8px rgba(0, 208, 255, 0.5), 0 0 15px rgba(0, 208, 255, 0.3)',
             fontFamily: '"Orbitron", "Rajdhani", sans-serif'
           }}>zero</span>
         </Link>
