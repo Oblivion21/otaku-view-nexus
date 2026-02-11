@@ -11,7 +11,8 @@ import { TrailerBanner } from "@/components/TrailerBanner";
 import type { JikanAnime } from "@/lib/jikan";
 import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR } from "@/lib/jikan";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
-import { useState } from "react";
+import { getAnimeEpisodes as getSupabaseEpisodes } from "@/lib/supabase";
+import { useState, useEffect } from "react";
 
 export default function AnimeDetail() {
   const { id } = useParams<{ id: string }>();
@@ -23,6 +24,18 @@ export default function AnimeDetail() {
   const { data: characters, isLoading: loadingChars } = useAnimeCharacters(animeId);
   const { data: themes, isLoading: loadingThemes } = useAnimeThemes(animeId);
   const { data: relations, isLoading: loadingRelations } = useAnimeRelations(animeId);
+  const [supabaseEpisodes, setSupabaseEpisodes] = useState<any[]>([]);
+
+  // Fetch episodes from Supabase database
+  useEffect(() => {
+    async function fetchSupabaseEpisodes() {
+      const dbEpisodes = await getSupabaseEpisodes(animeId);
+      setSupabaseEpisodes(dbEpisodes);
+    }
+    if (animeId) {
+      fetchSupabaseEpisodes();
+    }
+  }, [animeId]);
 
   if (isLoading) {
     return (
@@ -144,12 +157,26 @@ export default function AnimeDetail() {
               )}
             </div>
 
-            {/* Watch trailer */}
-            {trailerYoutubeId && (
-              <Button asChild>
-                <Link to={`/watch/${anime.mal_id}/trailer`}>شاهد العرض الدعائي</Link>
-              </Button>
-            )}
+            {/* Watch buttons */}
+            <div className="flex flex-wrap gap-2">
+              {trailerYoutubeId && (
+                <Button asChild variant="outline">
+                  <Link to={`/watch/${anime.mal_id}/trailer`}>شاهد العرض الدعائي</Link>
+                </Button>
+              )}
+              {/* Show "Watch Movie" button for movies if episode 1 exists in database */}
+              {anime.type === "Movie" && supabaseEpisodes.length > 0 && (
+                <Button asChild>
+                  <Link to={`/watch/${anime.mal_id}/1`}>شاهد الفيلم</Link>
+                </Button>
+              )}
+              {/* Show "Watch Episode 1" button for TV/OVA if episodes exist in database */}
+              {(anime.type === "TV" || anime.type === "OVA" || anime.type === "ONA" || anime.type === "Special") && supabaseEpisodes.length > 0 && (
+                <Button asChild>
+                  <Link to={`/watch/${anime.mal_id}/1`}>شاهد الحلقة 1</Link>
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
