@@ -132,7 +132,6 @@ export default function EpisodeWatch() {
           controlsList="nodownload"
           onContextMenu={(e) => e.preventDefault()}
           preload="auto"
-          crossOrigin="anonymous"
           onError={(e) => console.error('Video error:', e)}
           onLoadedData={() => console.log('Video loaded successfully')}
         >
