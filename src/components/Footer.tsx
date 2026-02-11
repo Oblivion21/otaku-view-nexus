@@ -25,7 +25,7 @@ export default function Footer() {
           <div>
             <h4 className="font-semibold mb-3">معلومات</h4>
             <p className="text-sm text-muted-foreground">
-              البيانات مقدمة من Jikan API (MyAnimeList)
+              موقعك المفضل لمشاهدة الأنمي المترجم بجودة عالية
             </p>
           </div>
         </div>
