@@ -8,8 +8,8 @@ export default function Footer() {
           <div>
             <h3 className="font-bold mb-3">
               <span className="text-accent text-lg">أنمي</span><span className="text-xl font-bold uppercase tracking-wide" style={{
-                color: '#3b82f6',
-                textShadow: '0 0 6px rgba(59, 130, 246, 0.4), 0 0 12px rgba(59, 130, 246, 0.2)',
+                color: '#06b6d4',
+                textShadow: '0 0 6px rgba(6, 182, 212, 0.4), 0 0 12px rgba(6, 182, 212, 0.2)',
                 fontFamily: '"Orbitron", "Rajdhani", sans-serif'
               }}>zero</span>
             </h3>
