@@ -56,6 +56,11 @@ export default function EpisodeWatch() {
   const [availableEpisodes, setAvailableEpisodes] = useState<any[]>([]);
   const [loadingVideo, setLoadingVideo] = useState(false);
 
+  // Filter state
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
+  const [hideFiller, setHideFiller] = useState(false);
+  const [showOnlyManga, setShowOnlyManga] = useState(false);
+
   const anime = animeData?.data;
 
   // Fetch episode video URL from Supabase
@@ -223,13 +228,149 @@ export default function EpisodeWatch() {
         </div>
 
         {/* Episode list - show available episodes from database */}
-        {availableEpisodes.length > 0 && (
-          <div className="max-w-4xl mx-auto space-y-3">
-            <h2 className="text-lg font-bold border-r-4 border-primary pr-3">
-              الحلقات المتوفرة ({availableEpisodes.length})
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {availableEpisodes.map((ep) => {
+        {availableEpisodes.length > 0 && (() => {
+          // Apply filters
+          const filteredEpisodes = availableEpisodes.filter(ep => {
+            // Category filter
+            if (selectedCategories.size > 0 && !selectedCategories.has(ep.category || 'none')) {
+              return false;
+            }
+            // Hide filler filter
+            if (hideFiller && ep.tags?.includes('filler')) {
+              return false;
+            }
+            // Show only manga filter
+            if (showOnlyManga && !ep.tags?.includes('manga')) {
+              return false;
+            }
+            return true;
+          });
+
+          const toggleCategory = (category: string) => {
+            const newSet = new Set(selectedCategories);
+            if (newSet.has(category)) {
+              newSet.delete(category);
+            } else {
+              newSet.add(category);
+            }
+            setSelectedCategories(newSet);
+          };
+
+          const resetFilters = () => {
+            setSelectedCategories(new Set());
+            setHideFiller(false);
+            setShowOnlyManga(false);
+          };
+
+          const hasActiveFilters = selectedCategories.size > 0 || hideFiller || showOnlyManga;
+
+          return (
+            <div className="max-w-4xl mx-auto space-y-4">
+              {/* Filter Controls */}
+              <div className="bg-card border border-border rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">تصفية الحلقات (Detective Conan Guide)</h3>
+                  {hasActiveFilters && (
+                    <button
+                      onClick={resetFilters}
+                      className="text-xs text-muted-foreground hover:text-foreground underline"
+                    >
+                      إعادة تعيين
+                    </button>
+                  )}
+                </div>
+
+                {/* Category Filters */}
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">التصنيف:</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => toggleCategory('black_org')}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                        selectedCategories.has('black_org')
+                          ? 'bg-blue-500 text-white border-blue-500'
+                          : 'bg-blue-500/10 text-blue-400 border-blue-500/50 hover:bg-blue-500/20'
+                      }`}
+                    >
+                      🔵 المنظمة السوداء
+                    </button>
+                    <button
+                      onClick={() => toggleCategory('main_story')}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                        selectedCategories.has('main_story')
+                          ? 'bg-green-500 text-white border-green-500'
+                          : 'bg-green-500/10 text-green-400 border-green-500/50 hover:bg-green-500/20'
+                      }`}
+                    >
+                      🟢 القصة الرئيسية
+                    </button>
+                    <button
+                      onClick={() => toggleCategory('featured')}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                        selectedCategories.has('featured')
+                          ? 'bg-orange-500 text-white border-orange-500'
+                          : 'bg-orange-500/10 text-orange-400 border-orange-500/50 hover:bg-orange-500/20'
+                      }`}
+                    >
+                      🟠 مميزة
+                    </button>
+                    <button
+                      onClick={() => toggleCategory('regular')}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                        selectedCategories.has('regular')
+                          ? 'bg-gray-500 text-white border-gray-500'
+                          : 'bg-gray-500/10 text-gray-400 border-gray-500/50 hover:bg-gray-500/20'
+                      }`}
+                    >
+                      ⚪ عادية
+                    </button>
+                    <button
+                      onClick={() => toggleCategory('none')}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                        selectedCategories.has('none')
+                          ? 'bg-gray-700 text-white border-gray-700'
+                          : 'bg-gray-700/10 text-gray-400 border-gray-700/50 hover:bg-gray-700/20'
+                      }`}
+                    >
+                      بدون تصنيف
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tag Filters */}
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">الوسوم:</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setHideFiller(!hideFiller)}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                        hideFiller
+                          ? 'bg-red-500 text-white border-red-500'
+                          : 'bg-red-500/10 text-red-400 border-red-500/50 hover:bg-red-500/20'
+                      }`}
+                    >
+                      {hideFiller ? '✓' : '○'} إخفاء الحشو (Filler)
+                    </button>
+                    <button
+                      onClick={() => setShowOnlyManga(!showOnlyManga)}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                        showOnlyManga
+                          ? 'bg-purple-500 text-white border-purple-500'
+                          : 'bg-purple-500/10 text-purple-400 border-purple-500/50 hover:bg-purple-500/20'
+                      }`}
+                    >
+                      {showOnlyManga ? '✓' : '○'} المانجا فقط
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <h2 className="text-lg font-bold border-r-4 border-primary pr-3">
+                الحلقات {hasActiveFilters && `(${filteredEpisodes.length} من ${availableEpisodes.length})`}
+                {!hasActiveFilters && `({availableEpisodes.length})`}
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {filteredEpisodes.map((ep) => {
                 const categoryStyle = getCategoryStyle(ep.category);
                 const isCurrentEpisode = ep.episode_number === epNum;
 
@@ -264,10 +405,11 @@ export default function EpisodeWatch() {
                     </div>
                   </Link>
                 );
-              })}
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Fallback to Jikan episode list if no database episodes */}
         {availableEpisodes.length === 0 && episodes?.data && episodes.data.length > 0 && (
