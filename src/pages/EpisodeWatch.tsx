@@ -65,7 +65,6 @@ export default function EpisodeWatch() {
 
       setLoadingVideo(true);
       const videoUrl = await getEpisodeUrl(animeId, epNum);
-      console.log('Episode video URL:', videoUrl); // Debug log
       setEpisodeVideoUrl(videoUrl);
       setLoadingVideo(false);
     }
@@ -109,40 +108,22 @@ export default function EpisodeWatch() {
 
   // Render video player based on URL type
   const renderVideoPlayer = (url: string, title: string) => {
-    console.log('Video URL:', url);
-    console.log('Video URL type check:', url.match(/\.(mp4|webm|ogg|m3u8|mpd)/i));
-
     // Check if it's a direct video file (has .mp4, .m3u8, etc.)
     const isDirectVideo = url.match(/\.(mp4|webm|ogg|m3u8|mpd)/i);
 
     if (isDirectVideo) {
-      // Determine video type
-      const videoType = url.match(/\.m3u8/i) ? 'application/x-mpegURL' :
-                       url.match(/\.mpd/i) ? 'application/dash+xml' :
-                       'video/mp4';
-
-      console.log('Using HTML5 video player, type:', videoType);
-
       // Direct video file - use HTML5 video player
       return (
         <video
           className="w-full h-full rounded-lg bg-black"
           controls
           autoPlay
-          controlsList="nodownload"
-          onContextMenu={(e) => e.preventDefault()}
-          preload="auto"
-          onError={(e) => console.error('Video error:', e)}
-          onLoadedData={() => console.log('Video loaded successfully')}
+          src={url}
         >
-          <source src={url} type={videoType} />
-          <p className="text-center text-white p-8">
-            متصفحك لا يدعم تشغيل الفيديو. جرب متصفح آخر.
-          </p>
+          متصفحك لا يدعم تشغيل الفيديو.
         </video>
       );
     } else {
-      console.log('Using iframe player');
       // Assume it's a player page or iframe embed
       return (
         <iframe
@@ -150,10 +131,7 @@ export default function EpisodeWatch() {
           title={title}
           className="absolute inset-0 w-full h-full"
           allowFullScreen
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-presentation allow-top-navigation-by-user-activation"
-          onError={(e) => console.error('Iframe error:', e)}
-          onLoad={() => console.log('Iframe loaded successfully')}
+          allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
         />
       );
     }
@@ -191,22 +169,7 @@ export default function EpisodeWatch() {
             </div>
           ) : !isTrailer && episodeVideoUrl ? (
             <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
-              {(() => {
-                console.log('Rendering video player with URL:', episodeVideoUrl);
-                return renderVideoPlayer(episodeVideoUrl, `${anime.title} - Episode ${epNum}`);
-              })()}
-            </div>
-          ) : !isTrailer && !loadingVideo ? (
-            <div className="w-full aspect-video rounded-lg bg-card border border-border flex items-center justify-center">
-              <div className="text-center space-y-2">
-                <p className="text-muted-foreground">لا يوجد فيديو متاح</p>
-                <p className="text-xs text-muted-foreground">
-                  الحلقة {epNum} غير متوفرة في قاعدة البيانات
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  يرجى إضافة الحلقة من لوحة التحكم
-                </p>
-              </div>
+              {renderVideoPlayer(episodeVideoUrl, `${anime.title} - Episode ${epNum}`)}
             </div>
           ) : (
             <div className="w-full aspect-video rounded-lg bg-card border border-border flex items-center justify-center">
