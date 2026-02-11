@@ -7,9 +7,9 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
             <h3 className="font-bold mb-3">
-              <span className="text-accent text-lg">أنمي</span><span className="text-2xl font-extrabold uppercase tracking-wide" style={{
-                color: '#00ffff',
-                textShadow: '0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 30px #00ffff, 0 0 40px #0ff',
+              <span className="text-accent text-lg">أنمي</span><span className="text-xl font-bold uppercase tracking-wide" style={{
+                color: '#3b82f6',
+                textShadow: '0 0 6px rgba(59, 130, 246, 0.4), 0 0 12px rgba(59, 130, 246, 0.2)',
                 fontFamily: '"Orbitron", "Rajdhani", sans-serif'
               }}>zero</span>
             </h3>
