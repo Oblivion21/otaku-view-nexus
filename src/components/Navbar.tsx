@@ -10,6 +10,12 @@ const NAV_LINKS = [{
   label: "قائمة الأنمي",
   to: "/browse"
 }, {
+  label: "جدول المواعيد",
+  to: "/schedule"
+}, {
+  label: "قادم قريباً",
+  to: "/upcoming"
+}, {
   label: "الأنمي الموسمي",
   to: "/browse?filter=seasonal"
 }, {

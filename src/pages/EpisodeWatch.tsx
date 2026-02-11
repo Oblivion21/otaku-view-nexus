@@ -1,9 +1,12 @@
 import { useParams, Link } from "react-router-dom";
 import { ChevronRight, ChevronLeft } from "lucide-react";
+import { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAnimeById, useAnimeEpisodes } from "@/hooks/useAnime";
+import { getTrailerYoutubeId } from "@/lib/trailerFallback";
+import { getEpisodeUrl, getAnimeEpisodes } from "@/lib/supabase";
 
 export default function EpisodeWatch() {
   const { id, episode } = useParams<{ id: string; episode: string }>();
@@ -14,7 +17,39 @@ export default function EpisodeWatch() {
   const { data: animeData, isLoading } = useAnimeById(animeId);
   const { data: episodes } = useAnimeEpisodes(animeId);
 
+  // State for episode video URL from database
+  const [episodeVideoUrl, setEpisodeVideoUrl] = useState<string | null>(null);
+  const [availableEpisodes, setAvailableEpisodes] = useState<number[]>([]);
+  const [loadingVideo, setLoadingVideo] = useState(false);
+
   const anime = animeData?.data;
+
+  // Fetch episode video URL from Supabase
+  useEffect(() => {
+    async function fetchEpisodeVideo() {
+      if (isTrailer || !animeId || !epNum) return;
+
+      setLoadingVideo(true);
+      const videoUrl = await getEpisodeUrl(animeId, epNum);
+      setEpisodeVideoUrl(videoUrl);
+      setLoadingVideo(false);
+    }
+
+    fetchEpisodeVideo();
+  }, [animeId, epNum, isTrailer]);
+
+  // Fetch available episodes from Supabase
+  useEffect(() => {
+    async function fetchAvailableEpisodes() {
+      if (!animeId) return;
+
+      const dbEpisodes = await getAnimeEpisodes(animeId);
+      const episodeNumbers = dbEpisodes.map(ep => ep.episode_number);
+      setAvailableEpisodes(episodeNumbers);
+    }
+
+    fetchAvailableEpisodes();
+  }, [animeId]);
 
   if (isLoading) {
     return (
@@ -31,7 +66,49 @@ export default function EpisodeWatch() {
     return <Layout><div className="container py-16 text-center">لم يتم العثور على الأنمي</div></Layout>;
   }
 
-  const youtubeId = anime.trailer?.youtube_id;
+  // Get trailer YouTube ID (from Jikan API or fallback database)
+  const youtubeId = getTrailerYoutubeId(
+    anime.mal_id,
+    anime.trailer?.youtube_id || null,
+    anime.trailer?.embed_url || null
+  );
+
+  // Render video player based on URL type
+  const renderVideoPlayer = (url: string, title: string) => {
+    // Check if it's a direct video file (has .mp4, .m3u8, etc.)
+    const isDirectVideo = url.match(/\.(mp4|webm|ogg|m3u8|mpd)/i);
+
+    if (isDirectVideo) {
+      // Direct video file - use HTML5 video player
+      return (
+        <video
+          className="w-full h-full rounded-lg bg-black"
+          controls
+          autoPlay
+          controlsList="nodownload"
+          onContextMenu={(e) => e.preventDefault()}
+          preload="metadata"
+        >
+          <source src={url} type="video/mp4" />
+          <p className="text-center text-white p-8">
+            متصفحك لا يدعم تشغيل الفيديو. جرب متصفح آخر.
+          </p>
+        </video>
+      );
+    } else {
+      // Assume it's a player page or iframe embed
+      return (
+        <iframe
+          src={url}
+          title={title}
+          className="absolute inset-0 w-full h-full"
+          allowFullScreen
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+        />
+      );
+    }
+  };
 
   return (
     <Layout>
@@ -49,19 +126,32 @@ export default function EpisodeWatch() {
 
         {/* Video player */}
         <div className="w-full max-w-4xl mx-auto">
-          {youtubeId ? (
+          {loadingVideo ? (
+            <div className="w-full aspect-video rounded-lg bg-card border border-border flex items-center justify-center">
+              <p className="text-muted-foreground">جاري التحميل...</p>
+            </div>
+          ) : isTrailer && youtubeId ? (
             <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
               <iframe
                 src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&rel=0`}
-                title={`${anime.title} - ${isTrailer ? "Trailer" : `Episode ${epNum}`}`}
+                title={`${anime.title} - Trailer`}
                 className="absolute inset-0 w-full h-full"
                 allowFullScreen
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               />
             </div>
+          ) : !isTrailer && episodeVideoUrl ? (
+            <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
+              {renderVideoPlayer(episodeVideoUrl, `${anime.title} - Episode ${epNum}`)}
+            </div>
           ) : (
             <div className="w-full aspect-video rounded-lg bg-card border border-border flex items-center justify-center">
-              <p className="text-muted-foreground">لا يوجد فيديو متاح</p>
+              <div className="text-center space-y-2">
+                <p className="text-muted-foreground">لا يوجد فيديو متاح</p>
+                <p className="text-xs text-muted-foreground">
+                  {isTrailer ? "لا يوجد عرض دعائي لهذا الأنمي" : `الحلقة ${epNum} غير متوفرة حالياً`}
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -99,25 +189,37 @@ export default function EpisodeWatch() {
           )}
         </div>
 
-        {/* Episode list */}
-        {episodes?.data && episodes.data.length > 0 && (
+        {/* Episode list - show available episodes from database */}
+        {availableEpisodes.length > 0 && (
           <div className="max-w-4xl mx-auto space-y-3">
-            <h2 className="text-lg font-bold border-r-4 border-primary pr-3">جميع الحلقات</h2>
+            <h2 className="text-lg font-bold border-r-4 border-primary pr-3">
+              الحلقات المتوفرة ({availableEpisodes.length})
+            </h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {episodes.data.map((ep) => (
+              {availableEpisodes.map((episodeNum) => (
                 <Link
-                  key={ep.mal_id}
-                  to={`/watch/${animeId}/${ep.mal_id}`}
+                  key={episodeNum}
+                  to={`/watch/${animeId}/${episodeNum}`}
                   className={`p-2 rounded text-center text-sm border transition-colors ${
-                    ep.mal_id === epNum
+                    episodeNum === epNum
                       ? "bg-primary text-primary-foreground border-primary"
                       : "bg-card border-border hover:border-primary/50"
                   }`}
                 >
-                  {ep.mal_id}
+                  {episodeNum}
                 </Link>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Fallback to Jikan episode list if no database episodes */}
+        {availableEpisodes.length === 0 && episodes?.data && episodes.data.length > 0 && (
+          <div className="max-w-4xl mx-auto space-y-3">
+            <h2 className="text-lg font-bold border-r-4 border-primary pr-3">جميع الحلقات</h2>
+            <p className="text-sm text-muted-foreground">
+              لا توجد حلقات متوفرة حالياً - قريباً!
+            </p>
           </div>
         )}
       </div>

@@ -190,3 +190,45 @@ export const GENRE_AR: Record<string, string> = {
   School: "مدرسي",
   Historical: "تاريخي",
 };
+
+// Voice Actor / Person interfaces and functions
+export interface JikanPerson {
+  mal_id: number;
+  name: string;
+  given_name: string | null;
+  family_name: string | null;
+  images: {
+    jpg: { image_url: string };
+  };
+  birthday: string | null;
+  favorites: number;
+  about: string | null;
+}
+
+export interface JikanVoiceActingRole {
+  role: string; // e.g., "Main", "Supporting"
+  anime: {
+    mal_id: number;
+    title: string;
+    images: {
+      jpg: { image_url: string; large_image_url: string };
+      webp: { image_url: string; large_image_url: string };
+    };
+  };
+  character: {
+    mal_id: number;
+    name: string;
+    images: {
+      jpg: { image_url: string };
+      webp: { image_url: string };
+    };
+  };
+}
+
+export async function getPersonById(id: number) {
+  return fetchJikan<JikanPerson>(`/people/${id}`);
+}
+
+export async function getPersonVoices(id: number) {
+  return fetchJikan<JikanVoiceActingRole[]>(`/people/${id}/voices`);
+}

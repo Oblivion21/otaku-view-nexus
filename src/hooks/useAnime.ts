@@ -12,6 +12,8 @@ import {
   getAnimeCharacters,
   getAnimeThemes,
   getAnimeRelations,
+  getPersonById,
+  getPersonVoices,
 } from "@/lib/jikan";
 
 export function useTopAnime(page = 1, filter?: string) {
@@ -113,6 +115,24 @@ export function useAnimeRelations(id: number) {
   return useQuery({
     queryKey: ["anime-relations", id],
     queryFn: () => getAnimeRelations(id),
+    enabled: !!id,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function usePersonById(id: number) {
+  return useQuery({
+    queryKey: ["person", id],
+    queryFn: () => getPersonById(id),
+    enabled: !!id,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function usePersonVoices(id: number) {
+  return useQuery({
+    queryKey: ["person-voices", id],
+    queryFn: () => getPersonVoices(id),
     enabled: !!id,
     staleTime: 10 * 60 * 1000,
   });

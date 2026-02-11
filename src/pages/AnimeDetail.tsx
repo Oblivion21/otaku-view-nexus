@@ -7,8 +7,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
+import { TrailerBanner } from "@/components/TrailerBanner";
 import type { JikanAnime } from "@/lib/jikan";
 import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR } from "@/lib/jikan";
+import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { useState } from "react";
 
 export default function AnimeDetail() {
@@ -43,28 +45,31 @@ export default function AnimeDetail() {
         .slice(0, 12)
     : [];
 
+  // Get trailer YouTube ID (from Jikan API or fallback database)
+  const trailerYoutubeId = getTrailerYoutubeId(
+    anime.mal_id,
+    anime.trailer?.youtube_id || null,
+    anime.trailer?.embed_url || null
+  );
+
   return (
     <Layout>
       {/* Banner */}
-      <div className="relative h-[300px] md:h-[400px] overflow-hidden">
-        {anime.trailer?.youtube_id ? (
-          <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            <iframe
-              src={`https://www.youtube.com/embed/${anime.trailer.youtube_id}?autoplay=1&mute=1&controls=0&showinfo=0&modestbranding=1&rel=0&loop=1&playlist=${anime.trailer.youtube_id}&vq=hd1080&start=0&end=15&playsinline=1`}
-              allow="autoplay; encrypted-media"
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300%] h-[300%] md:w-[200%] md:h-[200%] scale-125"
-              style={{ border: 'none' }}
-              title="Trailer"
-            />
-          </div>
-        ) : (
+      {trailerYoutubeId ? (
+        <TrailerBanner
+          youtubeId={trailerYoutubeId}
+          posterUrl={anime.images.webp.large_image_url}
+          height="400px"
+        />
+      ) : (
+        <div className="relative h-[300px] md:h-[400px] overflow-hidden">
           <div
             className="absolute inset-0 bg-cover bg-center"
             style={{ backgroundImage: `url(${anime.images.webp.large_image_url})` }}
           />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/30" />
-      </div>
+          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/30" />
+        </div>
+      )}
 
       <div className="container -mt-32 relative z-10 pb-8">
         <div className="flex flex-col md:flex-row gap-6">
@@ -72,7 +77,7 @@ export default function AnimeDetail() {
           <img
             src={anime.images.webp.large_image_url}
             alt={anime.title}
-            className="w-48 rounded-lg shadow-xl border border-border shrink-0"
+            className="w-48 aspect-[2/3] object-cover rounded-lg shadow-xl border border-border shrink-0"
           />
 
           {/* Info */}
@@ -123,12 +128,24 @@ export default function AnimeDetail() {
               ))}
             </div>
 
-            <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
-              {anime.synopsis}
-            </p>
+            <div className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
+              <p className="line-clamp-4">
+                {anime.synopsis}
+              </p>
+              {anime.synopsis && anime.synopsis.length > 200 && (
+                <a
+                  href={anime.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline text-xs mt-1 inline-block"
+                >
+                  ... عرض المزيد
+                </a>
+              )}
+            </div>
 
             {/* Watch trailer */}
-            {anime.trailer?.youtube_id && (
+            {trailerYoutubeId && (
               <Button asChild>
                 <Link to={`/watch/${anime.mal_id}/trailer`}>شاهد العرض الدعائي</Link>
               </Button>
@@ -202,7 +219,7 @@ export default function AnimeDetail() {
                 return (
                   <div
                     key={entry.character.mal_id}
-                    className="flex items-center gap-0 rounded-lg bg-card border border-border overflow-hidden hover:border-primary/40 transition-colors"
+                    className="flex items-center gap-0 rounded-lg bg-card border border-border overflow-hidden"
                   >
                     {/* Character side */}
                     <div className="flex items-center gap-3 flex-1 p-3">
@@ -220,11 +237,16 @@ export default function AnimeDetail() {
                       </div>
                     </div>
 
-                    {/* VA side */}
+                    {/* VA side - clickable */}
                     {japaneseVA && (
-                      <div className="flex items-center gap-3 flex-1 p-3 border-r border-border justify-end text-left">
+                      <Link
+                        to={`/person/${japaneseVA.person.mal_id}`}
+                        className="flex items-center gap-3 flex-1 p-3 border-r border-border justify-end text-left hover:bg-accent/50 transition-colors"
+                      >
                         <div className="min-w-0 text-left">
-                          <p className="text-sm text-muted-foreground line-clamp-1">{japaneseVA.person.name}</p>
+                          <p className="text-sm text-muted-foreground line-clamp-1 hover:text-primary transition-colors">
+                            {japaneseVA.person.name}
+                          </p>
                           <p className="text-[10px] text-muted-foreground/60 mt-0.5">ممثل صوتي</p>
                         </div>
                         <img
@@ -233,7 +255,7 @@ export default function AnimeDetail() {
                           className="w-14 h-14 rounded-md object-cover shrink-0"
                           loading="lazy"
                         />
-                      </div>
+                      </Link>
                     )}
                   </div>
                 );
