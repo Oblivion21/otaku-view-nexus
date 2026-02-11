@@ -8,7 +8,7 @@ export default function Footer() {
           <div>
             <h3 className="text-lg font-bold mb-3">
               <span className="text-accent">أنمي</span>
-              <span className="text-primary">3ربي</span>
+              <span className="text-primary">zero</span>
             </h3>
             <p className="text-sm text-muted-foreground">
               موقعك المفضل لمشاهدة الأنمي المترجم بجودة عالية
@@ -30,7 +30,7 @@ export default function Footer() {
           </div>
         </div>
         <div className="border-t border-border mt-6 pt-4 text-center text-xs text-muted-foreground">
-          أنمي3ربي © {new Date().getFullYear()} — جميع الحقوق محفوظة
+          أنميzero © {new Date().getFullYear()} — جميع الحقوق محفوظة
         </div>
       </div>
     </footer>

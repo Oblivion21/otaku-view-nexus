@@ -41,7 +41,7 @@ export default function Navbar() {
       <div className="container flex h-14 items-center justify-between gap-4">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2 text-xl font-bold text-primary shrink-0">
-          <span className="text-accent">أنمي</span>mustafa
+          <span className="text-accent">أنمي</span>zero
         </Link>
 
         {/* Desktop nav */}
