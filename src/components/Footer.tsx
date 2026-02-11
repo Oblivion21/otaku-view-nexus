@@ -6,9 +6,8 @@ export default function Footer() {
       <div className="container py-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
-            <h3 className="text-lg font-bold mb-3">
-              <span className="text-accent">أنمي</span>
-              <span className="text-primary">zero</span>
+            <h3 className="font-bold mb-3">
+              <span className="text-accent text-lg">أنمي</span><span className="text-primary text-xl">zero</span>
             </h3>
             <p className="text-sm text-muted-foreground">
               موقعك المفضل لمشاهدة الأنمي المترجم بجودة عالية
@@ -25,7 +24,7 @@ export default function Footer() {
           <div>
             <h4 className="font-semibold mb-3">معلومات</h4>
             <p className="text-sm text-muted-foreground">
-              موقعك المفضل لمشاهدة الأنمي المترجم بجودة عالية
+              جميع المعلومات من موقع MyAnimeList
             </p>
           </div>
         </div>

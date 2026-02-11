@@ -40,8 +40,8 @@ export default function Navbar() {
   return <nav className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center justify-between gap-4">
         {/* Logo */}
-        <Link to="/" className="flex items-center gap-2 text-xl font-bold text-primary shrink-0">
-          <span className="text-accent">أنمي</span>zero
+        <Link to="/" className="flex items-center gap-1 font-bold shrink-0">
+          <span className="text-accent text-xl">أنمي</span><span className="text-primary text-2xl">zero</span>
         </Link>
 
         {/* Desktop nav */}
