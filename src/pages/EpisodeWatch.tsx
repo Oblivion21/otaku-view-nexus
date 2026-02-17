@@ -219,17 +219,27 @@ export default function EpisodeWatch() {
 
               {/* Video player */}
               <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
-                {resolvingProxy ? (
-                  <div className="absolute inset-0 flex items-center justify-center bg-card">
-                    <p className="text-muted-foreground text-sm">جاري تحميل مصدر الفيديو...</p>
-                  </div>
-                ) : (() => {
+                {(() => {
                   const source = episodeData.video_sources![selectedServerIndex];
-                  // For proxy type, use the resolved URL; fall back to original if not yet resolved
-                  const playUrl = source.type === 'proxy'
-                    ? (resolvedProxyUrls[selectedServerIndex] || source.url)
-                    : source.url;
-                  return renderVideoPlayer(playUrl, `${anime.title} - Episode ${epNum}`);
+                  const isProxy = source.type === 'proxy';
+                  const resolvedUrl = resolvedProxyUrls[selectedServerIndex];
+
+                  // Proxy: show loading until resolved
+                  if (isProxy && (resolvingProxy || !resolvedUrl)) {
+                    return (
+                      <div className="absolute inset-0 flex items-center justify-center bg-card">
+                        <p className="text-muted-foreground text-sm">جاري تحميل مصدر الفيديو...</p>
+                      </div>
+                    );
+                  }
+
+                  // Proxy resolved: play the resolved URL
+                  if (isProxy && resolvedUrl) {
+                    return renderVideoPlayer(resolvedUrl, `${anime.title} - Episode ${epNum}`);
+                  }
+
+                  // Non-proxy: play directly
+                  return renderVideoPlayer(source.url, `${anime.title} - Episode ${epNum}`);
                 })()}
               </div>
             </>
