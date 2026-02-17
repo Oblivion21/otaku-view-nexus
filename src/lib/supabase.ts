@@ -19,7 +19,7 @@ export interface VideoSource {
   server_name: string
   url: string
   quality: string
-  type: 'embed' | 'direct'
+  type: 'embed' | 'direct' | 'proxy'
 }
 
 export interface AnimeEpisode {
@@ -35,6 +35,25 @@ export interface AnimeEpisode {
   tags: EpisodeTag[]
   created_at: string
   updated_at: string
+}
+
+// Resolve a proxy video source URL by calling the Supabase Edge Function
+// The Edge Function fetches the anime3rb/witanime page server-side and extracts a fresh embed URL
+export async function resolveProxyVideoUrl(sourcePageUrl: string): Promise<{ url: string; error?: string }> {
+  if (!supabase) return { url: '', error: 'Supabase not configured' }
+
+  try {
+    const { data, error } = await supabase.functions.invoke('resolve-video', {
+      body: { url: sourcePageUrl },
+    })
+
+    if (error) return { url: '', error: error.message }
+    if (!data?.url) return { url: '', error: 'No video URL found on that page' }
+
+    return { url: data.url }
+  } catch (err: any) {
+    return { url: '', error: err.message || 'Failed to resolve video URL' }
+  }
 }
 
 // Fetch episode video URL from database (legacy - use getEpisodeData for multi-server)

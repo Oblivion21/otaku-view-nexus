@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAnimeById, useAnimeEpisodes } from "@/hooks/useAnime";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
-import { getEpisodeData, getAnimeEpisodes, type VideoSource, type AnimeEpisode } from "@/lib/supabase";
+import { getEpisodeData, getAnimeEpisodes, resolveProxyVideoUrl, type VideoSource, type AnimeEpisode } from "@/lib/supabase";
 
 // Get episode styling based on category and tags (Detective Conan only)
 function getEpisodeStyle(episode: any, animeId: number) {
@@ -53,6 +53,9 @@ export default function EpisodeWatch() {
   const [selectedServerIndex, setSelectedServerIndex] = useState(0);
   const [availableEpisodes, setAvailableEpisodes] = useState<any[]>([]);
   const [loadingVideo, setLoadingVideo] = useState(false);
+  // Resolved proxy URLs: map from server index to resolved URL
+  const [resolvedProxyUrls, setResolvedProxyUrls] = useState<Record<number, string>>({});
+  const [resolvingProxy, setResolvingProxy] = useState(false);
 
   const anime = animeData?.data;
 
@@ -70,6 +73,26 @@ export default function EpisodeWatch() {
 
     fetchEpisodeVideo();
   }, [animeId, epNum, isTrailer]);
+
+  // Resolve proxy source when user selects a proxy server
+  useEffect(() => {
+    async function resolveProxy() {
+      if (!episodeData?.video_sources) return;
+      const source = episodeData.video_sources[selectedServerIndex];
+      if (!source || source.type !== 'proxy') return;
+      // Already resolved
+      if (resolvedProxyUrls[selectedServerIndex]) return;
+
+      setResolvingProxy(true);
+      const result = await resolveProxyVideoUrl(source.url);
+      if (result.url) {
+        setResolvedProxyUrls(prev => ({ ...prev, [selectedServerIndex]: result.url }));
+      }
+      setResolvingProxy(false);
+    }
+
+    resolveProxy();
+  }, [episodeData, selectedServerIndex]);
 
   // Fetch available episodes from Supabase
   useEffect(() => {
@@ -196,10 +219,18 @@ export default function EpisodeWatch() {
 
               {/* Video player */}
               <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
-                {renderVideoPlayer(
-                  episodeData.video_sources![selectedServerIndex].url,
-                  `${anime.title} - Episode ${epNum}`
-                )}
+                {resolvingProxy ? (
+                  <div className="absolute inset-0 flex items-center justify-center bg-card">
+                    <p className="text-muted-foreground text-sm">جاري تحميل مصدر الفيديو...</p>
+                  </div>
+                ) : (() => {
+                  const source = episodeData.video_sources![selectedServerIndex];
+                  // For proxy type, use the resolved URL; fall back to original if not yet resolved
+                  const playUrl = source.type === 'proxy'
+                    ? (resolvedProxyUrls[selectedServerIndex] || source.url)
+                    : source.url;
+                  return renderVideoPlayer(playUrl, `${anime.title} - Episode ${epNum}`);
+                })()}
               </div>
             </>
           ) : !isTrailer && episodeData && episodeData.video_url ? (
