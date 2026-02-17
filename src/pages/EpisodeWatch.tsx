@@ -123,14 +123,22 @@ export default function EpisodeWatch() {
         </video>
       );
     } else {
-      // Assume it's a player page or iframe embed
+      // Embed player — sandbox blocks all ad popups and page redirects.
+      // allow-scripts        → player JS runs normally
+      // allow-same-origin    → player can access its own cookies/storage
+      // allow-presentation   → enables picture-in-picture / fullscreen APIs
+      // allow-fullscreen     → fullscreen button works
+      // NOT included: allow-popups, allow-top-navigation
+      //   → these are the two main vectors for ad popups and page hijacks
       return (
         <iframe
           src={url}
           title={title}
           className="absolute inset-0 w-full h-full"
           allowFullScreen
-          allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+          allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+          sandbox="allow-scripts allow-same-origin allow-presentation allow-fullscreen"
+          referrerPolicy="no-referrer"
         />
       );
     }
