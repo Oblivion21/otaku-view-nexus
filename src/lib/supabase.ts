@@ -67,3 +67,70 @@ export async function getAnimeEpisodes(malId: number): Promise<AnimeEpisode[]> {
 
   return data
 }
+
+// Site Settings Types
+export interface SiteSetting {
+  id: string
+  key: string
+  value: any
+  description: string | null
+  updated_at: string
+}
+
+// Fetch a specific site setting
+export async function getSetting(key: string): Promise<any | null> {
+  if (!supabase) return null
+
+  const { data, error } = await supabase
+    .from('site_settings')
+    .select('value')
+    .eq('key', key)
+    .single()
+
+  if (error || !data) {
+    console.log('Setting not found:', { key, error })
+    return null
+  }
+
+  return data.value
+}
+
+// Fetch all site settings
+export async function getAllSettings(): Promise<Record<string, any>> {
+  if (!supabase) return {}
+
+  const { data, error } = await supabase
+    .from('site_settings')
+    .select('*')
+
+  if (error || !data) {
+    console.log('Failed to fetch settings:', error)
+    return {}
+  }
+
+  // Convert array to key-value object
+  const settings: Record<string, any> = {}
+  data.forEach(setting => {
+    settings[setting.key] = setting.value
+  })
+
+  return settings
+}
+
+// Get featured anime IDs
+export async function getFeaturedAnimeIds(): Promise<number[]> {
+  const ids = await getSetting('featured_anime_ids')
+  return Array.isArray(ids) ? ids : []
+}
+
+// Get site announcement
+export async function getSiteAnnouncement(): Promise<{ ar: string; en: string } | null> {
+  const announcement = await getSetting('site_announcement')
+  return announcement || null
+}
+
+// Check if maintenance mode is enabled
+export async function isMaintenanceMode(): Promise<boolean> {
+  const mode = await getSetting('maintenance_mode')
+  return mode === true
+}

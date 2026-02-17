@@ -5,12 +5,56 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTopAnime } from "@/hooks/useAnime";
 import { GENRE_AR } from "@/lib/jikan";
+import { getFeaturedAnimeIds } from "@/lib/supabase";
 import { useState, useEffect } from "react";
 
 export default function HeroCarousel() {
-  const { data, isLoading } = useTopAnime(1, "airing");
+  const { data: defaultData, isLoading: defaultLoading } = useTopAnime(1, "airing");
+  const [items, setItems] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [current, setCurrent] = useState(0);
-  const items = data?.data?.slice(0, 5) || [];
+
+  useEffect(() => {
+    loadFeaturedAnime();
+  }, []);
+
+  async function loadFeaturedAnime() {
+    try {
+      const featuredIds = await getFeaturedAnimeIds();
+
+      if (featuredIds.length > 0) {
+        // Fetch featured anime from Jikan API
+        const animePromises = featuredIds.slice(0, 5).map(id =>
+          fetch(`https://api.jikan.moe/v4/anime/${id}`)
+            .then(res => res.json())
+            .then(data => data.data)
+            .catch(() => null)
+        );
+
+        const results = await Promise.all(animePromises);
+        const validResults = results.filter(Boolean);
+
+        if (validResults.length > 0) {
+          setItems(validResults);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // Fallback to default airing anime if no featured anime
+      if (defaultData?.data) {
+        setItems(defaultData.data.slice(0, 5));
+      }
+    } catch (error) {
+      console.error('Error loading featured anime:', error);
+      // Fallback to default
+      if (defaultData?.data) {
+        setItems(defaultData.data.slice(0, 5));
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (items.length === 0) return;
