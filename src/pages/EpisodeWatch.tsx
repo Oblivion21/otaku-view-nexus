@@ -56,6 +56,9 @@ export default function EpisodeWatch() {
   // Resolved proxy URLs: map from server index to resolved URL
   const [resolvedProxyUrls, setResolvedProxyUrls] = useState<Record<number, string>>({});
   const [resolvingProxy, setResolvingProxy] = useState(false);
+  // Track which server indices have been attempted (success or fail)
+  const [proxyAttempted, setProxyAttempted] = useState<Record<number, boolean>>({});
+  const [proxyError, setProxyError] = useState<string | null>(null);
 
   const anime = animeData?.data;
 
@@ -80,13 +83,17 @@ export default function EpisodeWatch() {
       if (!episodeData?.video_sources) return;
       const source = episodeData.video_sources[selectedServerIndex];
       if (!source || source.type !== 'proxy') return;
-      // Already resolved
-      if (resolvedProxyUrls[selectedServerIndex]) return;
+      // Already attempted (success or failure)
+      if (proxyAttempted[selectedServerIndex]) return;
 
       setResolvingProxy(true);
+      setProxyError(null);
       const result = await resolveProxyVideoUrl(source.url);
+      setProxyAttempted(prev => ({ ...prev, [selectedServerIndex]: true }));
       if (result.url) {
         setResolvedProxyUrls(prev => ({ ...prev, [selectedServerIndex]: result.url }));
+      } else {
+        setProxyError(result.error || 'تعذر تحميل الفيديو');
       }
       setResolvingProxy(false);
     }
@@ -223,12 +230,32 @@ export default function EpisodeWatch() {
                   const source = episodeData.video_sources![selectedServerIndex];
                   const isProxy = source.type === 'proxy';
                   const resolvedUrl = resolvedProxyUrls[selectedServerIndex];
+                  const attempted = proxyAttempted[selectedServerIndex];
 
-                  // Proxy: show loading until resolved
-                  if (isProxy && (resolvingProxy || !resolvedUrl)) {
+                  // Proxy: still resolving
+                  if (isProxy && resolvingProxy) {
                     return (
                       <div className="absolute inset-0 flex items-center justify-center bg-card">
                         <p className="text-muted-foreground text-sm">جاري تحميل مصدر الفيديو...</p>
+                      </div>
+                    );
+                  }
+
+                  // Proxy: resolution failed
+                  if (isProxy && attempted && !resolvedUrl) {
+                    return (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-card gap-2">
+                        <p className="text-muted-foreground text-sm">تعذر تحميل الفيديو</p>
+                        <p className="text-xs text-muted-foreground opacity-60">{proxyError}</p>
+                      </div>
+                    );
+                  }
+
+                  // Proxy: not yet attempted (brief moment before useEffect fires)
+                  if (isProxy && !attempted) {
+                    return (
+                      <div className="absolute inset-0 flex items-center justify-center bg-card">
+                        <p className="text-muted-foreground text-sm">جاري التحميل...</p>
                       </div>
                     );
                   }
