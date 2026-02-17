@@ -1,12 +1,12 @@
 import { useParams, Link } from "react-router-dom";
-import { ChevronRight, ChevronLeft } from "lucide-react";
+import { ChevronRight, ChevronLeft, Server } from "lucide-react";
 import { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAnimeById, useAnimeEpisodes } from "@/hooks/useAnime";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
-import { getEpisodeUrl, getAnimeEpisodes } from "@/lib/supabase";
+import { getEpisodeData, getAnimeEpisodes, type VideoSource, type AnimeEpisode } from "@/lib/supabase";
 
 // Get episode styling based on category and tags (Detective Conan only)
 function getEpisodeStyle(episode: any, animeId: number) {
@@ -48,21 +48,23 @@ export default function EpisodeWatch() {
   const { data: animeData, isLoading } = useAnimeById(animeId);
   const { data: episodes } = useAnimeEpisodes(animeId);
 
-  // State for episode video URL from database
-  const [episodeVideoUrl, setEpisodeVideoUrl] = useState<string | null>(null);
+  // State for episode data and video sources
+  const [episodeData, setEpisodeData] = useState<AnimeEpisode | null>(null);
+  const [selectedServerIndex, setSelectedServerIndex] = useState(0);
   const [availableEpisodes, setAvailableEpisodes] = useState<any[]>([]);
   const [loadingVideo, setLoadingVideo] = useState(false);
 
   const anime = animeData?.data;
 
-  // Fetch episode video URL from Supabase
+  // Fetch full episode data from Supabase
   useEffect(() => {
     async function fetchEpisodeVideo() {
       if (isTrailer || !animeId || !epNum) return;
 
       setLoadingVideo(true);
-      const videoUrl = await getEpisodeUrl(animeId, epNum);
-      setEpisodeVideoUrl(videoUrl);
+      const data = await getEpisodeData(animeId, epNum);
+      setEpisodeData(data);
+      setSelectedServerIndex(0); // Reset to first server
       setLoadingVideo(false);
     }
 
@@ -149,7 +151,7 @@ export default function EpisodeWatch() {
         </div>
 
         {/* Video player */}
-        <div className="w-full max-w-4xl mx-auto">
+        <div className="w-full max-w-4xl mx-auto space-y-4">
           {loadingVideo ? (
             <div className="w-full aspect-video rounded-lg bg-card border border-border flex items-center justify-center">
               <p className="text-muted-foreground">جاري التحميل...</p>
@@ -164,9 +166,46 @@ export default function EpisodeWatch() {
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               />
             </div>
-          ) : !isTrailer && episodeVideoUrl ? (
+          ) : !isTrailer && episodeData && (episodeData.video_sources?.length ?? 0) > 0 ? (
+            <>
+              {/* Server selector */}
+              {episodeData.video_sources && episodeData.video_sources.length > 1 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Server className="h-4 w-4" />
+                    <span>السيرفر:</span>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {episodeData.video_sources.map((source, index) => (
+                      <Button
+                        key={index}
+                        variant={selectedServerIndex === index ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setSelectedServerIndex(index)}
+                        className="min-w-[100px]"
+                      >
+                        {source.server_name}
+                        {source.quality && (
+                          <span className="mr-1 text-xs opacity-70">({source.quality})</span>
+                        )}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Video player */}
+              <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
+                {renderVideoPlayer(
+                  episodeData.video_sources![selectedServerIndex].url,
+                  `${anime.title} - Episode ${epNum}`
+                )}
+              </div>
+            </>
+          ) : !isTrailer && episodeData && episodeData.video_url ? (
+            // Fallback to legacy video_url field
             <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
-              {renderVideoPlayer(episodeVideoUrl, `${anime.title} - Episode ${epNum}`)}
+              {renderVideoPlayer(episodeData.video_url, `${anime.title} - Episode ${epNum}`)}
             </div>
           ) : (
             <div className="w-full aspect-video rounded-lg bg-card border border-border flex items-center justify-center">

@@ -15,12 +15,20 @@ export const supabase = supabaseUrl && supabaseAnonKey
 export type EpisodeCategory = 'black_org' | 'main_story' | 'featured' | 'regular' | null
 export type EpisodeTag = 'filler' | 'manga' | 'special'
 
+export interface VideoSource {
+  server_name: string
+  url: string
+  quality: string
+  type: 'embed' | 'direct'
+}
+
 export interface AnimeEpisode {
   id: string
   mal_id: number
   episode_number: number
   video_url: string
   quality: string
+  video_sources: VideoSource[] | null
   subtitle_language: string
   is_active: boolean
   category: EpisodeCategory
@@ -29,7 +37,7 @@ export interface AnimeEpisode {
   updated_at: string
 }
 
-// Fetch episode video URL from database
+// Fetch episode video URL from database (legacy - use getEpisodeData for multi-server)
 export async function getEpisodeUrl(malId: number, episodeNumber: number): Promise<string | null> {
   if (!supabase) return null
 
@@ -47,6 +55,26 @@ export async function getEpisodeUrl(malId: number, episodeNumber: number): Promi
   }
 
   return data.video_url
+}
+
+// Fetch full episode data including video sources
+export async function getEpisodeData(malId: number, episodeNumber: number): Promise<AnimeEpisode | null> {
+  if (!supabase) return null
+
+  const { data, error } = await supabase
+    .from('anime_episodes')
+    .select('*')
+    .eq('mal_id', malId)
+    .eq('episode_number', episodeNumber)
+    .eq('is_active', true)
+    .single()
+
+  if (error || !data) {
+    console.log('Episode not found in database:', { malId, episodeNumber, error })
+    return null
+  }
+
+  return data
 }
 
 // Fetch all episodes for an anime
