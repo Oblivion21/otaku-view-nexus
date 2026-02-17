@@ -216,12 +216,12 @@ export default function AnimeDetail() {
 
           {/* Show color legend for Detective Conan */}
           {isDetectiveConan && supabaseEpisodes.length > 0 && (
-            <div className="flex gap-3 items-center text-xs bg-slate-50 p-3 rounded-lg">
-              <span className="font-medium">دليل الألوان:</span>
-              <div className="bg-green-500/20 border border-green-500/30 px-3 py-1 rounded">مانجا/القصة الرئيسية</div>
-              <div className="bg-blue-500/20 border border-blue-500/30 px-3 py-1 rounded">المنظمة السوداء</div>
-              <div className="bg-gray-400/20 border border-gray-400/30 px-3 py-1 rounded">فلر</div>
-              <div className="border-2 border-red-500 px-3 py-1 rounded">حلقة خاصة</div>
+            <div className="flex flex-wrap gap-3 items-center text-sm bg-slate-800 text-white p-4 rounded-lg border border-slate-700">
+              <span className="font-bold">دليل الألوان:</span>
+              <div className="bg-green-500/30 border-2 border-green-500 px-3 py-1.5 rounded font-medium">مانجا/القصة الرئيسية</div>
+              <div className="bg-blue-500/30 border-2 border-blue-500 px-3 py-1.5 rounded font-medium">المنظمة السوداء</div>
+              <div className="bg-gray-400/30 border-2 border-gray-400 px-3 py-1.5 rounded font-medium">فلر</div>
+              <div className="bg-slate-700 border-2 border-red-500 px-3 py-1.5 rounded font-medium">حلقة خاصة</div>
             </div>
           )}
 

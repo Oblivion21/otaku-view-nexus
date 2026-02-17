@@ -6,40 +6,37 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAnimeById, useAnimeEpisodes } from "@/hooks/useAnime";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
-import { getEpisodeUrl, getAnimeEpisodes, type EpisodeCategory } from "@/lib/supabase";
+import { getEpisodeUrl, getAnimeEpisodes } from "@/lib/supabase";
 
-// Helper function to get category styling
-function getCategoryStyle(category: EpisodeCategory) {
-  if (!category) return { bg: '', border: '', text: '', label: '' };
+// Get episode styling based on category and tags (Detective Conan only)
+function getEpisodeStyle(episode: any, animeId: number) {
+  const isDetectiveConan = animeId === 235;
 
-  const styles = {
-    black_org: {
-      bg: 'bg-blue-500/10',
-      border: 'border-blue-500/50',
-      text: 'text-blue-400',
-      label: '🔵'
-    },
-    main_story: {
-      bg: 'bg-green-500/10',
-      border: 'border-green-500/50',
-      text: 'text-green-400',
-      label: '🟢'
-    },
-    featured: {
-      bg: 'bg-orange-500/10',
-      border: 'border-orange-500/50',
-      text: 'text-orange-400',
-      label: '🟠'
-    },
-    regular: {
-      bg: 'bg-gray-500/10',
-      border: 'border-gray-500/50',
-      text: 'text-gray-400',
-      label: '⚪'
-    }
-  };
+  if (!isDetectiveConan) {
+    return {
+      background: 'bg-card',
+      border: 'border-border'
+    };
+  }
 
-  return styles[category] || { bg: '', border: '', text: '', label: '' };
+  let background = 'bg-card';
+  let border = 'border-border';
+
+  // Background color based on category
+  if (episode.category === 'main_story') {
+    background = 'bg-green-500/20'; // Green for manga/main story
+  } else if (episode.category === 'black_org') {
+    background = 'bg-blue-500/20'; // Blue for Black Organization
+  } else if (episode.tags?.includes('filler')) {
+    background = 'bg-gray-400/20'; // Grey for filler
+  }
+
+  // Red border for special episodes
+  if (episode.tags?.includes('special')) {
+    border = 'border-red-500';
+  }
+
+  return { background, border };
 }
 
 export default function EpisodeWatch() {
@@ -224,37 +221,23 @@ export default function EpisodeWatch() {
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
               {availableEpisodes.map((ep) => {
-                const categoryStyle = getCategoryStyle(ep.category);
+                const style = getEpisodeStyle(ep, animeId);
                 const isCurrentEpisode = ep.episode_number === epNum;
 
                 return (
                   <Link
                     key={ep.id}
                     to={`/watch/${animeId}/${ep.episode_number}`}
-                    className={`p-3 rounded-lg border transition-all hover:scale-105 ${
+                    className={`p-4 rounded-lg border-2 transition-all hover:scale-105 ${
                       isCurrentEpisode
                         ? "bg-primary text-primary-foreground border-primary ring-2 ring-primary/50"
-                        : `bg-card border-border hover:border-primary/50 ${categoryStyle.bg} ${categoryStyle.border}`
+                        : `hover:border-primary/50 ${style.background} ${style.border}`
                     }`}
                   >
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center justify-between">
-                        <span className={`text-lg font-bold ${!isCurrentEpisode && categoryStyle.text}`}>
-                          {ep.episode_number}
-                        </span>
-                        {categoryStyle.label && !isCurrentEpisode && (
-                          <span className="text-sm">{categoryStyle.label}</span>
-                        )}
-                      </div>
-                      {ep.tags && ep.tags.length > 0 && (
-                        <div className="flex gap-1 flex-wrap">
-                          {ep.tags.map((tag: string) => (
-                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                              {tag === 'filler' ? 'F' : tag === 'manga' ? 'M' : 'خاص'}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                    <div className="flex items-center justify-center">
+                      <span className="text-xl font-bold">
+                        {ep.episode_number}
+                      </span>
                     </div>
                   </Link>
                 );
