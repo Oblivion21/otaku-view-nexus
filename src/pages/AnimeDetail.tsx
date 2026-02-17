@@ -25,6 +25,7 @@ export default function AnimeDetail() {
   const { data: themes, isLoading: loadingThemes } = useAnimeThemes(animeId);
   const { data: relations, isLoading: loadingRelations } = useAnimeRelations(animeId);
   const [supabaseEpisodes, setSupabaseEpisodes] = useState<any[]>([]);
+  const isDetectiveConan = animeId === 235; // Detective Conan MAL ID
 
   // Fetch episodes from Supabase database
   useEffect(() => {
@@ -36,6 +37,35 @@ export default function AnimeDetail() {
       fetchSupabaseEpisodes();
     }
   }, [animeId]);
+
+  // Get episode styling based on category and tags (Detective Conan only)
+  function getEpisodeStyle(episode: any) {
+    if (!isDetectiveConan) {
+      return {
+        background: 'bg-card',
+        border: 'border-border hover:border-primary/50'
+      };
+    }
+
+    let background = 'bg-card';
+    let border = 'border-border hover:border-primary/50';
+
+    // Background color based on category
+    if (episode.category === 'main_story') {
+      background = 'bg-green-500/20'; // Green for manga/main story
+    } else if (episode.category === 'black_org') {
+      background = 'bg-blue-500/20'; // Blue for Black Organization
+    } else if (episode.tags?.includes('filler')) {
+      background = 'bg-gray-400/20'; // Grey for filler
+    }
+
+    // Red border for special episodes
+    if (episode.tags?.includes('special')) {
+      border = 'border-red-500 hover:border-red-600';
+    }
+
+    return { background, border };
+  }
 
   if (isLoading) {
     return (
@@ -184,12 +214,47 @@ export default function AnimeDetail() {
         <div className="mt-10 space-y-4">
           <h2 className="text-xl font-bold border-r-4 border-primary pr-3">قائمة الحلقات</h2>
 
-          {loadingEp ? (
+          {/* Show color legend for Detective Conan */}
+          {isDetectiveConan && supabaseEpisodes.length > 0 && (
+            <div className="flex gap-3 items-center text-xs bg-slate-50 p-3 rounded-lg">
+              <span className="font-medium">دليل الألوان:</span>
+              <div className="bg-green-500/20 border border-green-500/30 px-3 py-1 rounded">مانجا/القصة الرئيسية</div>
+              <div className="bg-blue-500/20 border border-blue-500/30 px-3 py-1 rounded">المنظمة السوداء</div>
+              <div className="bg-gray-400/20 border border-gray-400/30 px-3 py-1 rounded">فلر</div>
+              <div className="border-2 border-red-500 px-3 py-1 rounded">حلقة خاصة</div>
+            </div>
+          )}
+
+          {loadingEp && supabaseEpisodes.length === 0 ? (
             <div className="space-y-2">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 rounded-lg" />
               ))}
             </div>
+          ) : supabaseEpisodes.length > 0 ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                {supabaseEpisodes
+                  .sort((a, b) => a.episode_number - b.episode_number)
+                  .map((ep) => {
+                    const style = getEpisodeStyle(ep);
+                    return (
+                      <Link
+                        key={ep.id}
+                        to={`/watch/${animeId}/${ep.episode_number}`}
+                        className={`flex items-center gap-3 p-3 rounded-lg border-2 hover:bg-secondary/50 transition-colors ${style.background} ${style.border}`}
+                      >
+                        <span className="text-primary font-bold text-base w-10 text-center shrink-0">
+                          {ep.episode_number}
+                        </span>
+                        <span className="text-sm flex-1">
+                          الحلقة {ep.episode_number}
+                        </span>
+                      </Link>
+                    );
+                  })}
+              </div>
+            </>
           ) : episodes?.data && episodes.data.length > 0 ? (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
@@ -205,9 +270,6 @@ export default function AnimeDetail() {
                     <span className="text-sm line-clamp-1 flex-1">
                       {ep.title || `الحلقة ${ep.mal_id}`}
                     </span>
-                    {ep.filler && (
-                      <Badge variant="outline" className="text-[10px] shrink-0">فلر</Badge>
-                    )}
                   </Link>
                 ))}
               </div>
