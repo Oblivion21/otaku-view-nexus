@@ -2,7 +2,6 @@
 // Deploy to: Supabase Dashboard → Edge Functions → resolve-video
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,46 +43,17 @@ serve(async (req: Request) => {
       return jsonResponse({ url: '', error: 'BROWSERLESS_TOKEN not configured' })
     }
 
-    // Initialize Supabase client for cookie persistence
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
-
-    // Load saved cookies for this domain
-    let savedCookies: any[] = []
-    if (supabase) {
-      const { data } = await supabase
-        .from('cloudflare_cookies')
-        .select('cookies')
-        .eq('domain', parsedUrl.hostname)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      if (data?.cookies) {
-        savedCookies = data.cookies
-        console.log(`Loaded ${savedCookies.length} saved cookies for ${parsedUrl.hostname}`)
-      }
-    }
-
     // Puppeteer code with stealth techniques
     const puppeteerCode = `
-export default async function({ page, context }) {
+export default async function({ page }) {
   const results = {
     found: [],
     iframes: [],
-    cookies: [],
     success: false,
     error: null
   };
 
   try {
-    // Restore saved cookies
-    const savedCookies = ${JSON.stringify(savedCookies)};
-    if (savedCookies.length > 0) {
-      await context.addCookies(savedCookies);
-      console.log('Restored cookies from previous session');
-    }
 
     // Set realistic viewport and user agent
     await page.setViewport({
@@ -171,10 +141,6 @@ export default async function({ page, context }) {
     // Wait for any lazy-loaded content
     await new Promise(r => setTimeout(r, 3000));
 
-    // Save cookies for next time
-    const cookies = await context.cookies();
-    results.cookies = cookies;
-
     results.success = true;
     console.log('Found URLs:', results.found.length);
     console.log('Found iframes:', results.iframes.length);
@@ -223,18 +189,6 @@ export default async function({ page, context }) {
         url: '',
         error: 'Puppeteer failed: ' + browserlessData.error
       })
-    }
-
-    // Save cookies for future use
-    if (supabase && browserlessData.cookies?.length > 0) {
-      await supabase.from('cloudflare_cookies').upsert({
-        domain: parsedUrl.hostname,
-        cookies: browserlessData.cookies,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'domain'
-      })
-      console.log(`Saved ${browserlessData.cookies.length} cookies for future use`)
     }
 
     // Extract video URL from captured URLs
