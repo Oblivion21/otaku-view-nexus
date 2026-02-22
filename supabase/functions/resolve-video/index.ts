@@ -147,11 +147,11 @@ export default async function({ page, context }) {
     const cfChallenge = await page.$('#challenge-running, .cf-browser-verification');
     if (cfChallenge) {
       console.log('Cloudflare challenge detected, waiting...');
-      await page.waitForTimeout(8000);
+      await new Promise(r => setTimeout(r, 8000));
     }
 
     // Random human-like delays and scrolling
-    await page.waitForTimeout(Math.random() * 2000 + 2000);
+    await new Promise(r => setTimeout(r, Math.random() * 2000 + 2000));
 
     // Scroll down slowly like a human
     await page.evaluate(() => {
@@ -161,7 +161,7 @@ export default async function({ page, context }) {
       });
     });
 
-    await page.waitForTimeout(Math.random() * 1000 + 1000);
+    await new Promise(r => setTimeout(r, Math.random() * 1000 + 1000));
 
     // Extract iframes
     results.iframes = await page.$$eval('iframe', (iframes) =>
@@ -169,7 +169,7 @@ export default async function({ page, context }) {
     );
 
     // Wait for any lazy-loaded content
-    await page.waitForTimeout(3000);
+    await new Promise(r => setTimeout(r, 3000));
 
     // Save cookies for next time
     const cookies = await context.cookies();
