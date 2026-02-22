@@ -50,7 +50,8 @@ export default async function({ page }) {
     found: [],
     iframes: [],
     success: false,
-    error: null
+    error: null,
+    debug: {}
   };
 
   try {
@@ -142,14 +143,25 @@ export default async function({ page }) {
     // Get page HTML for debugging
     const html = await page.content();
     const hasVideo = html.includes('vid3rb') || html.includes('player') || html.includes('video');
+    const pageTitle = await page.title();
 
-    console.log('Page title:', await page.title());
+    // Populate debug info
+    results.debug = {
+      pageTitle: pageTitle,
+      hasVideoKeywords: hasVideo,
+      htmlLength: html.length,
+      foundUrlsCount: results.found.length,
+      iframeCount: results.iframes.length,
+      allFoundUrls: results.found,
+      allIframes: results.iframes,
+      htmlSample: html.slice(0, 500)
+    };
+
+    console.log('Page title:', pageTitle);
     console.log('Page has video keywords:', hasVideo);
     console.log('HTML length:', html.length);
     console.log('Found URLs:', results.found.length);
     console.log('Found iframes:', results.iframes.length);
-    console.log('All found:', results.found);
-    console.log('All iframes:', results.iframes);
 
     results.success = true;
 
@@ -211,10 +223,10 @@ export default async function({ page }) {
       return jsonResponse({
         url: '',
         error: 'No video URL found',
-        debug: {
+        debug: browserlessData.debug || {
           foundCount: browserlessData.found?.length || 0,
           iframeCount: browserlessData.iframes?.length || 0,
-          allUrls: uniqueUrls.slice(0, 5) // Show first 5 for debugging
+          allUrls: uniqueUrls.slice(0, 5)
         }
       })
     }
