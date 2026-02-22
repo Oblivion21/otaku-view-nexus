@@ -1,4 +1,4 @@
-// Improved Supabase Edge Function with Cloudflare Bypass Techniques
+// Supabase Edge Function with FlareSolverr and Browserless Support
 // Deploy to: Supabase Dashboard → Edge Functions → resolve-video
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -13,6 +13,32 @@ function jsonResponse(data: object, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
+}
+
+// Extract video URLs from HTML content
+function extractVideoUrls(html: string): string[] {
+  const urls: string[] = []
+
+  // Pattern 1: files.vid3rb.com MP4 URLs
+  const mp4Pattern = /https:\/\/files\.vid3rb\.com\/[^\s"'<>]+/g
+  const mp4Matches = html.match(mp4Pattern) || []
+  urls.push(...mp4Matches)
+
+  // Pattern 2: Any vid3rb.com URLs (player, embed, etc.)
+  const vid3rbPattern = /https:\/\/[^/]*vid3rb\.com\/[^\s"'<>]+/g
+  const vid3rbMatches = html.match(vid3rbPattern) || []
+  urls.push(...vid3rbMatches)
+
+  // Pattern 3: iframe src with vid3rb
+  const iframePattern = /<iframe[^>]+src=["']([^"']+)["']/gi
+  let match
+  while ((match = iframePattern.exec(html)) !== null) {
+    if (match[1].includes('vid3rb')) {
+      urls.push(match[1])
+    }
+  }
+
+  return [...new Set(urls)].filter(Boolean)
 }
 
 serve(async (req: Request) => {
@@ -37,10 +63,67 @@ serve(async (req: Request) => {
       return jsonResponse({ url: '', error: 'blocked host: ' + parsedUrl.hostname })
     }
 
-    // Get Browserless token
+    // Try FlareSolverr first (better Cloudflare bypass)
+    const flaresolverrUrl = Deno.env.get('FLARESOLVERR_URL')
+    if (flaresolverrUrl) {
+      console.log('Using FlareSolverr to bypass Cloudflare...')
+      try {
+        const flareResponse = await fetch(`${flaresolverrUrl}/v1`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cmd: 'request.get',
+            url: url,
+            maxTimeout: 60000,
+          }),
+        })
+
+        if (flareResponse.ok) {
+          const flareData = await flareResponse.json()
+
+          if (flareData.status === 'ok' && flareData.solution) {
+            const html = flareData.solution.response
+            const pageTitle = html.match(/<title>([^<]+)<\/title>/i)?.[1] || ''
+
+            console.log('FlareSolverr success! Page title:', pageTitle)
+
+            // Extract video URLs from HTML
+            const foundUrls = extractVideoUrls(html)
+
+            // Prioritize direct MP4 files
+            const mp4Url = foundUrls.find(u => u.includes('files.vid3rb.com') && u.includes('.mp4'))
+            const vid3rbUrl = foundUrls.find(u => u.includes('vid3rb.com'))
+            const videoUrl = mp4Url || vid3rbUrl || foundUrls[0] || ''
+
+            if (videoUrl) {
+              return jsonResponse({
+                url: videoUrl,
+                urls: foundUrls.map(u => ({
+                  url: u,
+                  type: 'embed',
+                  server_name: 'anime3rb',
+                  quality: '720p'
+                })),
+                debug: {
+                  method: 'flaresolverr',
+                  pageTitle,
+                  foundCount: foundUrls.length,
+                }
+              })
+            }
+          }
+        }
+
+        console.log('FlareSolverr failed, falling back to Browserless...')
+      } catch (error: any) {
+        console.error('FlareSolverr error:', error.message)
+      }
+    }
+
+    // Fallback to Browserless
     const browserlessToken = Deno.env.get('BROWSERLESS_TOKEN')
     if (!browserlessToken) {
-      return jsonResponse({ url: '', error: 'BROWSERLESS_TOKEN not configured' })
+      return jsonResponse({ url: '', error: 'No scraping service configured (FLARESOLVERR_URL or BROWSERLESS_TOKEN required)' })
     }
 
     // Puppeteer code with stealth techniques
@@ -252,7 +335,11 @@ export default async function({ page }) {
         type: 'embed',
         server_name: 'anime3rb',
         quality: '720p'
-      }))
+      })),
+      debug: {
+        method: 'browserless',
+        ...(browserlessData.debug || {})
+      }
     })
 
   } catch (error: any) {
