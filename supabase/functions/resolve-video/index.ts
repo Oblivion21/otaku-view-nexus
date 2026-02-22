@@ -38,7 +38,18 @@ function extractVideoUrls(html: string): string[] {
     }
   }
 
-  return [...new Set(urls)].filter(Boolean)
+  // Filter out thumbnails, images, and other non-video files
+  const filteredUrls = [...new Set(urls)].filter(url => {
+    if (!url) return false
+    // Exclude thumbnails and image files
+    if (url.match(/thumbnail\.(jpg|jpeg|png|webp|gif)/i)) return false
+    if (url.match(/\.(jpg|jpeg|png|webp|gif|svg)$/i)) return false
+    // Exclude subtitles
+    if (url.match(/\.(vtt|srt|ass|ssa)$/i)) return false
+    return true
+  })
+
+  return filteredUrls
 }
 
 serve(async (req: Request) => {
