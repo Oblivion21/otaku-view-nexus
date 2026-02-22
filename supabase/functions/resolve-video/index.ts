@@ -108,8 +108,8 @@ export default async function({ page }) {
     await new Promise(r => setTimeout(r, Math.random() * 1000 + 500));
 
     await page.goto(${JSON.stringify(url)}, {
-      waitUntil: 'networkidle2',
-      timeout: 45000
+      waitUntil: 'networkidle0',
+      timeout: 60000
     });
 
     // Wait for Cloudflare challenge to complete (if present)
@@ -117,11 +117,12 @@ export default async function({ page }) {
     const cfChallenge = await page.$('#challenge-running, .cf-browser-verification');
     if (cfChallenge) {
       console.log('Cloudflare challenge detected, waiting...');
-      await new Promise(r => setTimeout(r, 8000));
+      await new Promise(r => setTimeout(r, 10000));
     }
 
-    // Random human-like delays and scrolling
-    await new Promise(r => setTimeout(r, Math.random() * 2000 + 2000));
+    // Wait longer for video player to load
+    console.log('Waiting for video player to load...');
+    await new Promise(r => setTimeout(r, 8000));
 
     // Scroll down slowly like a human
     await page.evaluate(() => {
@@ -138,12 +139,19 @@ export default async function({ page }) {
       iframes.map(iframe => iframe.src || iframe.getAttribute('data-src') || '').filter(Boolean)
     );
 
-    // Wait for any lazy-loaded content
-    await new Promise(r => setTimeout(r, 3000));
+    // Get page HTML for debugging
+    const html = await page.content();
+    const hasVideo = html.includes('vid3rb') || html.includes('player') || html.includes('video');
 
-    results.success = true;
+    console.log('Page title:', await page.title());
+    console.log('Page has video keywords:', hasVideo);
+    console.log('HTML length:', html.length);
     console.log('Found URLs:', results.found.length);
     console.log('Found iframes:', results.iframes.length);
+    console.log('All found:', results.found);
+    console.log('All iframes:', results.iframes);
+
+    results.success = true;
 
     return results;
   } catch (error) {
