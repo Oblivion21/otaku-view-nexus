@@ -68,7 +68,7 @@ serve(async (req: Request) => {
 
     // Puppeteer code with stealth techniques
     const puppeteerCode = `
-module.exports = async ({ page, context }) => {
+export default async function({ page, context }) {
   const results = {
     found: [],
     iframes: [],
@@ -184,7 +184,7 @@ module.exports = async ({ page, context }) => {
     results.error = error.message;
     return results;
   }
-};
+}
 `
 
     // Call Browserless /function endpoint with stealth mode
