@@ -86,8 +86,8 @@ export default async function({ page }) {
 
     page.on('request', (request) => {
       const url = request.url();
-      // Capture vid3rb URLs and player embeds
-      if (url.includes('vid3rb.com') || url.includes('/player/') || url.includes('/embed/')) {
+      // Capture vid3rb URLs (especially files.vid3rb.com MP4s)
+      if (url.includes('vid3rb.com') || url.includes('.mp4') || url.includes('/player/') || url.includes('/embed/')) {
         results.found.push(url);
         console.log('Captured request:', url);
       }
@@ -96,7 +96,7 @@ export default async function({ page }) {
 
     page.on('response', async (response) => {
       const url = response.url();
-      if (url.includes('vid3rb.com') || url.includes('/player/') || url.includes('/embed/')) {
+      if (url.includes('vid3rb.com') || url.includes('.mp4') || url.includes('/player/') || url.includes('/embed/')) {
         results.found.push(url);
         console.log('Captured response:', url);
       }
@@ -109,21 +109,33 @@ export default async function({ page }) {
     await new Promise(r => setTimeout(r, Math.random() * 1000 + 500));
 
     await page.goto(${JSON.stringify(url)}, {
-      waitUntil: 'networkidle0',
+      waitUntil: 'domcontentloaded',
       timeout: 60000
     });
 
-    // Wait for Cloudflare challenge to complete (if present)
-    // Look for common Cloudflare elements
-    const cfChallenge = await page.$('#challenge-running, .cf-browser-verification');
-    if (cfChallenge) {
-      console.log('Cloudflare challenge detected, waiting...');
-      await new Promise(r => setTimeout(r, 10000));
+    // Wait for Cloudflare challenge to complete
+    console.log('Page title after navigation:', await page.title());
+
+    // If we see Cloudflare challenge, wait for it to complete
+    let attempts = 0;
+    while (attempts < 20) {
+      const title = await page.title();
+      if (title.includes('Just a moment') || title.includes('Checking')) {
+        console.log('Cloudflare challenge detected, waiting... (attempt', attempts + 1, ')');
+        await new Promise(r => setTimeout(r, 2000));
+        attempts++;
+      } else {
+        console.log('Cloudflare challenge passed! Page title:', title);
+        break;
+      }
     }
+
+    // Wait for network to settle after challenge
+    await new Promise(r => setTimeout(r, 5000));
 
     // Wait longer for video player to load
     console.log('Waiting for video player to load...');
-    await new Promise(r => setTimeout(r, 8000));
+    await new Promise(r => setTimeout(r, 5000));
 
     // Scroll down slowly like a human
     await page.evaluate(() => {
@@ -215,9 +227,10 @@ export default async function({ page }) {
     const allUrls = [...(browserlessData.found || []), ...(browserlessData.iframes || [])]
     const uniqueUrls = [...new Set(allUrls)].filter(Boolean)
 
-    // Prioritize vid3rb.com URLs
+    // Prioritize direct MP4 files from files.vid3rb.com, then any vid3rb URL
+    const mp4Url = uniqueUrls.find((u: string) => u.includes('files.vid3rb.com') && u.includes('.mp4'))
     const vid3rbUrl = uniqueUrls.find((u: string) => u.includes('vid3rb.com'))
-    const videoUrl = vid3rbUrl || uniqueUrls[0] || ''
+    const videoUrl = mp4Url || vid3rbUrl || uniqueUrls[0] || ''
 
     if (!videoUrl) {
       return jsonResponse({
