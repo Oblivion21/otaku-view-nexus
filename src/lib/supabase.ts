@@ -115,6 +115,36 @@ export async function getAnimeEpisodes(malId: number): Promise<AnimeEpisode[]> {
   return data
 }
 
+// Scrape anime3rb for an episode video URL using Apify Cloudflare Bypasser
+// This is called on-demand when a user opens an episode page that has no cached video data
+export async function scrapeAnime3rbEpisode(
+  animeTitle: string,
+  animeTitleEnglish: string | null,
+  episodeNumber: number,
+  malId: number
+): Promise<{ video_sources: VideoSource[] | null; cached: boolean; error?: string }> {
+  if (!supabase) return { video_sources: null, cached: false, error: 'Supabase not configured' }
+
+  try {
+    const { data, error } = await supabase.functions.invoke('scrape-anime3rb', {
+      body: { animeTitle, animeTitleEnglish, episodeNumber, malId },
+    })
+
+    if (error) return { video_sources: null, cached: false, error: error.message }
+    if (data?.error) return { video_sources: null, cached: false, error: data.error }
+    if (!data?.video_sources || data.video_sources.length === 0) {
+      return { video_sources: null, cached: false, error: 'No video sources found' }
+    }
+
+    return {
+      video_sources: data.video_sources,
+      cached: data.cached || false,
+    }
+  } catch (err: any) {
+    return { video_sources: null, cached: false, error: err.message || 'Failed to scrape episode' }
+  }
+}
+
 // Site Settings Types
 export interface SiteSetting {
   id: string
