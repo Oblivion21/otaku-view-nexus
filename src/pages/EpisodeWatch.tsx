@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAnimeById, useAnimeEpisodes } from "@/hooks/useAnime";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
-import { getEpisodeData, getAnimeEpisodes, resolveProxyVideoUrl, type VideoSource, type AnimeEpisode } from "@/lib/supabase";
+import { getEpisodeData, getAnimeEpisodes, resolveProxyVideoUrl, scrapeAnime3rbEpisode, type VideoSource, type AnimeEpisode } from "@/lib/supabase";
 
 // Get episode styling based on category and tags (Detective Conan only)
 function getEpisodeStyle(episode: any, animeId: number) {
@@ -59,23 +59,71 @@ export default function EpisodeWatch() {
   // Track which server indices have been attempted (success or fail)
   const [proxyAttempted, setProxyAttempted] = useState<Record<number, boolean>>({});
   const [proxyError, setProxyError] = useState<string | null>(null);
+  const [scraping, setScraping] = useState(false);
+  const [scrapeError, setScrapeError] = useState<string | null>(null);
 
   const anime = animeData?.data;
 
-  // Fetch full episode data from Supabase
+  // Fetch full episode data from Supabase, then auto-scrape if not found
   useEffect(() => {
     async function fetchEpisodeVideo() {
       if (isTrailer || !animeId || !epNum) return;
 
       setLoadingVideo(true);
+      setScrapeError(null);
       const data = await getEpisodeData(animeId, epNum);
-      setEpisodeData(data);
-      setSelectedServerIndex(0); // Reset to first server
+
+      if (data && ((data.video_sources && data.video_sources.length > 0) || data.video_url)) {
+        // Episode data found in database
+        setEpisodeData(data);
+        setSelectedServerIndex(0);
+        setLoadingVideo(false);
+        return;
+      }
+
+      // No episode data in database — trigger scraper
+      if (!anime) {
+        // Anime data not loaded yet, wait for it
+        setLoadingVideo(false);
+        return;
+      }
+
+      setScraping(true);
       setLoadingVideo(false);
+
+      const result = await scrapeAnime3rbEpisode(
+        anime.title,
+        anime.title_english || null,
+        epNum,
+        animeId
+      );
+
+      setScraping(false);
+
+      if (result.video_sources && result.video_sources.length > 0) {
+        // Scraper found video sources — set them as episode data
+        setEpisodeData({
+          id: '',
+          mal_id: animeId,
+          episode_number: epNum,
+          video_url: result.video_sources[0].url,
+          quality: result.video_sources[0].quality,
+          video_sources: result.video_sources,
+          subtitle_language: 'ar',
+          is_active: true,
+          category: null,
+          tags: [],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        setSelectedServerIndex(0);
+      } else {
+        setScrapeError(result.error || 'لم يتم العثور على مصدر الفيديو');
+      }
     }
 
     fetchEpisodeVideo();
-  }, [animeId, epNum, isTrailer]);
+  }, [animeId, epNum, isTrailer, anime]);
 
   // Resolve proxy source when user selects a proxy server
   useEffect(() => {
@@ -182,9 +230,17 @@ export default function EpisodeWatch() {
 
         {/* Video player */}
         <div className="w-full max-w-4xl mx-auto space-y-4">
-          {loadingVideo ? (
-            <div className="w-full aspect-video rounded-lg bg-card border border-border flex items-center justify-center">
-              <p className="text-muted-foreground">جاري التحميل...</p>
+          {loadingVideo || scraping ? (
+            <div className="w-full aspect-video rounded-lg bg-card border border-border flex flex-col items-center justify-center gap-3">
+              {scraping ? (
+                <>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  <p className="text-muted-foreground">جاري البحث عن مصدر الفيديو...</p>
+                  <p className="text-xs text-muted-foreground opacity-60">يتم البحث في anime3rb - قد يستغرق هذا بضع ثوانٍ</p>
+                </>
+              ) : (
+                <p className="text-muted-foreground">جاري التحميل...</p>
+              )}
             </div>
           ) : isTrailer && youtubeId ? (
             <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
@@ -282,6 +338,9 @@ export default function EpisodeWatch() {
                 <p className="text-xs text-muted-foreground">
                   {isTrailer ? "لا يوجد عرض دعائي لهذا الأنمي" : `الحلقة ${epNum} غير متوفرة حالياً`}
                 </p>
+                {scrapeError && (
+                  <p className="text-xs text-red-400 mt-2">{scrapeError}</p>
+                )}
               </div>
             </div>
           )}
