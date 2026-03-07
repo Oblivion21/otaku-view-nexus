@@ -90,8 +90,8 @@ function extractAnimeSlugFromSearch(html: string, animeTitle: string): string | 
 }
 
 // Extract video URLs from anime3rb episode page HTML
-function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'; server_name: string; quality: string }[] {
-  const sources: { url: string; type: 'direct' | 'embed'; server_name: string; quality: string }[] = []
+function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed' | 'proxy'; server_name: string; quality: string }[] {
+  const sources: { url: string; type: 'direct' | 'embed' | 'proxy'; server_name: string; quality: string }[] = []
 
   // Pattern 1: Direct MP4 files from files.vid3rb.com
   const mp4Pattern = /https:\/\/files\.vid3rb\.com\/[^\s"'<>]+\.mp4[^\s"'<>]*/g
@@ -100,16 +100,16 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
     sources.push({ url, type: 'direct', server_name: 'anime3rb', quality: '720p' })
   }
 
-  // Pattern 2: vid3rb.com player/embed URLs
+  // Pattern 2: vid3rb.com player/embed URLs (these need proxy resolution due to Cloudflare)
   const vid3rbPattern = /https:\/\/[^/]*vid3rb\.com\/(?:embed|player|v)\/[^\s"'<>]+/g
   const vid3rbMatches = html.match(vid3rbPattern) || []
   for (const url of vid3rbMatches) {
     if (!sources.some(s => s.url === url)) {
-      sources.push({ url, type: 'embed', server_name: 'anime3rb', quality: '720p' })
+      sources.push({ url, type: 'proxy', server_name: 'anime3rb', quality: '720p' })
     }
   }
 
-  // Pattern 3: Any vid3rb.com URL not already captured
+  // Pattern 3: Any vid3rb.com URL not already captured (also needs proxy)
   const anyVid3rbPattern = /https:\/\/[^/]*vid3rb\.com\/[^\s"'<>]+/g
   const anyVid3rbMatches = html.match(anyVid3rbPattern) || []
   for (const url of anyVid3rbMatches) {
@@ -117,7 +117,9 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
       // Filter out thumbnails and images
       if (url.match(/\.(jpg|jpeg|png|webp|gif|svg|vtt|srt)$/i)) continue
       if (url.match(/thumbnail/i)) continue
-      sources.push({ url, type: 'embed', server_name: 'anime3rb', quality: '720p' })
+      // If it's not a direct MP4, it needs proxy resolution
+      const isDirect = url.match(/\.mp4/i)
+      sources.push({ url, type: isDirect ? 'direct' : 'proxy', server_name: 'anime3rb', quality: '720p' })
     }
   }
 
@@ -127,7 +129,9 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   while ((iframeMatch = iframePattern.exec(html)) !== null) {
     const url = iframeMatch[1]
     if (!sources.some(s => s.url === url) && !url.includes('google') && !url.includes('facebook')) {
-      sources.push({ url, type: 'embed', server_name: 'iframe-player', quality: '720p' })
+      // Determine if iframe needs proxy resolution
+      const needsProxy = url.includes('anime3rb.com') || url.includes('vid3rb.com')
+      sources.push({ url, type: needsProxy ? 'proxy' : 'embed', server_name: 'iframe-player', quality: '720p' })
     }
   }
 
@@ -148,9 +152,10 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
     const url = jsMatch[1]
     if (!sources.some(s => s.url === url)) {
       const isDirectVideo = url.match(/\.(mp4|m3u8|webm)/)
+      const needsProxy = !isDirectVideo && (url.includes('anime3rb.com') || url.includes('vid3rb.com'))
       sources.push({
         url,
-        type: isDirectVideo ? 'direct' : 'embed',
+        type: isDirectVideo ? 'direct' : (needsProxy ? 'proxy' : 'embed'),
         server_name: 'anime3rb',
         quality: '720p',
       })

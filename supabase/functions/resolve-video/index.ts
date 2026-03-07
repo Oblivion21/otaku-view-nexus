@@ -101,8 +101,16 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { url } = await req.json()
-    if (!url) return jsonResponse({ url: '', error: 'no url provided' })
+    const body = await req.json()
+    console.log('[Request] Body received:', JSON.stringify(body))
+
+    const { url } = body
+    if (!url) {
+      console.error('[Request] No URL in body. Body keys:', Object.keys(body))
+      return jsonResponse({ url: '', error: 'no url provided', debug: { bodyKeys: Object.keys(body) } })
+    }
+
+    console.log('[Request] Processing URL:', url)
 
     // Validate URL is from allowed hosts
     let parsedUrl: URL
