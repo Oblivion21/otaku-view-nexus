@@ -162,21 +162,33 @@ async function fetchPlayerAndExtract(playerUrl: string, refererUrl: string): Pro
     const html = await response.text()
     console.log(`[Phase 2] Player page HTML: ${html.length} chars`)
 
-    // Try to parse video_sources first
-    const videoUrl = parseVideoSourcesFromHtml(html)
+    // Try to extract video URLs from HTML
+    const foundUrls = extractVideoUrls(html)
+
+    // Priority 1: video.vid3rb.com/video/xxx?speed=...&token=... (primary format)
+    const videoUrl = foundUrls.find(u => u.includes('video.vid3rb.com/video/') && u.includes('token='))
     if (videoUrl) {
+      console.log(`[Phase 2] Found video.vid3rb.com/video/ URL`)
       return videoUrl
     }
 
-    // Fallback: extract direct MP4 URLs
-    const foundUrls = extractVideoUrls(html)
+    // Priority 2: Try to parse video_sources JavaScript array
+    const parsedUrl = parseVideoSourcesFromHtml(html)
+    if (parsedUrl) {
+      return parsedUrl
+    }
+
+    // Priority 3: files.vid3rb.com MP4 files
     const mp4Url = foundUrls.find(u => u.includes('files.vid3rb.com') && u.includes('.mp4'))
     if (mp4Url) {
-      console.log(`[Phase 2] Found MP4 URL in player HTML`)
+      console.log(`[Phase 2] Found files.vid3rb.com MP4 URL`)
       return mp4Url
     }
 
-    console.log(`[Phase 2] No video URL found in player page`)
+    console.log(`[Phase 2] No video URL found in player page. Found ${foundUrls.length} URLs total`)
+    if (foundUrls.length > 0) {
+      console.log(`[Phase 2] Sample URLs:`, foundUrls.slice(0, 3))
+    }
     return null
   } catch (error: any) {
     console.error(`[Phase 2] Error fetching player page: ${error.message}`)
@@ -188,17 +200,22 @@ async function fetchPlayerAndExtract(playerUrl: string, refererUrl: string): Pro
 function extractVideoUrls(html: string): string[] {
   const urls: string[] = []
 
-  // Pattern 1: files.vid3rb.com MP4 URLs
-  const mp4Pattern = /https:\/\/files\.vid3rb\.com\/[^\s"'<>]+/g
+  // Pattern 1: video.vid3rb.com/video/xxx?speed=...&token=... (primary video URL)
+  const videoPattern = /https:\/\/video\.vid3rb\.com\/video\/[a-f0-9-]+\?[^\s"'<>]+/g
+  const videoMatches = html.match(videoPattern) || []
+  urls.push(...videoMatches)
+
+  // Pattern 2: files.vid3rb.com MP4 URLs
+  const mp4Pattern = /https:\/\/files\.vid3rb\.com\/[^\s"'<>]+\.mp4[^\s"'<>]*/g
   const mp4Matches = html.match(mp4Pattern) || []
   urls.push(...mp4Matches)
 
-  // Pattern 2: Any vid3rb.com URLs (player, embed, etc.)
+  // Pattern 3: Any vid3rb.com URLs (player, embed, etc.)
   const vid3rbPattern = /https:\/\/[^/]*vid3rb\.com\/[^\s"'<>]+/g
   const vid3rbMatches = html.match(vid3rbPattern) || []
   urls.push(...vid3rbMatches)
 
-  // Pattern 3: iframe src with vid3rb
+  // Pattern 4: iframe src with vid3rb
   const iframePattern = /<iframe[^>]+src=["']([^"']+)["']/gi
   let match
   while ((match = iframePattern.exec(html)) !== null) {
