@@ -20,6 +20,39 @@ function jsonResponse(data: object, status = 200) {
   })
 }
 
+function extractHtmlFromApifyItems(items: any[]): string {
+  for (const item of items) {
+    for (const key of ['body', 'html', 'content', 'text', 'page_content', 'pageContent', 'result']) {
+      const val = item?.[key]
+      if (val && typeof val === 'string' && val.length > 100) {
+        return val
+      }
+    }
+
+    if (item?.data && typeof item.data === 'object') {
+      for (const key of ['body', 'html', 'content']) {
+        const val = item.data[key]
+        if (val && typeof val === 'string' && val.length > 100) {
+          return val
+        }
+      }
+    }
+
+    const itemString = String(item ?? '')
+    if (itemString.toLowerCase().includes('<html') && itemString.length > 500) {
+      let best = ''
+      for (const v of Object.values(item ?? {})) {
+        if (typeof v === 'string' && v.length > best.length) {
+          best = v
+        }
+      }
+      if (best.length > 100) return best
+    }
+  }
+
+  return ''
+}
+
 // Call Apify Universal Bypasser actor (same as ani3rbscrap repo)
 async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: string; error?: string }> {
   // Using macheta/universal-bypasser - proven to work in ani3rbscrap
@@ -58,32 +91,11 @@ async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: 
 
       console.log(`[Apify] Got ${items.length} item(s) from dataset`)
 
-      // Extract HTML from various possible field names (same as ani3rbscrap)
-      const item = items[0]
-      let html = ''
-
-      for (const key of ['body', 'html', 'content', 'pageContent', 'text', 'result']) {
-        const val = item[key]
-        if (val && typeof val === 'string' && val.length > 100) {
-          html = val
-          break
-        }
-      }
-
-      // Check nested data.body/html
-      if (!html && item.data && typeof item.data === 'object') {
-        for (const key of ['body', 'html', 'content']) {
-          const val = item.data[key]
-          if (val && typeof val === 'string' && val.length > 100) {
-            html = val
-            break
-          }
-        }
-      }
+      const html = extractHtmlFromApifyItems(items)
 
       if (!html) {
         lastError = 'No HTML content in Apify response'
-        console.log('[Apify] No HTML in response. Item keys:', Object.keys(item))
+        console.log('[Apify] No HTML in response')
         continue
       }
 
@@ -222,20 +234,23 @@ function buildEpisodeUrlCandidates(animeSlug: string, episodeNumber: number, tit
 // Extract video URLs from anime3rb episode page HTML
 function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed' | 'proxy'; server_name: string; quality: string }[] {
   const sources: { url: string; type: 'direct' | 'embed' | 'proxy'; server_name: string; quality: string }[] = []
+  const normalizeUrl = (raw: string) => raw.replace(/\\\//g, '/').replace(/&amp;/g, '&').trim()
 
   // Pattern 1: Direct MP4 files from files.vid3rb.com
   const mp4Pattern = /https:\/\/files\.vid3rb\.com\/[^\s"'<>]+\.mp4[^\s"'<>]*/g
   const mp4Matches = html.match(mp4Pattern) || []
   for (const url of mp4Matches) {
-    sources.push({ url, type: 'direct', server_name: 'anime3rb', quality: '720p' })
+    const normalized = normalizeUrl(url)
+    sources.push({ url: normalized, type: 'direct', server_name: 'anime3rb', quality: '720p' })
   }
 
   // Pattern 2: vid3rb.com player/embed URLs (these need proxy resolution due to Cloudflare)
   const vid3rbPattern = /https:\/\/[^/]*vid3rb\.com\/(?:embed|player|v)\/[^\s"'<>]+/g
   const vid3rbMatches = html.match(vid3rbPattern) || []
   for (const url of vid3rbMatches) {
-    if (!sources.some(s => s.url === url)) {
-      sources.push({ url, type: 'proxy', server_name: 'anime3rb', quality: '720p' })
+    const normalized = normalizeUrl(url)
+    if (!sources.some(s => s.url === normalized)) {
+      sources.push({ url: normalized, type: 'proxy', server_name: 'anime3rb', quality: '720p' })
     }
   }
 
@@ -243,13 +258,17 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   const anyVid3rbPattern = /https:\/\/[^/]*vid3rb\.com\/[^\s"'<>]+/g
   const anyVid3rbMatches = html.match(anyVid3rbPattern) || []
   for (const url of anyVid3rbMatches) {
-    if (!sources.some(s => s.url === url)) {
+    const normalized = normalizeUrl(url)
+    if (!sources.some(s => s.url === normalized)) {
       // Filter out thumbnails and images
-      if (url.match(/\.(jpg|jpeg|png|webp|gif|svg|vtt|srt)$/i)) continue
-      if (url.match(/thumbnail/i)) continue
-      // Treat vid3rb /video/ URLs as directly playable stream URLs.
-      const isDirect = url.match(/\.mp4/i) || url.match(/video\.vid3rb\.com\/video\//i)
-      sources.push({ url, type: isDirect ? 'direct' : 'proxy', server_name: 'anime3rb', quality: '720p' })
+      if (normalized.match(/\.(jpg|jpeg|png|webp|gif|svg|vtt|srt)$/i)) continue
+      if (normalized.match(/thumbnail/i)) continue
+
+      // /video/<uuid> links without signed params are usually not playable.
+      const isSignedVid3rbVideo = /video\.vid3rb\.com\/video\//i.test(normalized)
+        && /(?:\?|&)token=/i.test(normalized)
+      const isDirect = normalized.match(/\.mp4/i) || isSignedVid3rbVideo
+      sources.push({ url: normalized, type: isDirect ? 'direct' : 'proxy', server_name: 'anime3rb', quality: '720p' })
     }
   }
 
@@ -257,7 +276,7 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   const iframePattern = /<iframe[^>]+src=["']([^"']+)["']/gi
   let iframeMatch
   while ((iframeMatch = iframePattern.exec(html)) !== null) {
-    const url = iframeMatch[1]
+    const url = normalizeUrl(iframeMatch[1])
     if (!sources.some(s => s.url === url) && !url.includes('google') && !url.includes('facebook')) {
       // Determine if iframe needs proxy resolution
       const needsProxy = url.includes('anime3rb.com') || url.includes('vid3rb.com')
@@ -269,7 +288,7 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   const videoSrcPattern = /<source[^>]+src=["']([^"']+)["'][^>]*type=["']video\/[^"']+["']/gi
   let videoMatch
   while ((videoMatch = videoSrcPattern.exec(html)) !== null) {
-    const url = videoMatch[1]
+    const url = normalizeUrl(videoMatch[1])
     if (!sources.some(s => s.url === url)) {
       sources.push({ url, type: 'direct', server_name: 'anime3rb', quality: '720p' })
     }
@@ -279,9 +298,10 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   const jsVideoPattern = /["'](?:src|file|url|source|video_url)["']\s*:\s*["'](https?:\/\/[^"']+(?:\.mp4|\.m3u8|\.webm|vid3rb)[^"']*)["']/gi
   let jsMatch
   while ((jsMatch = jsVideoPattern.exec(html)) !== null) {
-    const url = jsMatch[1]
+    const url = normalizeUrl(jsMatch[1])
     if (!sources.some(s => s.url === url)) {
-      const isDirectVideo = url.match(/\.(mp4|m3u8|webm)/) || url.match(/video\.vid3rb\.com\/video\//i)
+      const isSignedVid3rbVideo = /video\.vid3rb\.com\/video\//i.test(url) && /(?:\?|&)token=/i.test(url)
+      const isDirectVideo = url.match(/\.(mp4|m3u8|webm)/) || isSignedVid3rbVideo
       const needsProxy = !isDirectVideo && (url.includes('anime3rb.com') || url.includes('vid3rb.com'))
       sources.push({
         url,
@@ -303,11 +323,99 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   return sources
 }
 
-function extractPlayerUrlFromEpisodeHtml(html: string): string | null {
-  const match = html.match(/https?:\/\/video\.vid3rb\.com\/player\/[a-f0-9-]{36}[^\s"'<>]*/i)
-  if (match && match[0]) {
-    return match[0].replace(/\\\//g, '/').replace(/&amp;/g, '&')
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&#39;/g, '\'')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+}
+
+function findPlayerUrlInText(text: string): string | null {
+  const match = text.match(/https?:\/\/video\.vid3rb\.com\/player\/[a-f0-9-]{36}[^\s"'<>]*/i)
+  if (!match?.[0]) return null
+  return normalizeDirectUrl(match[0])
+}
+
+function searchJsonForPlayerUrl(obj: unknown, depth = 0): string | null {
+  if (depth > 10) return null
+  if (typeof obj === 'string') return findPlayerUrlInText(obj)
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const found = searchJsonForPlayerUrl(item, depth + 1)
+      if (found) return found
+    }
+    return null
   }
+  if (obj && typeof obj === 'object') {
+    for (const value of Object.values(obj)) {
+      const found = searchJsonForPlayerUrl(value, depth + 1)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function extractFromWireSnapshot(html: string): string | null {
+  const snapshotPattern = /wire:snapshot\s*=\s*"((?:[^"\\]|\\.)*)"|wire:snapshot\s*=\s*'((?:[^'\\]|\\.)*)'|wire:initial-data\s*=\s*"((?:[^"\\]|\\.)*)"/gs
+  let match: RegExpExecArray | null
+  while ((match = snapshotPattern.exec(html)) !== null) {
+    const raw = match[1] || match[2] || match[3]
+    if (!raw) continue
+    const decoded = decodeHtmlEntities(raw)
+    if (!decoded.includes('vid3rb')) continue
+
+    const direct = findPlayerUrlInText(decoded)
+    if (direct) return direct
+
+    try {
+      const parsed = JSON.parse(decoded)
+      const found = searchJsonForPlayerUrl(parsed)
+      if (found) return found
+    } catch {
+      // Continue with next snapshot.
+    }
+  }
+  return null
+}
+
+function extractPlayerUrlFromEpisodeHtml(html: string): string | null {
+  const attrMatch = html.match(/(?:src|href|data-src|data-url|data-iframe)\s*=\s*["']?(https?:\/\/video\.vid3rb\.com\/player\/[^"'>\s]+)/i)
+  if (attrMatch?.[1]) return normalizeDirectUrl(attrMatch[1])
+
+  const snapshotUrl = extractFromWireSnapshot(html)
+  if (snapshotUrl) return snapshotUrl
+
+  const snapshotJsonMatch = html.match(/"video_url"\s*:\s*"(https?:\\?\/\\?\/video\.vid3rb\.com\\?\/player\\?\/[^"]+)"/i)
+  if (snapshotJsonMatch?.[1]) return normalizeDirectUrl(snapshotJsonMatch[1])
+
+  const jsMatch = html.match(/(?:url|src|href|iframe|player|video_url|videoUrl)\s*[=:]\s*['"](https?:\/\/video\.vid3rb\.com\/player\/[^'"]+)/i)
+  if (jsMatch?.[1]) return normalizeDirectUrl(jsMatch[1])
+
+  const catchAll = html.match(/https?:(?:\/\/|\\?\/\\?\/)video\.vid3rb\.com(?:\\?\/)player(?:\\?\/)([a-f0-9-]{36}(?:[?&][^\s"'<>\\]*)?)/i)
+  if (catchAll?.[0]) {
+    const cleaned = normalizeDirectUrl(catchAll[0])
+    if (cleaned.startsWith('https://')) return cleaned
+    if (catchAll[1]) return `https://video.vid3rb.com/player/${normalizeDirectUrl(catchAll[1])}`
+  }
+
+  return null
+}
+
+function extractDirectUrlFromText(text: string): string | null {
+  const patterns = [
+    /https?:\/\/[^\s"'<>]*files\.vid3rb\.com[^\s"'<>]*\.mp4[^\s"'<>]*/i,
+    /https?:\/\/video\.vid3rb\.com\/video\/[a-f0-9-]{36}(?:\?[^\s"'<>]*)?/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (!match?.[0]) continue
+    const normalized = normalizeDirectUrl(match[0])
+    if (isDirectLikeUrl(normalized)) return normalized
+  }
+
   return null
 }
 
@@ -319,36 +427,102 @@ function parseBestDirectFromPlayerHtml(html: string): string | null {
     try {
       const sources = JSON.parse(raw)
       if (!Array.isArray(sources)) continue
+
       const valid = sources
-        .filter((s: any) => s.src && !s.premium)
-        .sort((a: any, b: any) => parseInt(b.res || '0') - parseInt(a.res || '0'))
-      if (valid.length > 0) {
-        return String(valid[0].src).replace(/\\\//g, '/')
+        .filter((s: any) => s?.src && !s?.premium)
+        .sort((a: any, b: any) => parseInt(String(b?.res ?? '0'), 10) - parseInt(String(a?.res ?? '0'), 10))
+
+      for (const src of valid) {
+        const candidate = normalizeDirectUrl(String(src.src))
+        if (isDirectLikeUrl(candidate)) return candidate
       }
     } catch {
-      // continue
+      // Keep checking the other matches.
     }
   }
-  return null
+  return extractDirectUrlFromText(html)
 }
 
-async function fetchDirectVideoFromPlayer(playerUrl: string, refererUrl: string): Promise<string | null> {
+async function fetchDirectVideoFromPlayer(playerUrl: string, refererUrl: string, apifyToken: string): Promise<string | null> {
+  const normalizedPlayerUrl = normalizeDirectUrl(playerUrl)
+
   try {
-    const resp = await fetch(playerUrl, {
+    const resp = await fetch(normalizedPlayerUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Referer': refererUrl,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
       },
       signal: AbortSignal.timeout(30000),
     })
-    if (!resp.ok) return null
 
-    const html = await resp.text()
-    const best = parseBestDirectFromPlayerHtml(html)
-    return best
+    if (resp.ok) {
+      const html = await resp.text()
+      const direct = parseBestDirectFromPlayerHtml(html)
+      if (direct) return direct
+    }
+  } catch {
+    // Fall back to Apify path below.
+  }
+
+  const playerResult = await fetchWithApify(normalizedPlayerUrl, apifyToken)
+  if (!playerResult.html) return null
+  return parseBestDirectFromPlayerHtml(playerResult.html)
+}
+
+function isDirectLikeUrl(url: string): boolean {
+  const isSignedVid3rbVideo = /video\.vid3rb\.com\/video\//i.test(url) && /(?:\?|&)token=/i.test(url)
+  return (
+    /\.mp4(?:$|[?#])/i.test(url) ||
+    isSignedVid3rbVideo
+  )
+}
+
+function normalizeDirectUrl(url: string): string {
+  return url.replace(/\\\//g, '/').replace(/&amp;/g, '&').trim()
+}
+
+function parseExpiresParam(url: string): number | null {
+  try {
+    const parsed = new URL(url)
+    const raw = parsed.searchParams.get('expires')
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : null
   } catch {
     return null
+  }
+}
+
+function isUrlExpiringSoon(url: string, skewSeconds = 180): boolean {
+  const expires = parseExpiresParam(url)
+  if (!expires) return false
+  const nowSec = Math.floor(Date.now() / 1000)
+  return expires <= nowSec + skewSeconds
+}
+
+async function isDirectUrlReachable(url: string): Promise<boolean> {
+  if (!isDirectLikeUrl(url)) return false
+  if (isUrlExpiringSoon(url, 90)) return false
+
+  try {
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Range': 'bytes=0-1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': '*/*',
+        'Referer': 'https://anime3rb.com/',
+      },
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (resp.status !== 200 && resp.status !== 206) return false
+    const ct = (resp.headers.get('content-type') || '').toLowerCase()
+    return ct.includes('video') || ct.includes('octet-stream') || ct.includes('binary')
+  } catch {
+    return false
   }
 }
 
@@ -387,9 +561,17 @@ serve(async (req: Request) => {
         .single()
 
       if (cached?.video_sources && cached.video_sources.length > 0) {
-        const hasPlayableDirect = cached.video_sources.some((s: any) =>
-          s?.type === 'direct' || /video\.vid3rb\.com\/video\//i.test(String(s?.url || ''))
-        )
+        let hasPlayableDirect = false
+        for (const s of cached.video_sources as any[]) {
+          const url = String(s?.url || '')
+          const type = String(s?.type || '')
+          if (type !== 'direct' && !isDirectLikeUrl(url)) continue
+          if (isUrlExpiringSoon(url, 180)) continue
+          if (await isDirectUrlReachable(url)) {
+            hasPlayableDirect = true
+            break
+          }
+        }
 
         if (hasPlayableDirect) {
           console.log(`[Cache] Found cached episode: mal_id=${malId}, ep=${episodeNumber}`)
@@ -452,7 +634,7 @@ serve(async (req: Request) => {
 
     console.log(`[Step 2] Episode URL candidates:`, episodeCandidates)
 
-    // Step 3: Try candidate episode pages until one yields sources
+    // Step 3: Try candidate episode pages until one yields a signed direct URL
     let videoSources: ReturnType<typeof extractVideoUrls> = []
     let usedEpisodeUrl: string | null = null
     let lastEpisodeError: string | undefined = undefined
@@ -466,39 +648,54 @@ serve(async (req: Request) => {
       }
 
       const extracted = extractVideoUrls(episodeResult.html)
-      if (extracted.length > 0) {
-        const hasDirect = extracted.some((s) =>
-          s.type === 'direct' || /video\.vid3rb\.com\/video\//i.test(s.url),
-        )
 
-        if (!hasDirect) {
-          const playerUrl =
-            extractPlayerUrlFromEpisodeHtml(episodeResult.html) ||
-            extracted.find((s) => /video\.vid3rb\.com\/player\//i.test(s.url))?.url ||
-            null
+      // 1) Best path: resolve signed direct URL from player page.
+      const playerUrl =
+        extractPlayerUrlFromEpisodeHtml(episodeResult.html) ||
+        extracted.find((s) => /video\.vid3rb\.com\/player\//i.test(s.url))?.url ||
+        null
 
-          if (playerUrl) {
-            const directUrl = await fetchDirectVideoFromPlayer(playerUrl, episodeUrl)
-            if (directUrl) {
-              extracted.unshift({
-                url: directUrl,
-                type: 'direct',
-                server_name: 'anime3rb-direct',
-                quality: '1080p',
-              })
-            }
-          }
-        }
-
-        videoSources = extracted
-        usedEpisodeUrl = episodeUrl
-        break
+      let directUrl: string | null = null
+      if (playerUrl) {
+        directUrl = await fetchDirectVideoFromPlayer(playerUrl, episodeUrl, apifyToken)
       }
+
+      // 2) Fallback: signed direct URL already present in episode HTML.
+      if (!directUrl) {
+        const signed = extracted.find((s) => isDirectLikeUrl(normalizeDirectUrl(s.url)))
+        if (signed) {
+          directUrl = signed.url
+        }
+      }
+
+      if (!directUrl) {
+        lastEpisodeError = 'No signed direct URL found'
+        continue
+      }
+
+      directUrl = normalizeDirectUrl(directUrl)
+      const reachable = await isDirectUrlReachable(directUrl)
+      if (!reachable) {
+        lastEpisodeError = 'Signed direct URL is not reachable'
+        continue
+      }
+
+      // Return ONLY one direct source, as requested.
+      videoSources = [
+        {
+          url: directUrl,
+          type: 'direct',
+          server_name: 'anime3rb-direct',
+          quality: '1080p',
+        },
+      ]
+      usedEpisodeUrl = episodeUrl
+      break
     }
 
     if (videoSources.length === 0) {
       return jsonResponse({
-        error: 'No video sources found on candidate episode pages',
+        error: 'No signed direct video URL found on candidate episode pages',
         debug: {
           step: 'extract',
           animeSlug,

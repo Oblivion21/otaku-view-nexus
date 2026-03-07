@@ -111,6 +111,7 @@ export default function EpisodeWatch() {
   // Track which server indices have been attempted (success or fail)
   const [proxyAttempted, setProxyAttempted] = useState<Record<number, boolean>>({});
   const [proxyError, setProxyError] = useState<string | null>(null);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [scraping, setScraping] = useState(false);
   const [scrapeError, setScrapeError] = useState<string | null>(null);
 
@@ -127,6 +128,7 @@ export default function EpisodeWatch() {
       setResolvedProxyUrls({});
       setProxyAttempted({});
       setProxyError(null);
+      setPlaybackError(null);
 
       if (!anime) {
         setLoadingVideo(false);
@@ -255,7 +257,7 @@ export default function EpisodeWatch() {
   );
 
   // Render video player based on URL type
-  const renderVideoPlayer = (url: string, title: string) => {
+  const renderVideoPlayer = (url: string, title: string, onError?: () => void) => {
     const isDirectVideo = isDirectPlayableUrl(url);
 
     if (isDirectVideo) {
@@ -266,6 +268,7 @@ export default function EpisodeWatch() {
           controls
           autoPlay
           src={url}
+          onError={onError}
         >
           متصفحك لا يدعم تشغيل الفيديو.
         </video>
@@ -388,13 +391,34 @@ export default function EpisodeWatch() {
 
                   // Proxy resolved: play the resolved URL
                   if (isProxy && resolvedUrl) {
-                    return renderVideoPlayer(resolvedUrl, `${anime.title} - Episode ${epNum}`);
+                    return renderVideoPlayer(
+                      resolvedUrl,
+                      `${anime.title} - Episode ${epNum}`,
+                      () => {
+                        setPlaybackError('تعذر تشغيل هذا المصدر، جاري تجربة سيرفر آخر...')
+                        if (episodeData.video_sources && selectedServerIndex < episodeData.video_sources.length - 1) {
+                          setSelectedServerIndex(selectedServerIndex + 1)
+                        }
+                      }
+                    );
                   }
 
                   // Non-proxy: play directly
-                  return renderVideoPlayer(source.url, `${anime.title} - Episode ${epNum}`);
+                  return renderVideoPlayer(
+                    source.url,
+                    `${anime.title} - Episode ${epNum}`,
+                    () => {
+                      setPlaybackError('تعذر تشغيل هذا المصدر، جاري تجربة سيرفر آخر...')
+                      if (episodeData.video_sources && selectedServerIndex < episodeData.video_sources.length - 1) {
+                        setSelectedServerIndex(selectedServerIndex + 1)
+                      }
+                    }
+                  );
                 })()}
               </div>
+              {playbackError && (
+                <p className="text-xs text-amber-400">{playbackError}</p>
+              )}
             </>
           ) : !isTrailer && episodeData && episodeData.video_url ? (
             // Fallback to legacy video_url field
