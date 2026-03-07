@@ -1,4 +1,4 @@
-// Supabase Edge Function with FlareSolverr and Browserless Support
+// Supabase Edge Function with Apify, FlareSolverr and Browserless Support
 // Deploy to: Supabase Dashboard → Edge Functions → resolve-video
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -13,6 +13,49 @@ function jsonResponse(data: object, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
+}
+
+// Call Apify Cloudflare Bypasser actor to fetch a Cloudflare-protected page
+async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: string; error?: string }> {
+  const actorId = 'neatrat~cloudflare-scraper'
+  const endpoint = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${apifyToken}`
+
+  console.log(`[Apify] Fetching: ${url}`)
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`[Apify] HTTP ${response.status}: ${errorText.slice(0, 300)}`)
+      return { html: '', error: `Apify request failed: ${response.status}` }
+    }
+
+    const items = await response.json()
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return { html: '', error: 'Apify returned no data' }
+    }
+
+    // The Cloudflare Scraper actor typically returns items with body/html field
+    const item = items[0]
+    const html = item.body || item.html || item.content || item.pageContent || item.text || ''
+
+    if (!html) {
+      console.log('[Apify] Item keys:', Object.keys(item))
+      return { html: '', error: 'No HTML content in Apify response' }
+    }
+
+    console.log(`[Apify] Got HTML, length: ${html.length}`)
+    return { html }
+  } catch (error: any) {
+    console.error('[Apify] Error:', error.message)
+    return { html: '', error: error.message }
+  }
 }
 
 // Extract video URLs from HTML content
@@ -74,7 +117,52 @@ serve(async (req: Request) => {
       return jsonResponse({ url: '', error: 'blocked host: ' + parsedUrl.hostname })
     }
 
-    // Try FlareSolverr first (better Cloudflare bypass)
+    // Try Apify first (most reliable Cloudflare bypass)
+    const apifyToken = Deno.env.get('APIFY_TOKEN')
+    if (apifyToken) {
+      console.log('Using Apify to bypass Cloudflare...')
+      try {
+        const apifyResult = await fetchWithApify(url, apifyToken)
+
+        if (!apifyResult.error && apifyResult.html) {
+          const html = apifyResult.html
+          const pageTitle = html.match(/<title>([^<]+)<\/title>/i)?.[1] || ''
+
+          console.log('Apify success! Page title:', pageTitle)
+
+          // Extract video URLs from HTML
+          const foundUrls = extractVideoUrls(html)
+
+          // Prioritize direct MP4 files
+          const mp4Url = foundUrls.find(u => u.includes('files.vid3rb.com') && u.includes('.mp4'))
+          const vid3rbUrl = foundUrls.find(u => u.includes('vid3rb.com'))
+          const videoUrl = mp4Url || vid3rbUrl || foundUrls[0] || ''
+
+          if (videoUrl) {
+            return jsonResponse({
+              url: videoUrl,
+              urls: foundUrls.map(u => ({
+                url: u,
+                type: 'embed',
+                server_name: 'anime3rb',
+                quality: '720p'
+              })),
+              debug: {
+                method: 'apify',
+                pageTitle,
+                foundCount: foundUrls.length,
+              }
+            })
+          }
+        }
+
+        console.log('Apify failed, falling back to FlareSolverr...')
+      } catch (error: any) {
+        console.error('Apify error:', error.message)
+      }
+    }
+
+    // Try FlareSolverr second (better Cloudflare bypass)
     const flaresolverrUrl = Deno.env.get('FLARESOLVERR_URL')
     if (flaresolverrUrl) {
       console.log('Using FlareSolverr to bypass Cloudflare...')
@@ -134,7 +222,7 @@ serve(async (req: Request) => {
     // Fallback to Browserless
     const browserlessToken = Deno.env.get('BROWSERLESS_TOKEN')
     if (!browserlessToken) {
-      return jsonResponse({ url: '', error: 'No scraping service configured (FLARESOLVERR_URL or BROWSERLESS_TOKEN required)' })
+      return jsonResponse({ url: '', error: 'No scraping service configured (APIFY_TOKEN, FLARESOLVERR_URL, or BROWSERLESS_TOKEN required)' })
     }
 
     // Puppeteer code with stealth techniques
