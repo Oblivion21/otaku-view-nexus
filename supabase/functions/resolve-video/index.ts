@@ -84,20 +84,107 @@ async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: 
   }
 }
 
+// Decode common HTML entities
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+}
+
+// Find the first vid3rb player URL in plain (decoded) text
+function findVid3rbPlayerUrl(text: string): string | null {
+  const m = /https?:\/\/video\.vid3rb\.com\/player\/[a-f0-9-]{36}[^\s"'<>]*/.exec(text)
+  if (m) return m[0].replace(/\\\//g, '/').replace(/&amp;/g, '&')
+  return null
+}
+
+// Recursively search a parsed JSON object for vid3rb player URLs
+function searchJsonForPlayerUrl(obj: unknown, depth = 0): string | null {
+  if (depth > 10) return null
+  if (typeof obj === 'string') return findVid3rbPlayerUrl(obj)
+  if (obj !== null && typeof obj === 'object' && !Array.isArray(obj)) {
+    for (const v of Object.values(obj as Record<string, unknown>)) {
+      const result = searchJsonForPlayerUrl(v, depth + 1)
+      if (result) return result
+    }
+  }
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const result = searchJsonForPlayerUrl(item, depth + 1)
+      if (result) return result
+    }
+  }
+  return null
+}
+
+// Parse Livewire wire:snapshot attributes and search for vid3rb player URL.
+// Livewire v3 stores component state as HTML-entity-encoded JSON:
+//   <div wire:snapshot="{&quot;data&quot;:{&quot;video_url&quot;:&quot;https:\/\/video.vid3rb.com\/player\/UUID&quot;}}">
+function extractFromWireSnapshot(html: string): string | null {
+  const snapshotPattern = /wire:snapshot\s*=\s*"((?:[^"\\]|\\.)*)"|wire:initial-data\s*=\s*"((?:[^"\\]|\\.)*)"/g
+  let m: RegExpExecArray | null
+  while ((m = snapshotPattern.exec(html)) !== null) {
+    const raw = m[1] || m[2]
+    if (!raw || !raw.includes('vid3rb')) continue
+
+    const decoded = decodeHtmlEntities(raw)
+
+    // Quick check: find URL directly in decoded text
+    const url = findVid3rbPlayerUrl(decoded)
+    if (url) return url
+
+    // Full JSON parse as fallback
+    try {
+      const data = JSON.parse(decoded)
+      const found = searchJsonForPlayerUrl(data)
+      if (found) return found
+    } catch {
+      // continue to next snapshot
+    }
+  }
+  return null
+}
+
 // Extract player iframe URL from HTML (same as ani3rbscrap)
 function extractPlayerIframeUrl(html: string): string | null {
-  // Pattern 1: iframe src pointing to vid3rb player
-  const iframePattern = /(?:src|href)\s*=\s*["']?(https?:\/\/video\.vid3rb\.com\/player\/[^"'>\s]+)/i
+  // 1. iframe/link src, href, or data-* attributes pointing to vid3rb player
+  const iframePattern = /(?:src|href|data-src|data-url|data-iframe)\s*=\s*["']?(https?:\/\/video\.vid3rb\.com\/player\/[^"'>\s]+)/i
   let match = iframePattern.exec(html)
   if (match) {
     return match[1].replace(/&amp;/g, '&')
   }
 
-  // Pattern 2: video_url in Livewire JSON (JSON-escaped slashes)
+  // 2. Livewire wire:snapshot (HTML-entity-encoded JSON) — most likely location
+  const wireUrl = extractFromWireSnapshot(html)
+  if (wireUrl) return wireUrl
+
+  // 3. video_url in Livewire JSON with literal quotes + JSON-escaped slashes
   const livewirePattern = /"video_url"\s*:\s*"(https?:\\?\/\\?\/video\.vid3rb\.com\\?\/player\\?\/[^"]+)"/i
   match = livewirePattern.exec(html)
   if (match) {
     return match[1].replace(/\\\//g, '/').replace(/&amp;/g, '&')
+  }
+
+  // 4. JavaScript object literals or variable assignments
+  const jsPattern = /(?:url|src|href|iframe|player|video_url|videoUrl)\s*[=:]\s*["'](https?:\/\/video\.vid3rb\.com\/player\/[^"']+)/i
+  match = jsPattern.exec(html)
+  if (match) {
+    return match[1].replace(/&amp;/g, '&')
+  }
+
+  // 5. Catch-all — any occurrence of the player URL pattern (handles \/ and &amp;)
+  const catchAllPattern = /https?:(?:\/\/|\\\/\\\/)video\.vid3rb\.com(?:\\\/|\/)player(?:\\\/|\/)([a-f0-9-]{36}(?:[?&][^\s"'<>\\]*)?)/i
+  match = catchAllPattern.exec(html)
+  if (match) {
+    const raw = match[0]
+    let url = raw.replace(/\\\//g, '/').replace(/&amp;/g, '&')
+    if (!url.startsWith('https://')) {
+      url = 'https://video.vid3rb.com/player/' + match[1].replace(/\\\//g, '/').replace(/&amp;/g, '&')
+    }
+    return url
   }
 
   return null
@@ -144,6 +231,7 @@ async function fetchPlayerAndExtract(playerUrl: string, refererUrl: string): Pro
   console.log(`[Phase 2] Fetching player page: ${playerUrl.slice(0, 80)}...`)
 
   try {
+    // First, fetch the player page to get the HTML and cf_token
     const response = await fetch(playerUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -161,6 +249,83 @@ async function fetchPlayerAndExtract(playerUrl: string, refererUrl: string): Pro
 
     const html = await response.text()
     console.log(`[Phase 2] Player page HTML: ${html.length} chars`)
+
+    // PRIORITY 0: Extract cf_token and try /sources? API endpoint
+    // Pattern: cf_token = "..." or "cf_token":"..." or cf_token: "..."
+    const cfTokenPatterns = [
+      /cf_token\s*[=:]\s*["']([^"']+)["']/i,
+      /["']cf_token["']\s*:\s*["']([^"']+)["']/i,
+      /window\.cf_token\s*=\s*["']([^"']+)["']/i,
+    ]
+
+    let cfToken: string | null = null
+    for (const pattern of cfTokenPatterns) {
+      const match = html.match(pattern)
+      if (match && match[1]) {
+        cfToken = match[1]
+        console.log(`[Phase 2.0] Found cf_token: ${cfToken.slice(0, 20)}...`)
+        break
+      }
+    }
+
+    if (cfToken) {
+      // Try /sources? API with cf_token
+      const playerUuid = playerUrl.match(/\/player\/([a-f0-9-]+)/)?.[1]
+      if (playerUuid) {
+        const sourcesUrl = `https://video.vid3rb.com/player/${playerUuid}/sources?cf_token=${encodeURIComponent(cfToken)}`
+        console.log(`[Phase 2.0] Trying sources API with cf_token: ${sourcesUrl.slice(0, 100)}...`)
+
+        try {
+          const sourcesResp = await fetch(sourcesUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Referer': playerUrl,
+              'Accept': 'application/json,*/*',
+              'Origin': 'https://video.vid3rb.com',
+            },
+            signal: AbortSignal.timeout(15000),
+          })
+
+          console.log(`[Phase 2.0] Sources API returned status: ${sourcesResp.status}`)
+
+          if (sourcesResp.ok) {
+            const text = await sourcesResp.text()
+            console.log(`[Phase 2.0] Response text (${text.length} chars):`, text.slice(0, 500))
+
+            let sourcesJson: any
+            try {
+              sourcesJson = JSON.parse(text)
+              console.log(`[Phase 2.0] Parsed JSON:`, JSON.stringify(sourcesJson).slice(0, 500))
+
+              // Try to extract video URL from JSON response
+              if (Array.isArray(sourcesJson)) {
+                console.log(`[Phase 2.0] Response is array with ${sourcesJson.length} items`)
+                const best = sourcesJson.filter((s: any) => s.src && !s.premium)
+                  .sort((a: any, b: any) => parseInt(b.res || b.label || '0') - parseInt(a.res || a.label || '0'))[0]
+                if (best?.src) {
+                  const videoUrl = best.src.replace(/\\\//g, '/')
+                  console.log(`[Phase 2.0] ✅ Found video from sources API: ${videoUrl.slice(0, 100)}...`)
+                  return videoUrl
+                }
+              } else if (sourcesJson.url || sourcesJson.src || sourcesJson.video_url) {
+                const videoUrl = (sourcesJson.url || sourcesJson.src || sourcesJson.video_url).replace(/\\\//g, '/')
+                console.log(`[Phase 2.0] ✅ Found video from sources API: ${videoUrl.slice(0, 100)}...`)
+                return videoUrl
+              }
+            } catch (jsonErr: any) {
+              console.log(`[Phase 2.0] Not valid JSON: ${jsonErr.message}`)
+            }
+          } else {
+            const errorText = await sourcesResp.text()
+            console.log(`[Phase 2.0] Sources API error (${sourcesResp.status}): ${errorText.slice(0, 200)}`)
+          }
+        } catch (err: any) {
+          console.log(`[Phase 2.0] Sources API exception: ${err.message}`)
+        }
+      }
+    } else {
+      console.log(`[Phase 2.0] No cf_token found in player HTML`)
+    }
 
     // Try to extract video URLs from HTML
     const foundUrls = extractVideoUrls(html)
@@ -293,6 +458,12 @@ serve(async (req: Request) => {
           if (isCfChallenge) {
             console.log('[Phase 1] Still got Cloudflare challenge, skipping Apify')
           } else {
+            // Debug: count wire:snapshot attributes and check for vid3rb
+            const wireSnapshots = (html.match(/wire:snapshot/g) || []).length
+            const hasVid3rb = html.includes('vid3rb')
+            const hasPlayerPath = html.includes('vid3rb.com/player')
+            console.log(`[Phase 1] wire:snapshot count: ${wireSnapshots}, hasVid3rb: ${hasVid3rb}, hasPlayerPath: ${hasPlayerPath}`)
+
             // Extract player iframe URL first (most reliable)
             const playerUrl = extractPlayerIframeUrl(html)
 
@@ -346,6 +517,13 @@ serve(async (req: Request) => {
               })
             }
 
+            // Debug: show first wire:snapshot value (first 300 chars) to diagnose
+            const snapshotMatch = /wire:snapshot\s*=\s*"([^"]{20,})/.exec(html)
+            if (snapshotMatch) {
+              console.log('[Apify] First wire:snapshot sample:', snapshotMatch[1].slice(0, 300))
+            } else {
+              console.log('[Apify] No wire:snapshot found in HTML')
+            }
             console.log('[Apify] No player iframe or video URL found in HTML')
           }
         }
