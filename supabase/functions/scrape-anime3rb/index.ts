@@ -23,7 +23,8 @@ function jsonResponse(data: object, status = 200) {
 // Call Apify Universal Bypasser actor (same as ani3rbscrap repo)
 async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: string; error?: string }> {
   // Using macheta/universal-bypasser - proven to work in ani3rbscrap
-  const actorId = 'macheta/universal-bypasser'
+  // Note: API uses ~ instead of / in actor ID
+  const actorId = 'macheta~universal-bypasser'
   const endpoint = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${apifyToken}`
 
   console.log(`[Apify] Using universal-bypasser for: ${url}`)
