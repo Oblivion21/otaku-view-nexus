@@ -20,44 +20,73 @@ function jsonResponse(data: object, status = 200) {
   })
 }
 
-// Call Apify Cloudflare Bypasser actor to fetch a Cloudflare-protected page
+// Call Apify Universal Bypasser actor (same as ani3rbscrap repo)
 async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: string; error?: string }> {
-  const actorId = 'neatrat~cloudflare-scraper'
+  // Using macheta/universal-bypasser - proven to work in ani3rbscrap
+  const actorId = 'macheta/universal-bypasser'
   const endpoint = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${apifyToken}`
 
-  console.log(`[Apify] Fetching: ${url}`)
+  console.log(`[Apify] Using universal-bypasser for: ${url}`)
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
-  })
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      // Longer timeout for Cloudflare bypass
+      signal: AbortSignal.timeout(90000), // 90 seconds
+    })
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error(`[Apify] HTTP ${response.status}: ${errorText.slice(0, 300)}`)
-    return { html: '', error: `Apify request failed: ${response.status}` }
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`[Apify] HTTP ${response.status}: ${errorText.slice(0, 300)}`)
+      return { html: '', error: `Apify request failed: ${response.status}` }
+    }
+
+    const items = await response.json()
+
+    if (!Array.isArray(items) || items.length === 0) {
+      console.log('[Apify] No items returned')
+      return { html: '', error: 'Apify returned no data' }
+    }
+
+    console.log(`[Apify] Got ${items.length} item(s) from dataset`)
+
+    // Extract HTML from various possible field names (same as ani3rbscrap)
+    const item = items[0]
+    let html = ''
+
+    for (const key of ['body', 'html', 'content', 'pageContent', 'text', 'result']) {
+      const val = item[key]
+      if (val && typeof val === 'string' && val.length > 100) {
+        html = val
+        break
+      }
+    }
+
+    // Check nested data.body/html
+    if (!html && item.data && typeof item.data === 'object') {
+      for (const key of ['body', 'html', 'content']) {
+        const val = item.data[key]
+        if (val && typeof val === 'string' && val.length > 100) {
+          html = val
+          break
+        }
+      }
+    }
+
+    if (!html) {
+      console.log('[Apify] No HTML in response. Item keys:', Object.keys(item))
+      // Fallback: return stringified item for debugging
+      return { html: JSON.stringify(item), error: 'No HTML content in Apify response' }
+    }
+
+    console.log(`[Apify] Got HTML, length: ${html.length}`)
+    return { html }
+  } catch (error: any) {
+    console.error('[Apify] Error:', error.message)
+    return { html: '', error: error.message }
   }
-
-  const items = await response.json()
-
-  if (!Array.isArray(items) || items.length === 0) {
-    return { html: '', error: 'Apify returned no data' }
-  }
-
-  // The Cloudflare Scraper actor typically returns items with body/html field
-  const item = items[0]
-  const html = item.body || item.html || item.content || item.pageContent || item.text || ''
-
-  if (!html) {
-    // If no known field, dump all keys for debugging
-    console.log('[Apify] Item keys:', Object.keys(item))
-    console.log('[Apify] Item sample:', JSON.stringify(item).slice(0, 500))
-    return { html: JSON.stringify(item), error: undefined }
-  }
-
-  console.log(`[Apify] Got HTML, length: ${html.length}`)
-  return { html }
 }
 
 // Extract the anime slug from anime3rb search results HTML

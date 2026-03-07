@@ -15,18 +15,21 @@ function jsonResponse(data: object, status = 200) {
   })
 }
 
-// Call Apify Cloudflare Bypasser actor to fetch a Cloudflare-protected page
+// Call Apify Universal Bypasser actor (same as ani3rbscrap repo)
 async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: string; error?: string }> {
-  const actorId = 'neatrat~cloudflare-scraper'
+  // Using macheta/universal-bypasser - proven to work in ani3rbscrap
+  const actorId = 'macheta/universal-bypasser'
   const endpoint = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${apifyToken}`
 
-  console.log(`[Apify] Fetching: ${url}`)
+  console.log(`[Apify] Using universal-bypasser for: ${url}`)
 
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
+      // Longer timeout for Cloudflare bypass
+      signal: AbortSignal.timeout(90000), // 90 seconds
     })
 
     if (!response.ok) {
@@ -38,15 +41,37 @@ async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: 
     const items = await response.json()
 
     if (!Array.isArray(items) || items.length === 0) {
+      console.log('[Apify] No items returned')
       return { html: '', error: 'Apify returned no data' }
     }
 
-    // The Cloudflare Scraper actor typically returns items with body/html field
+    console.log(`[Apify] Got ${items.length} item(s) from dataset`)
+
+    // Extract HTML from various possible field names (same as ani3rbscrap)
     const item = items[0]
-    const html = item.body || item.html || item.content || item.pageContent || item.text || ''
+    let html = ''
+
+    for (const key of ['body', 'html', 'content', 'pageContent', 'text', 'result']) {
+      const val = item[key]
+      if (val && typeof val === 'string' && val.length > 100) {
+        html = val
+        break
+      }
+    }
+
+    // Check nested data.body/html
+    if (!html && item.data && typeof item.data === 'object') {
+      for (const key of ['body', 'html', 'content']) {
+        const val = item.data[key]
+        if (val && typeof val === 'string' && val.length > 100) {
+          html = val
+          break
+        }
+      }
+    }
 
     if (!html) {
-      console.log('[Apify] Item keys:', Object.keys(item))
+      console.log('[Apify] No HTML in response. Item keys:', Object.keys(item))
       return { html: '', error: 'No HTML content in Apify response' }
     }
 
@@ -55,6 +80,106 @@ async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: 
   } catch (error: any) {
     console.error('[Apify] Error:', error.message)
     return { html: '', error: error.message }
+  }
+}
+
+// Extract player iframe URL from HTML (same as ani3rbscrap)
+function extractPlayerIframeUrl(html: string): string | null {
+  // Pattern 1: iframe src pointing to vid3rb player
+  const iframePattern = /(?:src|href)\s*=\s*["']?(https?:\/\/video\.vid3rb\.com\/player\/[^"'>\s]+)/i
+  let match = iframePattern.exec(html)
+  if (match) {
+    return match[1].replace(/&amp;/g, '&')
+  }
+
+  // Pattern 2: video_url in Livewire JSON (JSON-escaped slashes)
+  const livewirePattern = /"video_url"\s*:\s*"(https?:\\?\/\\?\/video\.vid3rb\.com\\?\/player\\?\/[^"]+)"/i
+  match = livewirePattern.exec(html)
+  if (match) {
+    return match[1].replace(/\\\//g, '/').replace(/&amp;/g, '&')
+  }
+
+  return null
+}
+
+// Parse video_sources from player page HTML (same as ani3rbscrap)
+function parseVideoSourcesFromHtml(html: string): string | null {
+  // Extract video_sources = [{src: "...", ...}, ...];
+  const matches = html.matchAll(/video_sources\s*=\s*(\[.*?\]);/gs)
+  const allMatches = Array.from(matches)
+
+  // Process matches in reverse order (last match is usually the real one)
+  for (const match of allMatches.reverse()) {
+    const raw = match[1]
+    if (!raw || raw.length <= 5) continue
+
+    try {
+      const sources = JSON.parse(raw)
+      if (!Array.isArray(sources)) continue
+
+      // Filter out premium sources, sort by resolution
+      const valid = sources.filter((s: any) => s.src && !s.premium)
+      valid.sort((a: any, b: any) => {
+        const resA = parseInt(a.res || a.label || '0')
+        const resB = parseInt(b.res || b.label || '0')
+        return resB - resA
+      })
+
+      if (valid.length > 0) {
+        const best = valid[0].src.replace(/\\\//g, '/')
+        console.log(`[Video Sources] Found ${valid.length} source(s), best: ${valid[0].label || valid[0].res || '?'}`)
+        return best
+      }
+    } catch (error: any) {
+      console.log(`[Video Sources] Failed to parse JSON: ${error.message}`)
+    }
+  }
+
+  return null
+}
+
+// Fetch player page and extract MP4 URL (Phase 2 - same as ani3rbscrap)
+async function fetchPlayerAndExtract(playerUrl: string, refererUrl: string): Promise<string | null> {
+  console.log(`[Phase 2] Fetching player page: ${playerUrl.slice(0, 80)}...`)
+
+  try {
+    const response = await fetch(playerUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': refererUrl,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+      },
+      signal: AbortSignal.timeout(30000),
+    })
+
+    if (!response.ok) {
+      console.log(`[Phase 2] Player page returned ${response.status}`)
+      return null
+    }
+
+    const html = await response.text()
+    console.log(`[Phase 2] Player page HTML: ${html.length} chars`)
+
+    // Try to parse video_sources first
+    const videoUrl = parseVideoSourcesFromHtml(html)
+    if (videoUrl) {
+      return videoUrl
+    }
+
+    // Fallback: extract direct MP4 URLs
+    const foundUrls = extractVideoUrls(html)
+    const mp4Url = foundUrls.find(u => u.includes('files.vid3rb.com') && u.includes('.mp4'))
+    if (mp4Url) {
+      console.log(`[Phase 2] Found MP4 URL in player HTML`)
+      return mp4Url
+    }
+
+    console.log(`[Phase 2] No video URL found in player page`)
+    return null
+  } catch (error: any) {
+    console.error(`[Phase 2] Error fetching player page: ${error.message}`)
+    return null
   }
 }
 
@@ -125,48 +250,91 @@ serve(async (req: Request) => {
       return jsonResponse({ url: '', error: 'blocked host: ' + parsedUrl.hostname })
     }
 
-    // Try Apify first (most reliable Cloudflare bypass)
+    // Try Apify first (most reliable Cloudflare bypass) - Two-phase approach like ani3rbscrap
     const apifyToken = Deno.env.get('APIFY_TOKEN')
     if (apifyToken) {
-      console.log('Using Apify to bypass Cloudflare...')
+      console.log('[Apify] Starting two-phase video extraction...')
       try {
+        // Phase 1: Bypass Cloudflare on the episode page
+        console.log('[Phase 1] Fetching episode page via Apify...')
         const apifyResult = await fetchWithApify(url, apifyToken)
 
         if (!apifyResult.error && apifyResult.html) {
           const html = apifyResult.html
           const pageTitle = html.match(/<title>([^<]+)<\/title>/i)?.[1] || ''
 
-          console.log('Apify success! Page title:', pageTitle)
+          console.log('[Phase 1] Success! Page title:', pageTitle)
 
-          // Extract video URLs from HTML
-          const foundUrls = extractVideoUrls(html)
+          // Check if it's still a Cloudflare challenge
+          const isCfChallenge = html.length < 20000 && (
+            html.includes('Just a moment') ||
+            html.includes('Checking your browser') ||
+            html.includes('cf-browser-verification')
+          )
 
-          // Prioritize direct MP4 files
-          const mp4Url = foundUrls.find(u => u.includes('files.vid3rb.com') && u.includes('.mp4'))
-          const vid3rbUrl = foundUrls.find(u => u.includes('vid3rb.com'))
-          const videoUrl = mp4Url || vid3rbUrl || foundUrls[0] || ''
+          if (isCfChallenge) {
+            console.log('[Phase 1] Still got Cloudflare challenge, skipping Apify')
+          } else {
+            // Extract player iframe URL first (most reliable)
+            const playerUrl = extractPlayerIframeUrl(html)
 
-          if (videoUrl) {
-            return jsonResponse({
-              url: videoUrl,
-              urls: foundUrls.map(u => ({
-                url: u,
-                type: 'embed',
-                server_name: 'anime3rb',
-                quality: '720p'
-              })),
-              debug: {
-                method: 'apify',
-                pageTitle,
-                foundCount: foundUrls.length,
+            if (playerUrl) {
+              console.log(`[Phase 1] Found player iframe: ${playerUrl.slice(0, 80)}...`)
+
+              // Phase 2: Fetch player page and extract MP4 URL
+              const videoUrl = await fetchPlayerAndExtract(playerUrl, url)
+
+              if (videoUrl) {
+                return jsonResponse({
+                  url: videoUrl,
+                  urls: [{
+                    url: videoUrl,
+                    type: 'direct',
+                    server_name: 'anime3rb',
+                    quality: '1080p'
+                  }],
+                  debug: {
+                    method: 'apify',
+                    phase: '2-phase-extraction',
+                    pageTitle,
+                    playerUrl: playerUrl.slice(0, 100),
+                  }
+                })
               }
-            })
+
+              console.log('[Phase 2] Failed to extract video from player page')
+            }
+
+            // Fallback: try to find direct MP4 URLs in episode page HTML
+            const foundUrls = extractVideoUrls(html)
+            const mp4Url = foundUrls.find(u => u.includes('files.vid3rb.com') && u.includes('.mp4'))
+
+            if (mp4Url) {
+              console.log('[Phase 1] Found direct MP4 URL in episode page')
+              return jsonResponse({
+                url: mp4Url,
+                urls: foundUrls.map(u => ({
+                  url: u,
+                  type: 'direct',
+                  server_name: 'anime3rb',
+                  quality: '720p'
+                })),
+                debug: {
+                  method: 'apify',
+                  phase: 'direct-extraction',
+                  pageTitle,
+                  foundCount: foundUrls.length,
+                }
+              })
+            }
+
+            console.log('[Apify] No player iframe or video URL found in HTML')
           }
         }
 
-        console.log('Apify failed, falling back to FlareSolverr...')
+        console.log('[Apify] Failed, falling back to FlareSolverr...')
       } catch (error: any) {
-        console.error('Apify error:', error.message)
+        console.error('[Apify] Error:', error.message)
       }
     }
 
