@@ -405,21 +405,80 @@ function extractPlayerUrlFromEpisodeHtml(html: string): string | null {
 
 function extractDirectUrlFromText(text: string): string | null {
   const patterns = [
-    /https?:\/\/[^\s"'<>]*files\.vid3rb\.com[^\s"'<>]*\.mp4[^\s"'<>]*/i,
-    /https?:\/\/video\.vid3rb\.com\/video\/[a-f0-9-]{36}(?:\?[^\s"'<>]*)?/i,
+    /https?:\/\/[^\s"'<>]*files\.vid3rb\.com[^\s"'<>]*\.mp4[^\s"'<>]*/gi,
+    /https?:\/\/video\.vid3rb\.com\/video\/[a-f0-9-]{36}(?:\?[^\s"'<>]*)?/gi,
   ]
 
+  const candidates: string[] = []
   for (const pattern of patterns) {
-    const match = text.match(pattern)
-    if (!match?.[0]) continue
-    const normalized = normalizeDirectUrl(match[0])
-    if (isDirectLikeUrl(normalized)) return normalized
+    const matches = text.match(pattern) || []
+    for (const raw of matches) {
+      const normalized = normalizeDirectUrl(raw)
+      if (isDirectLikeUrl(normalized)) {
+        candidates.push(normalized)
+      }
+    }
   }
 
-  return null
+  return pickBestDirectUrl(candidates)
+}
+
+function extractResolution(text: string): number {
+  const normalized = String(text || '').toLowerCase()
+  const exactMatch = normalized.match(/\b(2160|1440|1080|720|480|360|240)p\b/)
+  if (exactMatch?.[1]) return parseInt(exactMatch[1], 10)
+
+  const anyMatch = normalized.match(/\b(\d{3,4})\b/)
+  if (anyMatch?.[1]) {
+    const value = parseInt(anyMatch[1], 10)
+    if (value >= 240 && value <= 4320) return value
+  }
+
+  return 0
+}
+
+function getUrlResolution(url: string): number {
+  const normalized = normalizeDirectUrl(url)
+  const fromPath = normalized.match(/\/(2160|1440|1080|720|480|360|240)p(?:\.mp4|[/?#]|$)/i)
+  if (fromPath?.[1]) return parseInt(fromPath[1], 10)
+  return extractResolution(normalized)
+}
+
+function getSourceResolution(source: any): number {
+  const fields = [source?.res, source?.label, source?.quality, source?.name, source?.src]
+  let best = 0
+  for (const field of fields) {
+    best = Math.max(best, extractResolution(String(field ?? '')))
+  }
+  return best
+}
+
+function pickBestDirectUrl(urls: string[]): string | null {
+  if (!urls.length) return null
+
+  const unique = [...new Set(urls.map((u) => normalizeDirectUrl(u)).filter((u) => isDirectLikeUrl(u)))]
+  if (!unique.length) return null
+
+  unique.sort((a, b) => {
+    const resDiff = getUrlResolution(b) - getUrlResolution(a)
+    if (resDiff !== 0) return resDiff
+    // Prefer files mp4 when resolution ties.
+    const aMp4 = /\.mp4(?:$|[?#])/i.test(a) ? 1 : 0
+    const bMp4 = /\.mp4(?:$|[?#])/i.test(b) ? 1 : 0
+    if (aMp4 !== bMp4) return bMp4 - aMp4
+    return a.length - b.length
+  })
+
+  return unique[0]
+}
+
+function qualityFromUrl(url: string): string {
+  const res = getUrlResolution(url)
+  return res > 0 ? `${res}p` : 'auto'
 }
 
 function parseBestDirectFromPlayerHtml(html: string): string | null {
+  const candidates: string[] = []
   const matches = Array.from(html.matchAll(/video_sources\s*=\s*(\[.*?\]);/gs))
   for (const match of matches.reverse()) {
     const raw = match[1]
@@ -430,16 +489,22 @@ function parseBestDirectFromPlayerHtml(html: string): string | null {
 
       const valid = sources
         .filter((s: any) => s?.src && !s?.premium)
-        .sort((a: any, b: any) => parseInt(String(b?.res ?? '0'), 10) - parseInt(String(a?.res ?? '0'), 10))
+        .sort((a: any, b: any) => getSourceResolution(b) - getSourceResolution(a))
 
       for (const src of valid) {
         const candidate = normalizeDirectUrl(String(src.src))
-        if (isDirectLikeUrl(candidate)) return candidate
+        if (isDirectLikeUrl(candidate)) {
+          candidates.push(candidate)
+        }
       }
     } catch {
       // Keep checking the other matches.
     }
   }
+
+  const bestFromSources = pickBestDirectUrl(candidates)
+  if (bestFromSources) return bestFromSources
+
   return extractDirectUrlFromText(html)
 }
 
@@ -662,9 +727,12 @@ serve(async (req: Request) => {
 
       // 2) Fallback: signed direct URL already present in episode HTML.
       if (!directUrl) {
-        const signed = extracted.find((s) => isDirectLikeUrl(normalizeDirectUrl(s.url)))
-        if (signed) {
-          directUrl = signed.url
+        const fallbackCandidates = extracted
+          .map((s) => normalizeDirectUrl(s.url))
+          .filter((url) => isDirectLikeUrl(url))
+        const bestFallback = pickBestDirectUrl(fallbackCandidates)
+        if (bestFallback) {
+          directUrl = bestFallback
         }
       }
 
@@ -686,7 +754,7 @@ serve(async (req: Request) => {
           url: directUrl,
           type: 'direct',
           server_name: 'anime3rb-direct',
-          quality: '1080p',
+          quality: qualityFromUrl(directUrl),
         },
       ]
       usedEpisodeUrl = episodeUrl
