@@ -201,7 +201,7 @@ export default function EpisodeWatch() {
     async function resolveProxy() {
       if (!episodeData?.video_sources) return;
       const source = episodeData.video_sources[selectedServerIndex];
-      if (!source || source.type !== 'proxy') return;
+      if (!source || source.type !== 'proxy' || isDirectPlayableUrl(source.url)) return;
       // Already attempted (success or failure)
       if (proxyAttempted[selectedServerIndex]) return;
 

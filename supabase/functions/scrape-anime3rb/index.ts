@@ -247,8 +247,8 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
       // Filter out thumbnails and images
       if (url.match(/\.(jpg|jpeg|png|webp|gif|svg|vtt|srt)$/i)) continue
       if (url.match(/thumbnail/i)) continue
-      // If it's not a direct MP4, it needs proxy resolution
-      const isDirect = url.match(/\.mp4/i)
+      // Treat vid3rb /video/ URLs as directly playable stream URLs.
+      const isDirect = url.match(/\.mp4/i) || url.match(/video\.vid3rb\.com\/video\//i)
       sources.push({ url, type: isDirect ? 'direct' : 'proxy', server_name: 'anime3rb', quality: '720p' })
     }
   }
@@ -281,7 +281,7 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   while ((jsMatch = jsVideoPattern.exec(html)) !== null) {
     const url = jsMatch[1]
     if (!sources.some(s => s.url === url)) {
-      const isDirectVideo = url.match(/\.(mp4|m3u8|webm)/)
+      const isDirectVideo = url.match(/\.(mp4|m3u8|webm)/) || url.match(/video\.vid3rb\.com\/video\//i)
       const needsProxy = !isDirectVideo && (url.includes('anime3rb.com') || url.includes('vid3rb.com'))
       sources.push({
         url,
@@ -291,6 +291,14 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
       })
     }
   }
+
+  // Prefer directly playable sources first so the player uses them by default.
+  sources.sort((a, b) => {
+    const rank = (type: 'direct' | 'proxy' | 'embed') => (
+      type === 'direct' ? 0 : type === 'proxy' ? 1 : 2
+    )
+    return rank(a.type) - rank(b.type)
+  })
 
   return sources
 }
