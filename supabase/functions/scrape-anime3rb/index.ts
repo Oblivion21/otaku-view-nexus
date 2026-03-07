@@ -29,94 +29,194 @@ async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: 
 
   console.log(`[Apify] Using universal-bypasser for: ${url}`)
 
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-      // Longer timeout for Cloudflare bypass
-      signal: AbortSignal.timeout(90000), // 90 seconds
-    })
+  let lastError = 'Unknown Apify error'
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`[Apify] HTTP ${response.status}: ${errorText.slice(0, 300)}`)
-      return { html: '', error: `Apify request failed: ${response.status}` }
-    }
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+        // Longer timeout for Cloudflare bypass
+        signal: AbortSignal.timeout(90000), // 90 seconds
+      })
 
-    const items = await response.json()
-
-    if (!Array.isArray(items) || items.length === 0) {
-      console.log('[Apify] No items returned')
-      return { html: '', error: 'Apify returned no data' }
-    }
-
-    console.log(`[Apify] Got ${items.length} item(s) from dataset`)
-
-    // Extract HTML from various possible field names (same as ani3rbscrap)
-    const item = items[0]
-    let html = ''
-
-    for (const key of ['body', 'html', 'content', 'pageContent', 'text', 'result']) {
-      const val = item[key]
-      if (val && typeof val === 'string' && val.length > 100) {
-        html = val
-        break
+      if (!response.ok) {
+        const errorText = await response.text()
+        lastError = `Apify request failed: ${response.status}`
+        console.error(`[Apify] HTTP ${response.status}: ${errorText.slice(0, 300)}`)
+        continue
       }
-    }
 
-    // Check nested data.body/html
-    if (!html && item.data && typeof item.data === 'object') {
-      for (const key of ['body', 'html', 'content']) {
-        const val = item.data[key]
+      const items = await response.json()
+
+      if (!Array.isArray(items) || items.length === 0) {
+        lastError = 'Apify returned no data'
+        console.log('[Apify] No items returned')
+        continue
+      }
+
+      console.log(`[Apify] Got ${items.length} item(s) from dataset`)
+
+      // Extract HTML from various possible field names (same as ani3rbscrap)
+      const item = items[0]
+      let html = ''
+
+      for (const key of ['body', 'html', 'content', 'pageContent', 'text', 'result']) {
+        const val = item[key]
         if (val && typeof val === 'string' && val.length > 100) {
           html = val
           break
         }
       }
-    }
 
-    if (!html) {
-      console.log('[Apify] No HTML in response. Item keys:', Object.keys(item))
-      // Fallback: return stringified item for debugging
-      return { html: JSON.stringify(item), error: 'No HTML content in Apify response' }
-    }
+      // Check nested data.body/html
+      if (!html && item.data && typeof item.data === 'object') {
+        for (const key of ['body', 'html', 'content']) {
+          const val = item.data[key]
+          if (val && typeof val === 'string' && val.length > 100) {
+            html = val
+            break
+          }
+        }
+      }
 
-    console.log(`[Apify] Got HTML, length: ${html.length}`)
-    return { html }
-  } catch (error: any) {
-    console.error('[Apify] Error:', error.message)
-    return { html: '', error: error.message }
+      if (!html) {
+        lastError = 'No HTML content in Apify response'
+        console.log('[Apify] No HTML in response. Item keys:', Object.keys(item))
+        continue
+      }
+
+      console.log(`[Apify] Got HTML, length: ${html.length}`)
+      return { html }
+    } catch (error: any) {
+      lastError = error.message
+      console.error(`[Apify] Error (attempt ${attempt}/2):`, error.message)
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1500))
+    }
   }
+
+  return { html: '', error: lastError }
 }
 
-// Extract the anime slug from anime3rb search results HTML
+function normalizeText(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function scoreSlug(slug: string, query: string): number {
+  const slugNorm = normalizeText(slug.replace(/-/g, ' '))
+  const queryNorm = normalizeText(query)
+  if (!slugNorm || !queryNorm) return 0
+
+  let score = 0
+  if (slugNorm.includes(queryNorm)) score += 5
+  const slugTokens = new Set(slugNorm.split(' '))
+  const queryTokens = new Set(queryNorm.split(' '))
+  for (const token of queryTokens) {
+    if (slugTokens.has(token)) score += 1
+  }
+  return score
+}
+
+function buildSearchQueries(animeTitle: string, animeTitleEnglish?: string | null): string[] {
+  const queries: string[] = [animeTitle.trim()]
+
+  if (animeTitle.includes(':')) {
+    queries.push(animeTitle.split(':', 1)[0].trim())
+  }
+  if (animeTitle.includes(' - ')) {
+    queries.push(animeTitle.split(' - ', 1)[0].trim())
+  }
+  if (animeTitleEnglish && animeTitleEnglish !== animeTitle) {
+    queries.push(animeTitleEnglish.trim())
+  }
+
+  const cleaned = animeTitle.replace(/[^\w\s]+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (cleaned) queries.push(cleaned)
+
+  return [...new Set(queries.filter(Boolean))]
+}
+
+// Extract the best anime slug from anime3rb search results HTML.
 function extractAnimeSlugFromSearch(html: string, animeTitle: string): string | null {
-  // Look for links like /titles/anime-slug in the search results
-  const titleLinkPattern = /href=["']\/titles\/([a-z0-9-]+)["']/gi
+  const pattern = /href=["'](?:https?:\/\/(?:www\.)?anime3rb\.com)?\/(?:anime|titles)\/([a-z0-9-]+)["']/gi
   const matches: string[] = []
   let match
 
-  while ((match = titleLinkPattern.exec(html)) !== null) {
+  while ((match = pattern.exec(html)) !== null) {
     matches.push(match[1])
-  }
-
-  if (matches.length === 0) {
-    // Try alternate pattern: full URL
-    const fullUrlPattern = /href=["']https?:\/\/(?:www\.)?anime3rb\.com\/titles\/([a-z0-9-]+)["']/gi
-    while ((match = fullUrlPattern.exec(html)) !== null) {
-      matches.push(match[1])
-    }
   }
 
   if (matches.length === 0) return null
 
-  // Deduplicate
   const uniqueSlugs = [...new Set(matches)]
+  uniqueSlugs.sort((a, b) => scoreSlug(b, animeTitle) - scoreSlug(a, animeTitle))
   console.log(`[Search] Found ${uniqueSlugs.length} anime slugs:`, uniqueSlugs.slice(0, 5))
-
-  // Return the first result (most relevant match from anime3rb search)
   return uniqueSlugs[0]
+}
+
+function extractEpisodeLinksFromTitlePage(html: string, animeSlug: string): string[] {
+  const links: string[] = []
+  const seen = new Set<string>()
+  const pattern = /href=["'](?:https?:\/\/(?:www\.)?anime3rb\.com)?\/episode\/([^"'?#]+)["']/gi
+  let match
+
+  while ((match = pattern.exec(html)) !== null) {
+    const raw = (match[1] || '').replace(/^\/+|\/+$/g, '')
+    if (!raw) continue
+
+    let url = ''
+    let slug = ''
+
+    const slashFormat = raw.match(/^([^/]+)\/(\d+)$/)
+    if (slashFormat) {
+      slug = slashFormat[1]
+      url = `https://anime3rb.com/episode/${slug}/${slashFormat[2]}`
+    } else {
+      const dashFormat = raw.match(/^(.+)-episode-(\d+)$/)
+      if (dashFormat) {
+        slug = dashFormat[1]
+        url = `https://anime3rb.com/episode/${slug}-episode-${dashFormat[2]}`
+      }
+    }
+
+    if (!url || !slug) continue
+    if (slug !== animeSlug && !slug.includes(animeSlug) && !animeSlug.includes(slug)) continue
+    if (!seen.has(url)) {
+      seen.add(url)
+      links.push(url)
+    }
+  }
+
+  return links
+}
+
+function buildEpisodeUrlCandidates(animeSlug: string, episodeNumber: number, titleHtml: string): string[] {
+  const candidates: string[] = []
+
+  const titleLinks = extractEpisodeLinksFromTitlePage(titleHtml, animeSlug)
+  if (titleLinks.length > 0 && episodeNumber >= 1 && episodeNumber <= titleLinks.length) {
+    // Forward mapping only (ep1 -> /1)
+    candidates.push(titleLinks[episodeNumber - 1])
+  }
+
+  // Exact numeric fallback if link exists
+  const exactSuffix = `/${episodeNumber}`
+  for (const link of titleLinks) {
+    if (link.endsWith(exactSuffix)) {
+      candidates.push(link)
+      break
+    }
+  }
+
+  // Pattern fallbacks
+  candidates.push(
+    `https://anime3rb.com/episode/${animeSlug}/${episodeNumber}`,
+    `https://anime3rb.com/episode/${animeSlug}-episode-${episodeNumber}`,
+    `https://anime3rb.com/episodes/${animeSlug}/${episodeNumber}`,
+  )
+
+  return [...new Set(candidates)]
 }
 
 // Extract video URLs from anime3rb episode page HTML
@@ -195,15 +295,53 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   return sources
 }
 
-// Normalize anime title to a search-friendly format
-function normalizeForSearch(title: string): string {
-  // Remove common suffixes and special chars for better search
-  return title
-    .replace(/\s*\(TV\)\s*/gi, '')
-    .replace(/\s*Season\s*\d+/gi, '')
-    .replace(/[^\w\s-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+function extractPlayerUrlFromEpisodeHtml(html: string): string | null {
+  const match = html.match(/https?:\/\/video\.vid3rb\.com\/player\/[a-f0-9-]{36}[^\s"'<>]*/i)
+  if (match && match[0]) {
+    return match[0].replace(/\\\//g, '/').replace(/&amp;/g, '&')
+  }
+  return null
+}
+
+function parseBestDirectFromPlayerHtml(html: string): string | null {
+  const matches = Array.from(html.matchAll(/video_sources\s*=\s*(\[.*?\]);/gs))
+  for (const match of matches.reverse()) {
+    const raw = match[1]
+    if (!raw || raw.length <= 5) continue
+    try {
+      const sources = JSON.parse(raw)
+      if (!Array.isArray(sources)) continue
+      const valid = sources
+        .filter((s: any) => s.src && !s.premium)
+        .sort((a: any, b: any) => parseInt(b.res || '0') - parseInt(a.res || '0'))
+      if (valid.length > 0) {
+        return String(valid[0].src).replace(/\\\//g, '/')
+      }
+    } catch {
+      // continue
+    }
+  }
+  return null
+}
+
+async function fetchDirectVideoFromPlayer(playerUrl: string, refererUrl: string): Promise<string | null> {
+  try {
+    const resp = await fetch(playerUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': refererUrl,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      signal: AbortSignal.timeout(30000),
+    })
+    if (!resp.ok) return null
+
+    const html = await resp.text()
+    const best = parseBestDirectFromPlayerHtml(html)
+    return best
+  } catch {
+    return null
+  }
 }
 
 serve(async (req: Request) => {
@@ -241,83 +379,123 @@ serve(async (req: Request) => {
         .single()
 
       if (cached?.video_sources && cached.video_sources.length > 0) {
-        console.log(`[Cache] Found cached episode: mal_id=${malId}, ep=${episodeNumber}`)
-        return jsonResponse({
-          video_sources: cached.video_sources,
-          cached: true,
-          debug: { method: 'cache' },
-        })
+        const hasPlayableDirect = cached.video_sources.some((s: any) =>
+          s?.type === 'direct' || /video\.vid3rb\.com\/video\//i.test(String(s?.url || ''))
+        )
+
+        if (hasPlayableDirect) {
+          console.log(`[Cache] Found cached episode: mal_id=${malId}, ep=${episodeNumber}`)
+          return jsonResponse({
+            video_sources: cached.video_sources,
+            cached: true,
+            debug: { method: 'cache' },
+          })
+        }
+
+        console.log(`[Cache] Cached sources are proxy-only; re-scraping mal_id=${malId}, ep=${episodeNumber}`)
       }
     }
 
     console.log(`[Scraper] Starting for "${animeTitle}" Episode ${episodeNumber}`)
 
-    // Step 1: Search anime3rb for the anime
-    const searchQuery = normalizeForSearch(animeTitle)
-    const searchUrl = `https://anime3rb.com/search?q=${encodeURIComponent(searchQuery)}`
+    // Step 1: Search anime3rb for the anime slug (with query fallbacks)
+    const searchQueries = buildSearchQueries(animeTitle, animeTitleEnglish)
+    let animeSlug: string | null = null
+    let lastSearchDebug: any = null
 
-    console.log(`[Step 1] Searching anime3rb: ${searchUrl}`)
-    const searchResult = await fetchWithApify(searchUrl, apifyToken)
+    for (const query of searchQueries) {
+      const searchUrl = `https://anime3rb.com/search?q=${encodeURIComponent(query)}`
+      console.log(`[Step 1] Searching anime3rb: ${searchUrl}`)
 
-    if (searchResult.error && !searchResult.html) {
-      return jsonResponse({
-        error: 'Failed to search anime3rb',
-        debug: { step: 'search', searchUrl, error: searchResult.error },
-      })
-    }
+      const searchResult = await fetchWithApify(searchUrl, apifyToken)
+      lastSearchDebug = {
+        query,
+        searchUrl,
+        error: searchResult.error,
+        htmlLength: searchResult.html?.length || 0,
+      }
 
-    // Extract anime slug from search results
-    let animeSlug = extractAnimeSlugFromSearch(searchResult.html, animeTitle)
+      if (!searchResult.html) continue
 
-    // If search with Japanese/romaji title fails, try English title
-    if (!animeSlug && animeTitleEnglish && animeTitleEnglish !== animeTitle) {
-      console.log(`[Step 1b] Retrying search with English title: "${animeTitleEnglish}"`)
-      const searchUrl2 = `https://anime3rb.com/search?q=${encodeURIComponent(normalizeForSearch(animeTitleEnglish))}`
-      const searchResult2 = await fetchWithApify(searchUrl2, apifyToken)
-      if (searchResult2.html) {
-        animeSlug = extractAnimeSlugFromSearch(searchResult2.html, animeTitleEnglish)
+      animeSlug = extractAnimeSlugFromSearch(searchResult.html, animeTitle)
+      if (animeSlug) {
+        break
       }
     }
 
     if (!animeSlug) {
       return jsonResponse({
         error: 'Anime not found on anime3rb',
-        debug: {
-          step: 'search',
-          searchUrl,
-          searchQuery,
-          htmlLength: searchResult.html.length,
-          htmlSample: searchResult.html.slice(0, 500),
-        },
+        debug: { step: 'search', lastSearchDebug, searchQueries },
       })
     }
 
     console.log(`[Step 1] Found anime slug: ${animeSlug}`)
 
-    // Step 2: Fetch the episode page
-    const episodeUrl = `https://anime3rb.com/episode/${animeSlug}/${episodeNumber}`
-    console.log(`[Step 2] Fetching episode page: ${episodeUrl}`)
+    // Step 2: Fetch title page and build episode URL candidates
+    const titleUrl = `https://anime3rb.com/titles/${animeSlug}`
+    console.log(`[Step 2] Fetching title page: ${titleUrl}`)
+    const titleResult = await fetchWithApify(titleUrl, apifyToken)
+    const episodeCandidates = buildEpisodeUrlCandidates(
+      animeSlug,
+      episodeNumber,
+      titleResult.html || '',
+    )
 
-    const episodeResult = await fetchWithApify(episodeUrl, apifyToken)
+    console.log(`[Step 2] Episode URL candidates:`, episodeCandidates)
 
-    if (episodeResult.error && !episodeResult.html) {
-      return jsonResponse({
-        error: 'Failed to fetch episode page',
-        debug: { step: 'episode', episodeUrl, error: episodeResult.error },
-      })
+    // Step 3: Try candidate episode pages until one yields sources
+    let videoSources: ReturnType<typeof extractVideoUrls> = []
+    let usedEpisodeUrl: string | null = null
+    let lastEpisodeError: string | undefined = undefined
+
+    for (const episodeUrl of episodeCandidates) {
+      console.log(`[Step 3] Fetching episode page: ${episodeUrl}`)
+      const episodeResult = await fetchWithApify(episodeUrl, apifyToken)
+      if (episodeResult.error && !episodeResult.html) {
+        lastEpisodeError = episodeResult.error
+        continue
+      }
+
+      const extracted = extractVideoUrls(episodeResult.html)
+      if (extracted.length > 0) {
+        const hasDirect = extracted.some((s) =>
+          s.type === 'direct' || /video\.vid3rb\.com\/video\//i.test(s.url),
+        )
+
+        if (!hasDirect) {
+          const playerUrl =
+            extractPlayerUrlFromEpisodeHtml(episodeResult.html) ||
+            extracted.find((s) => /video\.vid3rb\.com\/player\//i.test(s.url))?.url ||
+            null
+
+          if (playerUrl) {
+            const directUrl = await fetchDirectVideoFromPlayer(playerUrl, episodeUrl)
+            if (directUrl) {
+              extracted.unshift({
+                url: directUrl,
+                type: 'direct',
+                server_name: 'anime3rb-direct',
+                quality: '1080p',
+              })
+            }
+          }
+        }
+
+        videoSources = extracted
+        usedEpisodeUrl = episodeUrl
+        break
+      }
     }
-
-    // Step 3: Extract video URLs from the episode page
-    const videoSources = extractVideoUrls(episodeResult.html)
 
     if (videoSources.length === 0) {
       return jsonResponse({
-        error: 'No video sources found on episode page',
+        error: 'No video sources found on candidate episode pages',
         debug: {
           step: 'extract',
-          episodeUrl,
-          htmlLength: episodeResult.html.length,
-          htmlSample: episodeResult.html.slice(0, 1000),
+          animeSlug,
+          episodeCandidates,
+          lastEpisodeError,
         },
       })
     }
@@ -355,7 +533,7 @@ serve(async (req: Request) => {
       debug: {
         method: 'apify',
         animeSlug,
-        episodeUrl,
+        episodeUrl: usedEpisodeUrl,
         sourceCount: videoSources.length,
       },
     })
