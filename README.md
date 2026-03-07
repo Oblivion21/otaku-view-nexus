@@ -4,6 +4,35 @@
 
 **URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
 
+## Anime3rb scraper integration (AnimeZero)
+
+This website is now wired to `ani3rbscrap` for episode fallback scraping.
+
+1. Start the Python scraper API:
+
+```sh
+cd ani3rbscrap
+pip install -r requirements.txt
+python server.py
+```
+
+2. Set frontend env var in your project `.env`:
+
+```sh
+VITE_SCRAPER_API_URL=http://localhost:8000
+```
+
+3. Run the frontend:
+
+```sh
+npm run dev
+```
+
+Playback flow is now:
+- Supabase cached episode sources first
+- `ani3rbscrap` API fallback (`/api/resolve-by-name`)
+- existing Supabase edge scraper fallback if needed
+
 ## How can I edit this code?
 
 There are several ways of editing your application.

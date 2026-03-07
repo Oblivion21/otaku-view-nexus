@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAnimeById, useAnimeEpisodes } from "@/hooks/useAnime";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getEpisodeData, getAnimeEpisodes, resolveProxyVideoUrl, scrapeAnime3rbEpisode, type VideoSource, type AnimeEpisode } from "@/lib/supabase";
+import { resolveVideoByName } from "@/lib/scraper-api";
 
 // Get episode styling based on category and tags (Detective Conan only)
 function getEpisodeStyle(episode: any, animeId: number) {
@@ -39,6 +40,57 @@ function getEpisodeStyle(episode: any, animeId: number) {
   return { background, border };
 }
 
+function isDirectPlayableUrl(url: string): boolean {
+  return (
+    /\.(mp4|webm|ogg|m3u8|mpd)(?:$|[?#])/i.test(url) ||
+    /video\.vid3rb\.com\/video\//i.test(url)
+  );
+}
+
+function buildEpisodeDataFromScrapedUrl(
+  animeId: number,
+  episodeNumber: number,
+  videoUrl: string
+): AnimeEpisode {
+  const sourceType: VideoSource["type"] = isDirectPlayableUrl(videoUrl)
+    ? "direct"
+    : (videoUrl.includes("anime3rb.com") || videoUrl.includes("vid3rb.com"))
+      ? "proxy"
+      : "embed";
+
+  return {
+    id: "",
+    mal_id: animeId,
+    episode_number: episodeNumber,
+    video_url: videoUrl,
+    quality: "auto",
+    video_sources: [
+      {
+        server_name: "anime3rb",
+        url: videoUrl,
+        quality: "auto",
+        type: sourceType,
+      },
+    ],
+    subtitle_language: "ar",
+    is_active: true,
+    category: null,
+    tags: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function getAnimeNameCandidates(anime: any): string[] {
+  const names = [
+    anime?.title_english,
+    anime?.title,
+    anime?.title_japanese,
+  ].filter((name): name is string => Boolean(name && String(name).trim()));
+
+  return [...new Set(names.map((name) => name.trim()))];
+}
+
 export default function EpisodeWatch() {
   const { id, episode } = useParams<{ id: string; episode: string }>();
   const animeId = Number(id);
@@ -64,26 +116,19 @@ export default function EpisodeWatch() {
 
   const anime = animeData?.data;
 
-  // Fetch full episode data from Supabase, then auto-scrape if not found
+  // Always scrape from Python API on open, then fall back to cache paths if needed.
   useEffect(() => {
     async function fetchEpisodeVideo() {
       if (isTrailer || !animeId || !epNum) return;
 
       setLoadingVideo(true);
       setScrapeError(null);
-      const data = await getEpisodeData(animeId, epNum);
+      setEpisodeData(null);
+      setResolvedProxyUrls({});
+      setProxyAttempted({});
+      setProxyError(null);
 
-      if (data && ((data.video_sources && data.video_sources.length > 0) || data.video_url)) {
-        // Episode data found in database
-        setEpisodeData(data);
-        setSelectedServerIndex(0);
-        setLoadingVideo(false);
-        return;
-      }
-
-      // No episode data in database — trigger scraper
       if (!anime) {
-        // Anime data not loaded yet, wait for it
         setLoadingVideo(false);
         return;
       }
@@ -91,6 +136,32 @@ export default function EpisodeWatch() {
       setScraping(true);
       setLoadingVideo(false);
 
+      const animeNames = getAnimeNameCandidates(anime);
+      let pythonScrapeError: string | null = null;
+
+      for (const animeName of animeNames) {
+        const apiResult = await resolveVideoByName(animeName, epNum);
+        if (apiResult.success && apiResult.video_url) {
+          setEpisodeData(buildEpisodeDataFromScrapedUrl(animeId, epNum, apiResult.video_url));
+          setSelectedServerIndex(0);
+          setScraping(false);
+          return;
+        }
+        if (apiResult.error) {
+          pythonScrapeError = apiResult.error;
+        }
+      }
+
+      // Fallback 1: try cached DB sources
+      const data = await getEpisodeData(animeId, epNum);
+      if (data && ((data.video_sources && data.video_sources.length > 0) || data.video_url)) {
+        setEpisodeData(data);
+        setSelectedServerIndex(0);
+        setScraping(false);
+        return;
+      }
+
+      // Fallback 2: keep existing edge function as a final backup
       const result = await scrapeAnime3rbEpisode(
         anime.title,
         anime.title_english || null,
@@ -118,7 +189,7 @@ export default function EpisodeWatch() {
         });
         setSelectedServerIndex(0);
       } else {
-        setScrapeError(result.error || 'لم يتم العثور على مصدر الفيديو');
+        setScrapeError(pythonScrapeError || result.error || 'لم يتم العثور على مصدر الفيديو');
       }
     }
 
@@ -185,8 +256,7 @@ export default function EpisodeWatch() {
 
   // Render video player based on URL type
   const renderVideoPlayer = (url: string, title: string) => {
-    // Check if it's a direct video file (has .mp4, .m3u8, etc.)
-    const isDirectVideo = url.match(/\.(mp4|webm|ogg|m3u8|mpd)/i);
+    const isDirectVideo = isDirectPlayableUrl(url);
 
     if (isDirectVideo) {
       // Direct video file - use HTML5 video player
