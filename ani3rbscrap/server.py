@@ -12,16 +12,15 @@ Usage:
     python server.py
 """
 
-import asyncio
 import os
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from scraper.chain import scrape_video_url
-from scraper.search import search_anime3rb, search_and_build_episode_urls
+from scraper.chain import scrape_video_url, validate_requested_methods
+from scraper.search import search_anime3rb, search_and_build_episode_url
 
 app = FastAPI(
     title="Anime3rb Scraper API",
@@ -87,7 +86,8 @@ async def resolve_by_url(req: ResolveByUrlRequest):
     This is the original flow — provide the full episode URL.
     """
     try:
-        video_url = await scrape_video_url(req.url, methods=req.methods)
+        methods = validate_requested_methods(req.methods)
+        video_url = await scrape_video_url(req.url, methods=methods)
         if video_url:
             return ResolveResponse(
                 success=True,
@@ -114,43 +114,42 @@ async def resolve_by_name(req: ResolveByNameRequest):
     4. Scrapes the video URL using the fallback chain
     5. Returns the playable video URL
     """
-    # Step 1: Search anime3rb for the anime slug and build candidate episode URLs
-    episode_page_urls = await search_and_build_episode_urls(
+    try:
+        methods = validate_requested_methods(req.methods)
+    except ValueError as e:
+        return ResolveResponse(success=False, error=str(e))
+
+    # Step 1: Search anime3rb for the anime slug
+    episode_page_url = await search_and_build_episode_url(
         req.anime_name, req.episode_number
     )
 
-    if not episode_page_urls:
+    if not episode_page_url:
         return ResolveResponse(
             success=False,
             error=f"Could not find '{req.anime_name}' on anime3rb.com",
         )
 
-    # Step 2: Try scraping each candidate episode page URL
-    last_error = None
-    for episode_page_url in episode_page_urls:
-        try:
-            video_url = await scrape_video_url(episode_page_url, methods=req.methods)
-            if video_url:
-                return ResolveResponse(
-                    success=True,
-                    video_url=video_url,
-                    episode_page_url=episode_page_url,
-                )
-        except Exception as e:
-            last_error = str(e)
-
-    if last_error:
+    # Step 2: Scrape the video URL from the episode page
+    try:
+        video_url = await scrape_video_url(episode_page_url, methods=methods)
+        if video_url:
+            return ResolveResponse(
+                success=True,
+                video_url=video_url,
+                episode_page_url=episode_page_url,
+            )
         return ResolveResponse(
             success=False,
-            error=last_error,
-            episode_page_url=episode_page_urls[0],
+            error="Found the episode page but could not extract the video URL",
+            episode_page_url=episode_page_url,
         )
-
-    return ResolveResponse(
-        success=False,
-        error="Found anime but could not extract video URL from candidate episode pages",
-        episode_page_url=episode_page_urls[0],
-    )
+    except Exception as e:
+        return ResolveResponse(
+            success=False,
+            error=str(e),
+            episode_page_url=episode_page_url,
+        )
 
 
 @app.get("/api/resolve-by-name", response_model=ResolveResponse)

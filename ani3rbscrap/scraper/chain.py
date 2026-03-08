@@ -8,7 +8,7 @@ Stops and returns as soon as one method successfully extracts the video URL.
 import asyncio
 from typing import Optional, Callable, Awaitable
 
-from scraper.methods import camoufox_method
+from scraper.methods import curl_method
 from scraper.methods.api_methods import (
     scrape_apify_bypasser,
     scrape_apify_scraper,
@@ -19,16 +19,24 @@ import config
 
 # Ordered list of (name, async scrape function)
 METHODS: list[tuple[str, Callable[[str], Awaitable[Optional[str]]]]] = [
-    # Allowed methods only
+    ("curl_cffi", curl_method.scrape),
     ("apify_bypasser",  scrape_apify_bypasser),
     ("apify_scraper",   scrape_apify_scraper),
-    ("camoufox",    camoufox_method.scrape),
 ]
 
-# Accept common typo/alias from CLI or API callers.
-METHOD_ALIASES = {
-    "camoufix": "camoufox",
-}
+SUPPORTED_METHOD_NAMES = tuple(name for name, _ in METHODS)
+
+
+def validate_requested_methods(methods: Optional[list[str]]) -> Optional[list[str]]:
+    """Normalize and validate requested method names."""
+    if methods is None:
+        return None
+
+    normalized = [method.strip() for method in methods if isinstance(method, str) and method.strip()]
+    invalid = [method for method in normalized if method not in SUPPORTED_METHOD_NAMES]
+    if invalid:
+        raise ValueError(f"Unsupported methods: {', '.join(invalid)}")
+    return normalized
 
 
 async def scrape_video_url(
@@ -42,11 +50,10 @@ async def scrape_video_url(
     - None return           → method tried but failed, move to next immediately
     - Other exception       → transient error, retry up to MAX_RETRIES times
     """
+    requested_methods = validate_requested_methods(methods)
     chain = METHODS
-    if methods:
-        normalized_methods = [METHOD_ALIASES.get(m, m) for m in methods]
-        method_map = {name: fn for name, fn in METHODS}
-        chain = [(name, method_map[name]) for name in normalized_methods if name in method_map]
+    if requested_methods:
+        chain = [(name, fn) for name, fn in METHODS if name in requested_methods]
 
     print(f"Scraping video URL from: {episode_url}")
     print(f"Methods to try: {[name for name, _ in chain]}")

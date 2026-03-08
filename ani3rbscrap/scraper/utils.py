@@ -39,15 +39,15 @@ def is_cloudflare_challenge(html: str) -> bool:
 def _video_url_patterns() -> list[str]:
     """Return regex patterns that match vid3rb *playable* video URLs.
 
-    Matches two formats:
-      1. files.vid3rb.com/.../*.mp4  — legacy direct MP4 links
-      2. video.vid3rb.com/video/<uuid>?speed=...&token=...&expires=... — new streaming URLs
+    Only matches files.vid3rb.com/.../*.mp4 — actual MP4 file links.
+
+    NOTE: video.vid3rb.com/video/<uuid> is a metadata/thumbnail endpoint,
+    NOT a playable video.  video.vid3rb.com/player/<uuid> is the player
+    iframe (handled by extract_player_iframe_url instead).
     """
     return [
-        # Format 1: files.vid3rb.com MP4 files (legacy)
+        # files.vid3rb.com  ...  .mp4  (the actual playable MP4 file)
         rf'https?://[^\s"\'<>]*{re.escape(config.VIDEO_HOST_PATTERN)}[^\s"\'<>]*{re.escape(config.VIDEO_FILE_EXTENSION)}[^\s"\'<>]*',
-        # Format 2: video.vid3rb.com/video/<uuid>?speed=...&token=...&expires=... (new format)
-        rf'https?://video\.vid3rb\.com/video/[a-f0-9-]{{36}}(?:\?[^\s"\'<>]*)?',
     ]
 
 
@@ -68,134 +68,26 @@ def extract_all_video_urls(text: str) -> list[str]:
     return list(urls)
 
 
-def _decode_html_entities(text: str) -> str:
-    """Decode common HTML entities in a string."""
-    return (text
-            .replace("&quot;", '"')
-            .replace("&amp;", "&")
-            .replace("&#39;", "'")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">"))
-
-
-def _find_vid3rb_player_url(text: str) -> Optional[str]:
-    """Find the first vid3rb player URL in plain (decoded) text."""
-    pattern = r'https?://video\.vid3rb\.com/player/[a-f0-9-]{36}[^\s"\'<>]*'
-    match = re.search(pattern, text)
-    if match:
-        return match.group(0).replace("\\/", "/").replace("&amp;", "&")
-    return None
-
-
-def _extract_from_wire_snapshot(html: str) -> Optional[str]:
-    """Parse Livewire wire:snapshot attributes and search for vid3rb player URL.
-
-    Livewire v3 stores component state in HTML like:
-        <div wire:snapshot="{&quot;data&quot;:{&quot;video_url&quot;:&quot;https:\\/\\/video.vid3rb.com\\/player\\/UUID?token=...&quot;}}">
-
-    The JSON is HTML-entity-encoded (" → &quot;, & → &amp;).
-    We decode it and parse as JSON to find any vid3rb player URL.
-    """
-    import json as _json
-
-    # Find all wire:snapshot attribute values
-    snapshot_pattern = r'wire:snapshot\s*=\s*"((?:[^"\\]|\\.)*)"|wire:snapshot\s*=\s*\'((?:[^\'\\]|\\.)*)\'|wire:initial-data\s*=\s*"((?:[^"\\]|\\.)*)"'
-    for m in re.finditer(snapshot_pattern, html, re.DOTALL):
-        raw = m.group(1) or m.group(2) or m.group(3)
-        if not raw:
-            continue
-
-        # Decode HTML entities to get real JSON
-        decoded = _decode_html_entities(raw)
-
-        # Quick check before expensive JSON parse
-        if "vid3rb" not in decoded:
-            continue
-
-        # Try to find the URL directly in decoded text
-        url = _find_vid3rb_player_url(decoded)
-        if url:
-            return url
-
-        # Try full JSON parse as fallback
-        try:
-            data = _json.loads(decoded)
-            # Recursively search JSON for vid3rb player URLs
-            url = _search_json_for_player_url(data)
-            if url:
-                return url
-        except Exception:
-            pass
-
-    return None
-
-
-def _search_json_for_player_url(obj, depth: int = 0) -> Optional[str]:
-    """Recursively search a parsed JSON object for vid3rb player URLs."""
-    if depth > 10:
-        return None
-    if isinstance(obj, str):
-        url = _find_vid3rb_player_url(obj)
-        return url
-    if isinstance(obj, dict):
-        for v in obj.values():
-            result = _search_json_for_player_url(v, depth + 1)
-            if result:
-                return result
-    if isinstance(obj, list):
-        for item in obj:
-            result = _search_json_for_player_url(item, depth + 1)
-            if result:
-                return result
-    return None
-
-
 def extract_player_iframe_url(html: str) -> Optional[str]:
     """Extract the vid3rb player iframe URL from HTML.
 
     The episode page embeds the video player URL in multiple ways:
       1. <iframe src="https://video.vid3rb.com/player/<uuid>?token=...&expires=...">
-      2. Livewire wire:snapshot (HTML-entity-encoded JSON): parsed recursively
-      3. Livewire wire:snapshot JSON with JSON-escaped slashes (literal quotes)
-      4. data-src / data-url / data-iframe attributes
-      5. JavaScript variables or object literals
-      6. Catch-all: any occurrence of the player URL pattern anywhere in the page
+      2. Livewire wire:snapshot JSON: "video_url":"https:\\/\\/video.vid3rb.com\\/player\\/..."
+    The actual .mp4 is loaded inside that player when play is clicked.
     """
-    # 1. Match iframe/link src or href pointing to vid3rb player
-    pattern1 = r'(?:src|href|data-src|data-url|data-iframe)\s*=\s*["\']?(https?://video\.vid3rb\.com/player/[^"\'>\s]+)'
-    match = re.search(pattern1, html, re.IGNORECASE)
+    # 1. Match iframe src/href pointing to vid3rb player
+    pattern = r'(?:src|href)\s*=\s*["\']?(https?://video\.vid3rb\.com/player/[^"\'>\s]+)'
+    match = re.search(pattern, html)
     if match:
         url = match.group(1).replace("&amp;", "&")
         return url
 
-    # 2. Parse Livewire wire:snapshot (HTML-entity-encoded JSON) — most likely location
-    url = _extract_from_wire_snapshot(html)
-    if url:
-        return url
-
-    # 3. Match video_url in Livewire wire:snapshot JSON (JSON-escaped slashes, literal quotes)
-    pattern3 = r'"video_url"\s*:\s*"(https?:\\?/\\?/video\.vid3rb\.com\\?/player\\?/[^"]+)"'
-    match3 = re.search(pattern3, html)
-    if match3:
-        url = match3.group(1).replace("\\/", "/").replace("&amp;", "&")
-        return url
-
-    # 4. Match in JavaScript object literals or variable assignments
-    pattern4 = r'''(?:url|src|href|iframe|player|video_url|videoUrl)\s*[=:]\s*['"](https?://video\.vid3rb\.com/player/[^'"]+)'''
-    match4 = re.search(pattern4, html, re.IGNORECASE)
-    if match4:
-        url = match4.group(1).replace("&amp;", "&")
-        return url
-
-    # 5. Catch-all: find the player UUID anywhere in the page regardless of encoding.
-    # Handles normal slashes (/), JSON-escaped slashes (\/), and HTML entities (&amp;)
-    pattern5 = r'https?:(?://|\\?/\\?/)video\.vid3rb\.com(?:\\?/)player(?:\\?/)([a-f0-9-]{36}(?:[?&][^\s"\'<>\\]*)?)'
-    match5 = re.search(pattern5, html)
-    if match5:
-        raw = match5.group(0)
-        url = raw.replace("\\/", "/").replace("&amp;", "&")
-        if not url.startswith("https://"):
-            url = "https://video.vid3rb.com/player/" + match5.group(1).replace("\\/", "/").replace("&amp;", "&")
+    # 2. Match video_url in Livewire wire:snapshot JSON (JSON-escaped slashes)
+    pattern2 = r'"video_url"\s*:\s*"(https?:\\?/\\?/video\.vid3rb\.com\\?/player\\?/[^"]+)"'
+    match2 = re.search(pattern2, html)
+    if match2:
+        url = match2.group(1).replace("\\/", "/").replace("&amp;", "&")
         return url
 
     return None
@@ -209,11 +101,7 @@ PLAYER_INTERCEPT_JS = """
         // Capture via PerformanceObserver
         window.__mp4_url = null;
         function checkUrl(url) {
-            if (url && (
-                url.includes('.mp4') ||
-                url.includes('files.vid3rb.com') ||
-                (url.includes('video.vid3rb.com/video/') && url.includes('token='))
-            )) {
+            if (url && (url.includes('.mp4') || url.includes('files.vid3rb.com'))) {
                 window.__mp4_url = url;
                 resolve(url);
                 return true;
