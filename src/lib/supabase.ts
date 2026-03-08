@@ -127,7 +127,7 @@ export async function scrapeAnime3rbEpisode(
 
   try {
     const { data, error } = await supabase.functions.invoke('scrape-anime3rb', {
-      body: { animeTitle, animeTitleEnglish, episodeNumber, malId },
+      body: { animeTitle, animeTitleEnglish, episodeNumber, malId, forceRefresh: true },
     })
 
     if (error) return { video_sources: null, cached: false, error: error.message }

@@ -489,6 +489,10 @@ function hostFromUrl(url: string): string | null {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function extractCfTokenFromPlayerHtml(html: string): string | null {
   const patterns = [
     /cf_token\s*[=:]\s*["']([^"']+)["']/i,
@@ -540,6 +544,61 @@ function rankDirectCandidates(candidates: DirectCandidate[]): DirectCandidate[] 
 function pickBestDirectCandidate(candidates: DirectCandidate[]): string | null {
   const ranked = rankDirectCandidates(candidates)
   return ranked.length > 0 ? ranked[0].url : null
+}
+
+function has1080Candidate(candidates: DirectCandidate[]): boolean {
+  return candidates.some((candidate) => {
+    const res = Math.max(candidate.resolution || 0, getUrlResolution(candidate.url))
+    return res >= 1080 || /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(candidate.url)
+  })
+}
+
+async function resolveSignedVideoToFinalUrl(url: string): Promise<string> {
+  const normalized = normalizeDirectUrl(url)
+  if (!isSignedVid3rbVideo(normalized)) return normalized
+
+  try {
+    // First pass: read redirect target directly.
+    const manualResp = await fetch(normalized, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        'Range': 'bytes=0-1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': '*/*',
+        'Referer': 'https://video.vid3rb.com/',
+      },
+      signal: AbortSignal.timeout(15000),
+    })
+
+    const location = manualResp.headers.get('location')
+    if (location) {
+      const redirected = normalizeDirectUrl(location)
+      if (/\/1080p\.mp4(?:[?#]|$)/i.test(redirected) || /\.mp4(?:[?#]|$)/i.test(redirected)) {
+        return redirected
+      }
+    }
+
+    // Fallback: follow redirects and use final response URL if it's mp4.
+    const followResp = await fetch(normalized, {
+      method: 'GET',
+      headers: {
+        'Range': 'bytes=0-1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': '*/*',
+        'Referer': 'https://video.vid3rb.com/',
+      },
+      signal: AbortSignal.timeout(15000),
+    })
+    const effective = normalizeDirectUrl(followResp.url || '')
+    if (/\.mp4(?:[?#]|$)/i.test(effective)) {
+      return effective
+    }
+  } catch {
+    // Keep the original signed URL.
+  }
+
+  return normalized
 }
 
 function collectDirectCandidatesFromPayload(payload: unknown): DirectCandidate[] {
@@ -673,6 +732,8 @@ function parseBestDirectFromPlayerHtml(html: string): string | null {
 async function fetchDirectVideoLinksFromPlayer(playerUrl: string, refererUrl: string, apifyToken: string): Promise<DirectCandidate[]> {
   const normalizedPlayerUrl = normalizeDirectUrl(playerUrl)
   let collected: DirectCandidate[] = []
+  const maxWaitAttempts = 4
+  const waitMs = 1500
 
   try {
     const resp = await fetch(normalizedPlayerUrl, {
@@ -692,9 +753,21 @@ async function fetchDirectVideoLinksFromPlayer(playerUrl: string, refererUrl: st
       const fromSourcesApi = await fetchDirectCandidatesFromSourcesApi(normalizedPlayerUrl, html)
       const fromHtml = parseDirectCandidatesFromPlayerHtml(html)
       collected = rankDirectCandidates([...collected, ...fromSourcesApi, ...fromHtml])
-      if (collected.length > 0) {
+      if (has1080Candidate(collected)) {
         return collected
       }
+
+      // Player sources can populate progressively; give it a short window before fallback.
+      for (let i = 0; i < maxWaitAttempts; i++) {
+        await sleep(waitMs)
+        const retrySources = await fetchDirectCandidatesFromSourcesApi(normalizedPlayerUrl, html)
+        collected = rankDirectCandidates([...collected, ...retrySources])
+        if (has1080Candidate(collected)) {
+          return collected
+        }
+      }
+
+      if (collected.length > 0) return collected
     }
   } catch {
     // Fall back to Apify path below.
@@ -706,6 +779,17 @@ async function fetchDirectVideoLinksFromPlayer(playerUrl: string, refererUrl: st
   const fromSourcesApiFallback = await fetchDirectCandidatesFromSourcesApi(normalizedPlayerUrl, playerResult.html)
   const fromHtmlFallback = parseDirectCandidatesFromPlayerHtml(playerResult.html)
   collected = rankDirectCandidates([...collected, ...fromSourcesApiFallback, ...fromHtmlFallback])
+
+  if (!has1080Candidate(collected)) {
+    for (let i = 0; i < maxWaitAttempts; i++) {
+      await sleep(waitMs)
+      const retrySourcesFallback = await fetchDirectCandidatesFromSourcesApi(normalizedPlayerUrl, playerResult.html)
+      collected = rankDirectCandidates([...collected, ...retrySourcesFallback])
+      if (has1080Candidate(collected)) {
+        break
+      }
+    }
+  }
 
   return collected
 }
@@ -953,6 +1037,8 @@ serve(async (req: Request) => {
         candidatesWith1080Res[0] ||
         rankedCandidates[0]
 
+      const resolvedChosenUrl = await resolveSignedVideoToFinalUrl(chosenCandidate.url)
+
       // Non-blocking diagnostics: probe reachability but do NOT filter output.
       const reachabilityByCandidate: Record<string, boolean | null> = {}
       for (const candidate of rankedCandidates.slice(0, 5)) {
@@ -967,10 +1053,10 @@ serve(async (req: Request) => {
       // Return one preferred source (1080p first when available).
       videoSources = [
         {
-          url: chosenCandidate.url,
+          url: resolvedChosenUrl,
           type: 'direct',
           server_name: 'anime3rb-direct',
-          quality: qualityFromUrl(chosenCandidate.url),
+          quality: qualityFromUrl(resolvedChosenUrl),
         },
       ]
       usedEpisodeUrl = episodeUrl
