@@ -227,10 +227,61 @@ function buildEpisodeUrlCandidates(animeSlug: string, episodeNumber: number, tit
   candidates.push(
     `https://anime3rb.com/episode/${animeSlug}/${episodeNumber}`,
     `https://anime3rb.com/episode/${animeSlug}-episode-${episodeNumber}`,
-    `https://anime3rb.com/episodes/${animeSlug}/${episodeNumber}`,
   )
 
   return [...new Set(candidates)]
+}
+
+function parseEpisodeNumberInput(input: unknown): number | null {
+  if (typeof input === 'number' && Number.isFinite(input)) {
+    const n = Math.trunc(input)
+    return n > 0 ? n : null
+  }
+
+  if (typeof input === 'string') {
+    const match = input.match(/(\d+)/)
+    if (!match?.[1]) return null
+    const n = parseInt(match[1], 10)
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+
+  return null
+}
+
+function sanitizeEpisodeUrlCandidates(candidates: string[], episodeNumber: number): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+
+  for (const raw of candidates) {
+    const normalized = normalizeDirectUrl(String(raw || ''))
+      .replace(/[#?].*$/, '')
+      .replace(/\/+$/, '')
+
+    if (!normalized) continue
+
+    const slashFormat = normalized.match(/^https?:\/\/(?:www\.)?anime3rb\.com\/episode\/([a-z0-9-]+)\/(\d+)$/i)
+    const dashFormat = normalized.match(/^https?:\/\/(?:www\.)?anime3rb\.com\/episode\/([a-z0-9-]+)-episode-(\d+)$/i)
+
+    let canonical: string | null = null
+    let parsedEpisode: number | null = null
+
+    if (slashFormat?.[1] && slashFormat[2]) {
+      parsedEpisode = parseInt(slashFormat[2], 10)
+      canonical = `https://anime3rb.com/episode/${slashFormat[1]}/${slashFormat[2]}`
+    } else if (dashFormat?.[1] && dashFormat[2]) {
+      parsedEpisode = parseInt(dashFormat[2], 10)
+      canonical = `https://anime3rb.com/episode/${dashFormat[1]}-episode-${dashFormat[2]}`
+    }
+
+    if (!canonical || !parsedEpisode || parsedEpisode !== episodeNumber) continue
+
+    if (!seen.has(canonical)) {
+      seen.add(canonical)
+      out.push(canonical)
+    }
+  }
+
+  return out
 }
 
 // Extract video URLs from anime3rb episode page HTML
@@ -892,14 +943,25 @@ serve(async (req: Request) => {
 
   try {
     const { animeTitle, animeTitleEnglish, episodeNumber, malId, forceRefresh, directEpisodeUrl } = await req.json()
+    const rawEpisodeNumber = episodeNumber
+    const normalizedEpisodeNumber = parseEpisodeNumberInput(episodeNumber)
+
+    if (!normalizedEpisodeNumber) {
+      return jsonResponse({
+        error: 'episodeNumber must contain a positive integer',
+        debug: {
+          raw_episode_number: rawEpisodeNumber ?? null,
+          normalized_episode_number: null,
+          episode_candidates: [],
+        },
+      }, 400)
+    }
 
     if (directEpisodeUrl) {
       // Direct URL mode: episodeNumber still required for DB caching
-      if (!episodeNumber) {
-        return jsonResponse({ error: 'episodeNumber is required when using directEpisodeUrl' }, 400)
-      }
+      // Input validated above.
     } else {
-      if (!animeTitle || !episodeNumber) {
+      if (!animeTitle) {
         return jsonResponse({ error: 'animeTitle and episodeNumber are required' }, 400)
       }
     }
@@ -922,7 +984,7 @@ serve(async (req: Request) => {
         .from('anime_episodes')
         .select('*')
         .eq('mal_id', malId)
-        .eq('episode_number', episodeNumber)
+        .eq('episode_number', normalizedEpisodeNumber)
         .eq('is_active', true)
         .single()
 
@@ -942,21 +1004,27 @@ serve(async (req: Request) => {
         }
 
         if (hasPlayableDirect && bestCachedResolution >= MIN_PREFERRED_RESOLUTION) {
-          console.log(`[Cache] Found cached episode: mal_id=${malId}, ep=${episodeNumber}`)
+          console.log(`[Cache] Found cached episode: mal_id=${malId}, ep=${normalizedEpisodeNumber}`)
           return jsonResponse({
             video_sources: cached.video_sources,
             cached: true,
-            debug: { method: 'cache' },
+            debug: {
+              method: 'cache',
+              raw_episode_number: rawEpisodeNumber ?? null,
+              normalized_episode_number: normalizedEpisodeNumber,
+              episode_candidates: [],
+            },
           })
         }
 
         console.log(
-          `[Cache] Cached direct is missing/low-quality (${bestCachedResolution}p); re-scraping mal_id=${malId}, ep=${episodeNumber}`
+          `[Cache] Cached direct is missing/low-quality (${bestCachedResolution}p); re-scraping mal_id=${malId}, ep=${normalizedEpisodeNumber}`
         )
       }
     }
 
     let episodeCandidates: string[]
+    let rawEpisodeCandidates: string[] = []
     let animeSlug: string | null = null
 
     if (directEpisodeUrl) {
@@ -970,10 +1038,10 @@ serve(async (req: Request) => {
         animeSlug = slugMatch[1].replace(/-episode-\d+$/, '')
       }
 
-      episodeCandidates = [directEpisodeUrl]
+      rawEpisodeCandidates = [directEpisodeUrl]
     } else {
       // ── Normal mode: search → title page → candidates ─────────────────
-      console.log(`[Scraper] Starting for "${animeTitle}" Episode ${episodeNumber}`)
+      console.log(`[Scraper] Starting for "${animeTitle}" Episode ${normalizedEpisodeNumber}`)
 
       // Step 1: Search anime3rb for the anime slug (with query fallbacks)
       const searchQueries = buildSearchQueries(animeTitle, animeTitleEnglish)
@@ -1000,7 +1068,14 @@ serve(async (req: Request) => {
       if (!animeSlug) {
         return jsonResponse({
           error: 'Anime not found on anime3rb',
-          debug: { step: 'search', lastSearchDebug, searchQueries },
+          debug: {
+            step: 'search',
+            lastSearchDebug,
+            searchQueries,
+            raw_episode_number: rawEpisodeNumber ?? null,
+            normalized_episode_number: normalizedEpisodeNumber,
+            episode_candidates: [],
+          },
         })
       }
 
@@ -1010,9 +1085,22 @@ serve(async (req: Request) => {
       const titleUrl = `https://anime3rb.com/titles/${animeSlug}`
       console.log(`[Step 2] Fetching title page: ${titleUrl}`)
       const titleResult = await fetchWithApify(titleUrl, apifyToken)
-      episodeCandidates = buildEpisodeUrlCandidates(animeSlug, episodeNumber, titleResult.html || '')
+      rawEpisodeCandidates = buildEpisodeUrlCandidates(animeSlug, normalizedEpisodeNumber, titleResult.html || '')
+    }
+    episodeCandidates = sanitizeEpisodeUrlCandidates(rawEpisodeCandidates, normalizedEpisodeNumber)
+    console.log(`[Step 2] Episode URL candidates:`, episodeCandidates)
 
-      console.log(`[Step 2] Episode URL candidates:`, episodeCandidates)
+    if (episodeCandidates.length === 0) {
+      return jsonResponse({
+        error: 'No valid episode URL candidates generated',
+        debug: {
+          step: 'candidate_generation',
+          animeSlug,
+          raw_episode_number: rawEpisodeNumber ?? null,
+          normalized_episode_number: normalizedEpisodeNumber,
+          episode_candidates: episodeCandidates,
+        },
+      })
     }
 
     // Step 3: Try candidate episode pages until one yields direct video URLs
@@ -1105,7 +1193,9 @@ serve(async (req: Request) => {
         debug: {
           step: 'extract',
           animeSlug,
-          episodeCandidates,
+          raw_episode_number: rawEpisodeNumber ?? null,
+          normalized_episode_number: normalizedEpisodeNumber,
+          episode_candidates: episodeCandidates,
           lastEpisodeError,
           candidate_count: selectedCandidateCount,
           top_candidate_quality: selectedTopQuality,
@@ -1124,7 +1214,7 @@ serve(async (req: Request) => {
         .upsert(
           {
             mal_id: malId,
-            episode_number: episodeNumber,
+            episode_number: normalizedEpisodeNumber,
             video_url: videoSources[0].url,
             video_sources: videoSources,
             quality: videoSources[0].quality,
@@ -1138,7 +1228,7 @@ serve(async (req: Request) => {
       if (upsertError) {
         console.error('[Cache] Failed to cache episode:', upsertError.message)
       } else {
-        console.log(`[Cache] Cached episode: mal_id=${malId}, ep=${episodeNumber}`)
+        console.log(`[Cache] Cached episode: mal_id=${malId}, ep=${normalizedEpisodeNumber}`)
       }
     }
 
@@ -1149,6 +1239,9 @@ serve(async (req: Request) => {
         method: 'apify',
         animeSlug,
         episodeUrl: usedEpisodeUrl,
+        raw_episode_number: rawEpisodeNumber ?? null,
+        normalized_episode_number: normalizedEpisodeNumber,
+        episode_candidates: episodeCandidates,
         sourceCount: videoSources.length,
         candidate_count: selectedCandidateCount,
         top_candidate_quality: selectedTopQuality,
