@@ -3,7 +3,7 @@ services:
     name: ani3rbscraper
     runtime: python
     rootDir: ani3rbscrap
-    plan: starter
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
