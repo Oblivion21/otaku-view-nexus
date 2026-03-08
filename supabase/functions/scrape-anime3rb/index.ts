@@ -20,7 +20,6 @@ const corsHeaders = {
 }
 const MIN_PREFERRED_RESOLUTION = 1080
 const SCRAPE_CACHE_TTL_MS = 2 * 60 * 60 * 1000
-const PYTHON_SCRAPER_METHODS = ['apify_bypasser']
 
 function jsonResponse(data: object, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -156,10 +155,7 @@ async function resolveEpisodeUrlWithPythonService(
     const response = await fetch(`${base}/api/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: episodeUrl,
-        methods: PYTHON_SCRAPER_METHODS,
-      }),
+      body: JSON.stringify({ url: episodeUrl }),
       signal: AbortSignal.timeout(15000),
     })
 
@@ -185,7 +181,9 @@ async function resolveEpisodeUrlWithPythonService(
 
     const payload = (await response.json()) as PythonResolveByUrlResponse
     if (!payload.success || !payload.video_url) {
-      console.error(`[Python] /api/resolve returned no video for ${episodeUrl}: ${payload.error || 'No video URL'}`)
+      console.error(
+        `[Python] /api/resolve returned no video for ${episodeUrl}: ${payload.error || 'No video URL'}`
+      )
       return {
         result: null,
         attempt: {
@@ -1247,6 +1245,7 @@ serve(async (req: Request) => {
           pythonAttempts.push(pythonResponse.attempt)
           if (pythonResponse.result) {
             const resolvedPythonUrl = await resolveSignedVideoToFinalUrl(pythonResponse.result.videoUrl)
+            console.log(`[Python] Using resolved video URL from Python chain for: ${episodeUrl}`)
             // Trust the Python scraper as authoritative for picking the best source.
             // It sorts player `video_sources` by the declared `res` field before returning a URL,
             // and the selected URL may be a signed /video/ link that does not expose 1080 in the path.
