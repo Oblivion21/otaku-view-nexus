@@ -1,7 +1,8 @@
 // Supabase Edge Function: scrape-anime3rb
-// On-demand scraper that searches anime3rb.com for a specific anime episode,
+// On-demand scraper that fetches anime3rb.com episode pages directly,
 // bypasses Cloudflare using Apify's Cloudflare Bypasser actor, extracts the video URL,
 // and caches the result in the database for future use.
+// Strategy: Try direct episode URL first (slug from title), fall back to search if needed.
 //
 // Deploy to: Supabase Dashboard → Edge Functions → scrape-anime3rb
 
@@ -171,6 +172,36 @@ function normalizeForSearch(title: string): string {
     .trim()
 }
 
+// Convert a title to a URL slug (lowercase, hyphenated)
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\s*\(TV\)\s*/gi, '')
+    .replace(/\s*Season\s*\d+/gi, '')
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+// Try fetching episode page directly with a constructed slug, return video sources if found
+async function tryDirectEpisodeUrl(
+  slug: string,
+  episodeNumber: number,
+  apifyToken: string
+): Promise<{ url: string; sources: ReturnType<typeof extractVideoUrls> } | null> {
+  const episodeUrl = `https://anime3rb.com/episode/${slug}/${episodeNumber}`
+  console.log(`[Direct] Trying: ${episodeUrl}`)
+
+  const result = await fetchWithApify(episodeUrl, apifyToken)
+  if (result.error && !result.html) return null
+
+  const sources = extractVideoUrls(result.html)
+  if (sources.length === 0) return null
+
+  return { url: episodeUrl, sources }
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -217,77 +248,112 @@ serve(async (req: Request) => {
 
     console.log(`[Scraper] Starting for "${animeTitle}" Episode ${episodeNumber}`)
 
-    // Step 1: Search anime3rb for the anime
-    const searchQuery = normalizeForSearch(animeTitle)
-    const searchUrl = `https://anime3rb.com/search?q=${encodeURIComponent(searchQuery)}`
-
-    console.log(`[Step 1] Searching anime3rb: ${searchUrl}`)
-    const searchResult = await fetchWithApify(searchUrl, apifyToken)
-
-    if (searchResult.error && !searchResult.html) {
-      return jsonResponse({
-        error: 'Failed to search anime3rb',
-        debug: { step: 'search', searchUrl, error: searchResult.error },
-      })
+    // Step 1: Try direct episode URL construction (skip search entirely)
+    // Generate slug candidates from the title(s) and try fetching the episode page directly
+    const slugCandidates: string[] = []
+    const mainSlug = slugify(animeTitle)
+    if (mainSlug) slugCandidates.push(mainSlug)
+    if (animeTitleEnglish && animeTitleEnglish !== animeTitle) {
+      const englishSlug = slugify(animeTitleEnglish)
+      if (englishSlug && englishSlug !== mainSlug) slugCandidates.push(englishSlug)
     }
 
-    // Extract anime slug from search results
-    let animeSlug = extractAnimeSlugFromSearch(searchResult.html, animeTitle)
+    console.log(`[Step 1] Trying direct slugs:`, slugCandidates)
 
-    // If search with Japanese/romaji title fails, try English title
-    if (!animeSlug && animeTitleEnglish && animeTitleEnglish !== animeTitle) {
-      console.log(`[Step 1b] Retrying search with English title: "${animeTitleEnglish}"`)
-      const searchUrl2 = `https://anime3rb.com/search?q=${encodeURIComponent(normalizeForSearch(animeTitleEnglish))}`
-      const searchResult2 = await fetchWithApify(searchUrl2, apifyToken)
-      if (searchResult2.html) {
-        animeSlug = extractAnimeSlugFromSearch(searchResult2.html, animeTitleEnglish)
+    let directResult: { url: string; sources: ReturnType<typeof extractVideoUrls> } | null = null
+    let animeSlug = ''
+    let episodeUrl = ''
+
+    for (const slug of slugCandidates) {
+      directResult = await tryDirectEpisodeUrl(slug, episodeNumber, apifyToken)
+      if (directResult) {
+        animeSlug = slug
+        episodeUrl = directResult.url
+        console.log(`[Step 1] Direct hit with slug: ${slug}`)
+        break
       }
     }
 
-    if (!animeSlug) {
-      return jsonResponse({
-        error: 'Anime not found on anime3rb',
-        debug: {
-          step: 'search',
-          searchUrl,
-          searchQuery,
-          htmlLength: searchResult.html.length,
-          htmlSample: searchResult.html.slice(0, 500),
-        },
-      })
+    let videoSources: ReturnType<typeof extractVideoUrls> = []
+
+    if (directResult) {
+      // Direct URL worked — use the video sources from it
+      videoSources = directResult.sources
+      console.log(`[Step 1] Found ${videoSources.length} video source(s) via direct URL`)
+    } else {
+      // Step 2: Fallback to search if direct URL didn't work
+      console.log(`[Step 2] Direct slugs failed, falling back to search`)
+      const searchQuery = normalizeForSearch(animeTitle)
+      const searchUrl = `https://anime3rb.com/search?q=${encodeURIComponent(searchQuery)}`
+
+      console.log(`[Step 2] Searching anime3rb: ${searchUrl}`)
+      const searchResult = await fetchWithApify(searchUrl, apifyToken)
+
+      if (searchResult.error && !searchResult.html) {
+        return jsonResponse({
+          error: 'Failed to search anime3rb',
+          debug: { step: 'search', searchUrl, error: searchResult.error },
+        })
+      }
+
+      // Extract anime slug from search results
+      animeSlug = extractAnimeSlugFromSearch(searchResult.html, animeTitle) || ''
+
+      // If search with main title fails, try English title
+      if (!animeSlug && animeTitleEnglish && animeTitleEnglish !== animeTitle) {
+        console.log(`[Step 2b] Retrying search with English title: "${animeTitleEnglish}"`)
+        const searchUrl2 = `https://anime3rb.com/search?q=${encodeURIComponent(normalizeForSearch(animeTitleEnglish))}`
+        const searchResult2 = await fetchWithApify(searchUrl2, apifyToken)
+        if (searchResult2.html) {
+          animeSlug = extractAnimeSlugFromSearch(searchResult2.html, animeTitleEnglish) || ''
+        }
+      }
+
+      if (!animeSlug) {
+        return jsonResponse({
+          error: 'Anime not found on anime3rb',
+          debug: {
+            step: 'search',
+            searchUrl,
+            searchQuery,
+            slugsAttempted: slugCandidates,
+            htmlLength: searchResult.html.length,
+            htmlSample: searchResult.html.slice(0, 500),
+          },
+        })
+      }
+
+      console.log(`[Step 2] Found anime slug via search: ${animeSlug}`)
+
+      // Step 3: Fetch the episode page using the slug from search
+      episodeUrl = `https://anime3rb.com/episode/${animeSlug}/${episodeNumber}`
+      console.log(`[Step 3] Fetching episode page: ${episodeUrl}`)
+
+      const episodeResult = await fetchWithApify(episodeUrl, apifyToken)
+
+      if (episodeResult.error && !episodeResult.html) {
+        return jsonResponse({
+          error: 'Failed to fetch episode page',
+          debug: { step: 'episode', episodeUrl, error: episodeResult.error },
+        })
+      }
+
+      videoSources = extractVideoUrls(episodeResult.html)
+
+      if (videoSources.length === 0) {
+        return jsonResponse({
+          error: 'No video sources found on episode page',
+          debug: {
+            step: 'extract',
+            episodeUrl,
+            htmlLength: episodeResult.html.length,
+            htmlSample: episodeResult.html.slice(0, 1000),
+          },
+        })
+      }
+
+      console.log(`[Step 3] Found ${videoSources.length} video source(s) via search`)
     }
-
-    console.log(`[Step 1] Found anime slug: ${animeSlug}`)
-
-    // Step 2: Fetch the episode page
-    const episodeUrl = `https://anime3rb.com/episode/${animeSlug}/${episodeNumber}`
-    console.log(`[Step 2] Fetching episode page: ${episodeUrl}`)
-
-    const episodeResult = await fetchWithApify(episodeUrl, apifyToken)
-
-    if (episodeResult.error && !episodeResult.html) {
-      return jsonResponse({
-        error: 'Failed to fetch episode page',
-        debug: { step: 'episode', episodeUrl, error: episodeResult.error },
-      })
-    }
-
-    // Step 3: Extract video URLs from the episode page
-    const videoSources = extractVideoUrls(episodeResult.html)
-
-    if (videoSources.length === 0) {
-      return jsonResponse({
-        error: 'No video sources found on episode page',
-        debug: {
-          step: 'extract',
-          episodeUrl,
-          htmlLength: episodeResult.html.length,
-          htmlSample: episodeResult.html.slice(0, 1000),
-        },
-      })
-    }
-
-    console.log(`[Step 3] Found ${videoSources.length} video source(s)`)
 
     // Step 4: Cache the result in the database
     if (supabase && malId) {
