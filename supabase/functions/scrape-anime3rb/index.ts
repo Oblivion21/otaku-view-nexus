@@ -429,12 +429,6 @@ function extractResolution(text: string): number {
   const exactMatch = normalized.match(/\b(2160|1440|1080|720|480|360|240)p\b/)
   if (exactMatch?.[1]) return parseInt(exactMatch[1], 10)
 
-  const anyMatch = normalized.match(/\b(\d{3,4})\b/)
-  if (anyMatch?.[1]) {
-    const value = parseInt(anyMatch[1], 10)
-    if (value >= 240 && value <= 4320) return value
-  }
-
   return 0
 }
 
@@ -449,6 +443,11 @@ function getSourceResolution(source: any): number {
   const fields = [source?.res, source?.label, source?.quality, source?.name, source?.src]
   let best = 0
   for (const field of fields) {
+    const asNumber = Number(field)
+    if (Number.isFinite(asNumber) && [2160, 1440, 1080, 720, 480, 360, 240].includes(asNumber)) {
+      best = Math.max(best, asNumber)
+      continue
+    }
     best = Math.max(best, extractResolution(String(field ?? '')))
   }
   return best
@@ -480,6 +479,14 @@ function pickBestDirectUrl(urls: string[]): string | null {
 function qualityFromUrl(url: string): string {
   const res = getUrlResolution(url)
   return res > 0 ? `${res}p` : 'auto'
+}
+
+function hostFromUrl(url: string): string | null {
+  try {
+    return new URL(url).host
+  } catch {
+    return null
+  }
 }
 
 function extractCfTokenFromPlayerHtml(html: string): string | null {
@@ -663,7 +670,7 @@ function parseBestDirectFromPlayerHtml(html: string): string | null {
   return ranked.length > 0 ? ranked[0].url : null
 }
 
-async function fetchDirectVideoLinksFromPlayer(playerUrl: string, refererUrl: string, apifyToken: string): Promise<string[]> {
+async function fetchDirectVideoLinksFromPlayer(playerUrl: string, refererUrl: string, apifyToken: string): Promise<DirectCandidate[]> {
   const normalizedPlayerUrl = normalizeDirectUrl(playerUrl)
   let collected: DirectCandidate[] = []
 
@@ -686,7 +693,7 @@ async function fetchDirectVideoLinksFromPlayer(playerUrl: string, refererUrl: st
       const fromHtml = parseDirectCandidatesFromPlayerHtml(html)
       collected = rankDirectCandidates([...collected, ...fromSourcesApi, ...fromHtml])
       if (collected.length > 0) {
-        return collected.map((c) => c.url)
+        return collected
       }
     }
   } catch {
@@ -700,7 +707,7 @@ async function fetchDirectVideoLinksFromPlayer(playerUrl: string, refererUrl: st
   const fromHtmlFallback = parseDirectCandidatesFromPlayerHtml(playerResult.html)
   collected = rankDirectCandidates([...collected, ...fromSourcesApiFallback, ...fromHtmlFallback])
 
-  return collected.map((c) => c.url)
+  return collected
 }
 
 function isDirectLikeUrl(url: string): boolean {
@@ -768,10 +775,17 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { animeTitle, animeTitleEnglish, episodeNumber, malId, forceRefresh } = await req.json()
+    const { animeTitle, animeTitleEnglish, episodeNumber, malId, forceRefresh, directEpisodeUrl } = await req.json()
 
-    if (!animeTitle || !episodeNumber) {
-      return jsonResponse({ error: 'animeTitle and episodeNumber are required' }, 400)
+    if (directEpisodeUrl) {
+      // Direct URL mode: episodeNumber still required for DB caching
+      if (!episodeNumber) {
+        return jsonResponse({ error: 'episodeNumber is required when using directEpisodeUrl' }, 400)
+      }
+    } else {
+      if (!animeTitle || !episodeNumber) {
+        return jsonResponse({ error: 'animeTitle and episodeNumber are required' }, 400)
+      }
     }
 
     const apifyToken = Deno.env.get('APIFY_TOKEN')
@@ -826,58 +840,73 @@ serve(async (req: Request) => {
       }
     }
 
-    console.log(`[Scraper] Starting for "${animeTitle}" Episode ${episodeNumber}`)
-
-    // Step 1: Search anime3rb for the anime slug (with query fallbacks)
-    const searchQueries = buildSearchQueries(animeTitle, animeTitleEnglish)
+    let episodeCandidates: string[]
     let animeSlug: string | null = null
-    let lastSearchDebug: any = null
 
-    for (const query of searchQueries) {
-      const searchUrl = `https://anime3rb.com/search?q=${encodeURIComponent(query)}`
-      console.log(`[Step 1] Searching anime3rb: ${searchUrl}`)
+    if (directEpisodeUrl) {
+      // ── Direct URL mode: skip search + title-page fetch ──────────────
+      console.log(`[Scraper] Direct URL mode — skipping search. Episode URL: ${directEpisodeUrl}`)
 
-      const searchResult = await fetchWithApify(searchUrl, apifyToken)
-      lastSearchDebug = {
-        query,
-        searchUrl,
-        error: searchResult.error,
-        htmlLength: searchResult.html?.length || 0,
+      // Extract slug from the URL for debug info only
+      const slugMatch = directEpisodeUrl.match(/anime3rb\.com\/episode\/([^/?#]+)/)
+      if (slugMatch) {
+        // Strip trailing -episode-N if present (format B)
+        animeSlug = slugMatch[1].replace(/-episode-\d+$/, '')
       }
 
-      if (!searchResult.html) continue
+      episodeCandidates = [directEpisodeUrl]
+    } else {
+      // ── Normal mode: search → title page → candidates ─────────────────
+      console.log(`[Scraper] Starting for "${animeTitle}" Episode ${episodeNumber}`)
 
-      animeSlug = extractAnimeSlugFromSearch(searchResult.html, animeTitle)
-      if (animeSlug) {
-        break
+      // Step 1: Search anime3rb for the anime slug (with query fallbacks)
+      const searchQueries = buildSearchQueries(animeTitle, animeTitleEnglish)
+      let lastSearchDebug: any = null
+
+      for (const query of searchQueries) {
+        const searchUrl = `https://anime3rb.com/search?q=${encodeURIComponent(query)}`
+        console.log(`[Step 1] Searching anime3rb: ${searchUrl}`)
+
+        const searchResult = await fetchWithApify(searchUrl, apifyToken)
+        lastSearchDebug = {
+          query,
+          searchUrl,
+          error: searchResult.error,
+          htmlLength: searchResult.html?.length || 0,
+        }
+
+        if (!searchResult.html) continue
+
+        animeSlug = extractAnimeSlugFromSearch(searchResult.html, animeTitle)
+        if (animeSlug) break
       }
+
+      if (!animeSlug) {
+        return jsonResponse({
+          error: 'Anime not found on anime3rb',
+          debug: { step: 'search', lastSearchDebug, searchQueries },
+        })
+      }
+
+      console.log(`[Step 1] Found anime slug: ${animeSlug}`)
+
+      // Step 2: Fetch title page and build episode URL candidates
+      const titleUrl = `https://anime3rb.com/titles/${animeSlug}`
+      console.log(`[Step 2] Fetching title page: ${titleUrl}`)
+      const titleResult = await fetchWithApify(titleUrl, apifyToken)
+      episodeCandidates = buildEpisodeUrlCandidates(animeSlug, episodeNumber, titleResult.html || '')
+
+      console.log(`[Step 2] Episode URL candidates:`, episodeCandidates)
     }
-
-    if (!animeSlug) {
-      return jsonResponse({
-        error: 'Anime not found on anime3rb',
-        debug: { step: 'search', lastSearchDebug, searchQueries },
-      })
-    }
-
-    console.log(`[Step 1] Found anime slug: ${animeSlug}`)
-
-    // Step 2: Fetch title page and build episode URL candidates
-    const titleUrl = `https://anime3rb.com/titles/${animeSlug}`
-    console.log(`[Step 2] Fetching title page: ${titleUrl}`)
-    const titleResult = await fetchWithApify(titleUrl, apifyToken)
-    const episodeCandidates = buildEpisodeUrlCandidates(
-      animeSlug,
-      episodeNumber,
-      titleResult.html || '',
-    )
-
-    console.log(`[Step 2] Episode URL candidates:`, episodeCandidates)
 
     // Step 3: Try candidate episode pages until one yields direct video URLs
     let videoSources: ReturnType<typeof extractVideoUrls> = []
     let usedEpisodeUrl: string | null = null
     let lastEpisodeError: string | undefined = undefined
+    let selectedCandidateCount = 0
+    let selectedTopQuality: string | null = null
+    let selectedTopHost: string | null = null
+    let selectedReachability: Record<string, boolean | null> = {}
 
     for (const episodeUrl of episodeCandidates) {
       console.log(`[Step 3] Fetching episode page: ${episodeUrl}`)
@@ -897,9 +926,9 @@ serve(async (req: Request) => {
 
       const directCandidates: DirectCandidate[] = []
       if (playerUrl) {
-        const playerUrls = await fetchDirectVideoLinksFromPlayer(playerUrl, episodeUrl, apifyToken)
-        for (const url of playerUrls) {
-          directCandidates.push({ url, resolution: getUrlResolution(url) })
+        const playerCandidates = await fetchDirectVideoLinksFromPlayer(playerUrl, episodeUrl, apifyToken)
+        for (const candidate of playerCandidates) {
+          directCandidates.push(candidate)
         }
       }
 
@@ -917,27 +946,38 @@ serve(async (req: Request) => {
         continue
       }
 
-      const reachableCandidates: DirectCandidate[] = []
-      for (const candidate of rankedCandidates) {
+      const candidatesWithExplicit1080 = rankedCandidates.filter((c) => /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(c.url))
+      const candidatesWith1080Res = rankedCandidates.filter((c) => Math.max(c.resolution, getUrlResolution(c.url)) >= 1080)
+      const chosenCandidate =
+        candidatesWithExplicit1080[0] ||
+        candidatesWith1080Res[0] ||
+        rankedCandidates[0]
+
+      // Non-blocking diagnostics: probe reachability but do NOT filter output.
+      const reachabilityByCandidate: Record<string, boolean | null> = {}
+      for (const candidate of rankedCandidates.slice(0, 5)) {
         const normalized = normalizeDirectUrl(candidate.url)
-        if (await isDirectUrlReachable(normalized)) {
-          reachableCandidates.push({ url: normalized, resolution: Math.max(candidate.resolution, getUrlResolution(normalized)) })
+        try {
+          reachabilityByCandidate[normalized] = await isDirectUrlReachable(normalized)
+        } catch {
+          reachabilityByCandidate[normalized] = null
         }
       }
 
-      if (reachableCandidates.length === 0) {
-        lastEpisodeError = 'Direct video URLs are not reachable'
-        continue
-      }
-
-      // Return all reachable direct sources, ranked best-first.
-      videoSources = reachableCandidates.map((candidate) => ({
-          url: candidate.url,
+      // Return one preferred source (1080p first when available).
+      videoSources = [
+        {
+          url: chosenCandidate.url,
           type: 'direct',
           server_name: 'anime3rb-direct',
-          quality: qualityFromUrl(candidate.url),
-        }))
+          quality: qualityFromUrl(chosenCandidate.url),
+        },
+      ]
       usedEpisodeUrl = episodeUrl
+      selectedCandidateCount = rankedCandidates.length
+      selectedTopQuality = videoSources[0]?.quality || null
+      selectedTopHost = videoSources[0]?.url ? hostFromUrl(videoSources[0].url) : null
+      selectedReachability = reachabilityByCandidate
       break
     }
 
@@ -949,6 +989,10 @@ serve(async (req: Request) => {
           animeSlug,
           episodeCandidates,
           lastEpisodeError,
+          candidate_count: selectedCandidateCount,
+          top_candidate_quality: selectedTopQuality,
+          top_candidate_url_host: selectedTopHost,
+          reachability_by_candidate: selectedReachability,
         },
       })
     }
@@ -988,6 +1032,10 @@ serve(async (req: Request) => {
         animeSlug,
         episodeUrl: usedEpisodeUrl,
         sourceCount: videoSources.length,
+        candidate_count: selectedCandidateCount,
+        top_candidate_quality: selectedTopQuality,
+        top_candidate_url_host: selectedTopHost,
+        reachability_by_candidate: selectedReachability,
       },
     })
   } catch (error: any) {
