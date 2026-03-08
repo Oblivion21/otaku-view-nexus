@@ -20,6 +20,7 @@ const corsHeaders = {
 }
 const MIN_PREFERRED_RESOLUTION = 1080
 const SCRAPE_CACHE_TTL_MS = 2 * 60 * 60 * 1000
+const PYTHON_SCRAPER_METHODS = ['apify_bypasser']
 
 function jsonResponse(data: object, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -137,30 +138,90 @@ async function resolveEpisodeUrlWithPythonService(
   serviceBaseUrl: string,
   episodeUrl: string,
 ): Promise<{
-  videoUrl: string
-  episodePageUrl: string | null
-} | null> {
+  result: {
+    videoUrl: string
+    episodePageUrl: string | null
+  } | null
+  attempt: {
+    episodeUrl: string
+    ok: boolean
+    status?: number
+    error?: string | null
+  }
+}> {
   const base = serviceBaseUrl.replace(/\/+$/, '')
 
   try {
+    console.log(`[Python] Calling /api/resolve for: ${episodeUrl}`)
     const response = await fetch(`${base}/api/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: episodeUrl }),
-      signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({
+        url: episodeUrl,
+        methods: PYTHON_SCRAPER_METHODS,
+      }),
+      signal: AbortSignal.timeout(15000),
     })
 
-    if (!response.ok) return null
+    if (!response.ok) {
+      let errorSnippet: string | null = null
+      try {
+        const text = await response.text()
+        errorSnippet = text ? text.slice(0, 200) : null
+      } catch {
+        // ignore
+      }
+      console.error(`[Python] /api/resolve failed (${response.status}) for ${episodeUrl}: ${errorSnippet || 'no body'}`)
+      return {
+        result: null,
+        attempt: {
+          episodeUrl,
+          ok: false,
+          status: response.status,
+          error: errorSnippet,
+        },
+      }
+    }
 
     const payload = (await response.json()) as PythonResolveByUrlResponse
-    if (!payload.success || !payload.video_url) return null
+    if (!payload.success || !payload.video_url) {
+      console.error(`[Python] /api/resolve returned no video for ${episodeUrl}: ${payload.error || 'No video URL'}`)
+      return {
+        result: null,
+        attempt: {
+          episodeUrl,
+          ok: false,
+          status: response.status,
+          error: payload.error || 'No video URL',
+        },
+      }
+    }
+
+    console.log(`[Python] /api/resolve succeeded for: ${episodeUrl}`)
 
     return {
-      videoUrl: payload.video_url,
-      episodePageUrl: payload.episode_page_url || episodeUrl,
+      result: {
+        videoUrl: payload.video_url,
+        episodePageUrl: payload.episode_page_url || episodeUrl,
+      },
+      attempt: {
+        episodeUrl,
+        ok: true,
+        status: response.status,
+        error: null,
+      },
     }
-  } catch {
-    return null
+  } catch (error: any) {
+    const message = error?.message || 'Request failed'
+    console.error(`[Python] /api/resolve error for ${episodeUrl}: ${message}`)
+    return {
+      result: null,
+      attempt: {
+        episodeUrl,
+        ok: false,
+        error: message,
+      },
+    }
   }
 }
 
@@ -1176,14 +1237,16 @@ serve(async (req: Request) => {
     let selectedTopQuality: string | null = null
     let selectedTopHost: string | null = null
     let selectedReachability: Record<string, boolean | null> = {}
+    let pythonAttempts: Array<{ episodeUrl: string; ok: boolean; status?: number; error?: string | null }> = []
 
     const tryResolveFromCandidates = async (candidates: string[]): Promise<boolean> => {
       for (const episodeUrl of candidates) {
         console.log(`[Step 3] Fetching episode page: ${episodeUrl}`)
         if (pythonScraperUrl) {
-          const pythonResult = await resolveEpisodeUrlWithPythonService(pythonScraperUrl, episodeUrl)
-          if (pythonResult) {
-            const resolvedPythonUrl = await resolveSignedVideoToFinalUrl(pythonResult.videoUrl)
+          const pythonResponse = await resolveEpisodeUrlWithPythonService(pythonScraperUrl, episodeUrl)
+          pythonAttempts.push(pythonResponse.attempt)
+          if (pythonResponse.result) {
+            const resolvedPythonUrl = await resolveSignedVideoToFinalUrl(pythonResponse.result.videoUrl)
             // Trust the Python scraper as authoritative for picking the best source.
             // It sorts player `video_sources` by the declared `res` field before returning a URL,
             // and the selected URL may be a signed /video/ link that does not expose 1080 in the path.
@@ -1195,7 +1258,7 @@ serve(async (req: Request) => {
                 quality: '1080p',
               },
             ]
-            usedEpisodeUrl = pythonResult.episodePageUrl || episodeUrl
+            usedEpisodeUrl = pythonResponse.result.episodePageUrl || episodeUrl
             selectedCandidateCount = 1
             selectedTopQuality = '1080p'
             selectedTopHost = hostFromUrl(resolvedPythonUrl)
@@ -1403,6 +1466,8 @@ serve(async (req: Request) => {
           search_fallback_used: searchFallbackUsed,
           lastSearchDebug,
           searchQueries,
+          python_service_url: pythonScraperUrl || null,
+          python_attempts: pythonAttempts,
           raw_episode_number: rawEpisodeNumber ?? null,
           normalized_episode_number: normalizedEpisodeNumber,
           episode_candidates: episodeCandidates,
@@ -1462,6 +1527,8 @@ serve(async (req: Request) => {
         provided_episode_url: providedEpisodeUrl,
         db_episode_page_url: dbEpisodePageUrl,
         saved_episode_page_url: savedEpisodePageUrl,
+        python_service_url: pythonScraperUrl || null,
+        python_attempts: pythonAttempts,
         search_fallback_used: searchFallbackUsed,
         animeSlug,
         episodeUrl: usedEpisodeUrl,

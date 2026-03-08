@@ -8,6 +8,10 @@ full JS-rendering + challenge-solving pipeline.
 
 from typing import Optional
 
+import json
+import re
+from urllib.parse import quote, urlparse, parse_qs
+
 import config
 from scraper.utils import extract_video_url, extract_player_iframe_url, is_cloudflare_challenge, SkipMethod
 
@@ -16,6 +20,182 @@ def _debug_response(name: str, text: str):
     """Print a snippet of the response to help diagnose failures."""
     snippet = text.replace("\n", " ")[:400]
     print(f"  [{name}] Response snippet: {snippet}")
+
+
+def _normalize_direct_url(url: str) -> str:
+    return url.replace("\\/", "/").replace("&amp;", "&").strip()
+
+
+def _is_signed_vid3rb_video(url: str) -> bool:
+    normalized = _normalize_direct_url(url)
+    return "video.vid3rb.com/video/" in normalized and "token=" in normalized
+
+
+def _is_direct_like_url(url: str) -> bool:
+    normalized = _normalize_direct_url(url)
+    return normalized.endswith(".mp4") or ".mp4?" in normalized or _is_signed_vid3rb_video(normalized)
+
+
+def _extract_resolution(text: str) -> int:
+    match = re.search(r"\b(2160|1440|1080|720|480|360|240)p\b", str(text or "").lower())
+    return int(match.group(1)) if match else 0
+
+
+def _get_source_resolution(source: dict) -> int:
+    best = 0
+    for field in (
+        source.get("res"),
+        source.get("label"),
+        source.get("quality"),
+        source.get("name"),
+        source.get("src"),
+        source.get("url"),
+        source.get("video_url"),
+        source.get("file"),
+        source.get("download"),
+    ):
+        try:
+            numeric = int(field)
+            if numeric in {2160, 1440, 1080, 720, 480, 360, 240}:
+                best = max(best, numeric)
+                continue
+        except Exception:
+            pass
+        best = max(best, _extract_resolution(str(field or "")))
+    return best
+
+
+def _collect_direct_candidates_from_payload(payload, inherited_resolution: int = 0, depth: int = 0) -> list[tuple[str, int]]:
+    if depth > 10:
+        return []
+
+    out: list[tuple[str, int]] = []
+
+    if isinstance(payload, str):
+        candidate = _normalize_direct_url(payload)
+        if _is_direct_like_url(candidate):
+            out.append((candidate, max(inherited_resolution, _extract_resolution(candidate))))
+        return out
+
+    if isinstance(payload, list):
+        for item in payload:
+            out.extend(_collect_direct_candidates_from_payload(item, inherited_resolution, depth + 1))
+        return out
+
+    if not isinstance(payload, dict):
+        return out
+
+    if payload.get("premium") is True:
+        return out
+
+    own_resolution = max(inherited_resolution, _get_source_resolution(payload))
+
+    for key in ("src", "url", "video_url", "file", "download"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            out.extend(_collect_direct_candidates_from_payload(value, own_resolution, depth + 1))
+
+    for value in payload.values():
+        out.extend(_collect_direct_candidates_from_payload(value, own_resolution, depth + 1))
+
+    return out
+
+
+def _pick_best_direct_candidate(candidates: list[tuple[str, int]], method_name: str) -> Optional[str]:
+    if not candidates:
+        return None
+
+    ranked: dict[str, int] = {}
+    for url, resolution in candidates:
+        normalized = _normalize_direct_url(url)
+        if not _is_direct_like_url(normalized):
+            continue
+        ranked[normalized] = max(ranked.get(normalized, 0), resolution)
+
+    if not ranked:
+        return None
+
+    sorted_candidates = sorted(
+        ranked.items(),
+        key=lambda item: (
+            1 if _is_signed_vid3rb_video(item[0]) else 0,
+            item[1],
+            1 if ".mp4" in item[0] else 0,
+            -len(item[0]),
+        ),
+        reverse=True,
+    )
+
+    best_url, best_resolution = sorted_candidates[0]
+    print(f"  [{method_name}] Selected best direct candidate: {best_resolution or 'unknown'}p")
+    return best_url
+
+
+def _extract_cf_token_from_player_html(html: str) -> Optional[str]:
+    patterns = [
+        r'cf_token\s*[=:]\s*["\']([^"\']+)["\']',
+        r'["\']cf_token["\']\s*:\s*["\']([^"\']+)["\']',
+        r'window\.cf_token\s*=\s*["\']([^"\']+)["\']',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _extract_player_uuid(player_url: str) -> Optional[str]:
+    match = re.search(r"/player/([a-f0-9-]+)", player_url, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def _fetch_player_sources_api(player_url: str, player_html: str, method_name: str) -> Optional[str]:
+    import requests as _requests
+
+    cf_token = _extract_cf_token_from_player_html(player_html)
+    player_uuid = _extract_player_uuid(player_url)
+    if not cf_token or not player_uuid:
+        return None
+
+    sources_url = (
+        f"https://video.vid3rb.com/player/{player_uuid}/sources"
+        f"?cf_token={quote(cf_token, safe='')}"
+    )
+
+    session = _requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/120.0.0.0 Safari/537.36",
+        "Referer": player_url,
+        "Accept": "application/json,*/*",
+        "Origin": "https://video.vid3rb.com",
+    })
+
+    try:
+        print(f"  [{method_name}] Fetching player sources API...")
+        resp = session.get(sources_url, timeout=20)
+        print(f"  [{method_name}] Sources API status: {resp.status_code}, {len(resp.text)} chars")
+    except Exception as e:
+        print(f"  [{method_name}] Sources API fetch failed: {e}")
+        return None
+
+    if resp.status_code != 200 or not resp.text:
+        return None
+
+    try:
+        payload = resp.json()
+    except Exception as e:
+        print(f"  [{method_name}] Sources API JSON parse failed: {e}")
+        return None
+
+    best = _pick_best_direct_candidate(
+        _collect_direct_candidates_from_payload(payload),
+        method_name,
+    )
+    if best:
+        print(f"  [{method_name}] Found direct URL via sources API")
+    return best
 
 
 # ────────────────────────────────────────────────────────────────
@@ -464,6 +644,10 @@ def _fetch_player_and_extract(
 
     print(f"  [{method_name}] Phase 2: got {len(player_html)} chars from actor")
 
+    video_url = _fetch_player_sources_api(player_url, player_html, method_name)
+    if video_url:
+        return video_url
+
     # Parse video_sources from the player HTML
     video_url = _parse_video_sources_from_html(player_html, method_name)
     if video_url:
@@ -482,21 +666,18 @@ def _fetch_player_and_extract(
 
 def _parse_video_sources_from_html(html: str, method_name: str) -> Optional[str]:
     """Extract the best MP4 URL from video_sources = [...] in HTML."""
-    import re as _re
-    import json as _json
-
-    matches = _re.findall(r'video_sources\s*=\s*(\[.*?\]);', html, _re.DOTALL)
+    matches = re.findall(r'video_sources\s*=\s*(\[.*?\]);', html, re.DOTALL)
     for raw in reversed(matches):
         if len(raw) <= 5:
             continue
         try:
-            sources = _json.loads(raw)
-            valid = [s for s in sources if s.get("src") and not s.get("premium")]
-            valid.sort(key=lambda s: int(s.get("res", 0)), reverse=True)
-            if valid:
-                best = valid[0]["src"].replace("\\/", "/")
-                print(f"  [{method_name}] Found {len(valid)} sources, "
-                      f"best: {valid[0].get('label', '?')}")
+            sources = json.loads(raw)
+            best = _pick_best_direct_candidate(
+                _collect_direct_candidates_from_payload(sources),
+                method_name,
+            )
+            if best:
+                print(f"  [{method_name}] Found playable source in embedded video_sources")
                 return best
         except Exception as e:
             print(f"  [{method_name}] Failed to parse video_sources: {e}")
@@ -512,8 +693,6 @@ def _fetch_player_video_sources(player_url: str, referer_url: str) -> Optional[s
       - video_sources = [{src: "https://video.vid3rb.com/video/<uuid>?speed=...&token=...", ...}] (new)
     Falls back to regex extraction if no video_sources JS array is found.
     """
-    import re as _re
-    import json as _json
     import requests as _requests
 
     session = _requests.Session()
@@ -539,20 +718,24 @@ def _fetch_player_video_sources(player_url: str, referer_url: str) -> Optional[s
 
     text = resp.text
 
+    video_url = _fetch_player_sources_api(player_url, text, "apify")
+    if video_url:
+        return video_url
+
     # Extract video_sources = [...]; — take the last non-empty match
     # src values may be files.vid3rb.com MP4 (legacy) or video.vid3rb.com/video/ (new)
-    matches = _re.findall(r'video_sources\s*=\s*(\[.*?\]);', text, _re.DOTALL)
+    matches = re.findall(r'video_sources\s*=\s*(\[.*?\]);', text, re.DOTALL)
     for raw in reversed(matches):
         if len(raw) <= 5:
             continue
         try:
-            sources = _json.loads(raw)
-            valid = [s for s in sources if s.get("src") and not s.get("premium")]
-            valid.sort(key=lambda s: int(s.get("res", 0)), reverse=True)
-            if valid:
-                best = valid[0]["src"].replace("\\/", "/")
-                print(f"  [apify] Found {len(valid)} sources from player page, "
-                      f"best: {valid[0].get('label', '?')}")
+            sources = json.loads(raw)
+            best = _pick_best_direct_candidate(
+                _collect_direct_candidates_from_payload(sources),
+                "apify",
+            )
+            if best:
+                print(f"  [apify] Found playable source from player page HTML")
                 return best
         except Exception as e:
             print(f"  [apify] Failed to parse video_sources JSON: {e}")
