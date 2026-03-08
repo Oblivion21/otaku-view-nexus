@@ -15,6 +15,181 @@ function jsonResponse(data: object, status = 200) {
   })
 }
 
+type DirectCandidate = {
+  url: string
+  resolution: number
+}
+
+function normalizeDirectUrl(url: string): string {
+  return String(url || '').replace(/\\\//g, '/').replace(/&amp;/g, '&').trim()
+}
+
+function isSignedVid3rbVideo(url: string): boolean {
+  return /video\.vid3rb\.com\/video\//i.test(url) && /(?:\?|&)token=/i.test(url)
+}
+
+function isDirectLikeUrl(url: string): boolean {
+  return /\.mp4(?:$|[?#])/i.test(url) || isSignedVid3rbVideo(url)
+}
+
+function extractResolution(text: string): number {
+  const normalized = String(text || '').toLowerCase()
+  const exactMatch = normalized.match(/\b(2160|1440|1080|720|480|360|240)p\b/)
+  if (exactMatch?.[1]) return parseInt(exactMatch[1], 10)
+  return 0
+}
+
+function getUrlResolution(url: string): number {
+  const normalized = normalizeDirectUrl(url)
+  const fromPath = normalized.match(/\/(2160|1440|1080|720|480|360|240)p(?:\.mp4|[/?#]|$)/i)
+  if (fromPath?.[1]) return parseInt(fromPath[1], 10)
+  return extractResolution(normalized)
+}
+
+function getSourceResolution(source: any): number {
+  const fields = [source?.res, source?.label, source?.quality, source?.name, source?.src, source?.file, source?.url]
+  let best = 0
+  for (const field of fields) {
+    const asNumber = Number(field)
+    if (Number.isFinite(asNumber) && [2160, 1440, 1080, 720, 480, 360, 240].includes(asNumber)) {
+      best = Math.max(best, asNumber)
+      continue
+    }
+    best = Math.max(best, extractResolution(String(field ?? '')))
+  }
+  return best
+}
+
+function rankDirectCandidates(candidates: DirectCandidate[]): DirectCandidate[] {
+  const byUrl = new Map<string, number>()
+  for (const candidate of candidates) {
+    const normalized = normalizeDirectUrl(candidate.url)
+    if (!isDirectLikeUrl(normalized)) continue
+    byUrl.set(normalized, Math.max(byUrl.get(normalized) || 0, Math.max(candidate.resolution || 0, getUrlResolution(normalized))))
+  }
+
+  const ranked = Array.from(byUrl.entries()).map(([url, resolution]) => ({ url, resolution }))
+  ranked.sort((a, b) => {
+    const explicit1080A = /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(a.url) ? 1 : 0
+    const explicit1080B = /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(b.url) ? 1 : 0
+    if (explicit1080A !== explicit1080B) return explicit1080B - explicit1080A
+
+    const resDiff = b.resolution - a.resolution
+    if (resDiff !== 0) return resDiff
+
+    const aSigned = isSignedVid3rbVideo(a.url) ? 1 : 0
+    const bSigned = isSignedVid3rbVideo(b.url) ? 1 : 0
+    if (aSigned !== bSigned) return bSigned - aSigned
+
+    const aMp4 = /\.mp4(?:$|[?#])/i.test(a.url) ? 1 : 0
+    const bMp4 = /\.mp4(?:$|[?#])/i.test(b.url) ? 1 : 0
+    if (aMp4 !== bMp4) return bMp4 - aMp4
+    return a.url.length - b.url.length
+  })
+
+  return ranked
+}
+
+function pickPreferredCandidate(candidates: DirectCandidate[]): DirectCandidate | null {
+  const ranked = rankDirectCandidates(candidates)
+  if (!ranked.length) return null
+  const explicit1080 = ranked.find((c) => /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(c.url))
+  if (explicit1080) return explicit1080
+  const res1080 = ranked.find((c) => Math.max(c.resolution || 0, getUrlResolution(c.url)) >= 1080)
+  return res1080 || ranked[0]
+}
+
+function qualityFromUrl(url: string): string {
+  const res = getUrlResolution(url)
+  return res > 0 ? `${res}p` : 'auto'
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function resolveSignedVideoToFinalUrl(url: string): Promise<string> {
+  const normalized = normalizeDirectUrl(url)
+  if (!isSignedVid3rbVideo(normalized)) return normalized
+
+  try {
+    const manualResp = await fetch(normalized, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        'Range': 'bytes=0-1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': '*/*',
+        'Referer': 'https://video.vid3rb.com/',
+      },
+      signal: AbortSignal.timeout(15000),
+    })
+    const location = manualResp.headers.get('location')
+    if (location) {
+      const redirected = normalizeDirectUrl(location)
+      if (/\/1080p\.mp4(?:[?#]|$)/i.test(redirected) || /\.mp4(?:[?#]|$)/i.test(redirected)) {
+        return redirected
+      }
+    }
+
+    const followResp = await fetch(normalized, {
+      method: 'GET',
+      headers: {
+        'Range': 'bytes=0-1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': '*/*',
+        'Referer': 'https://video.vid3rb.com/',
+      },
+      signal: AbortSignal.timeout(15000),
+    })
+    const effective = normalizeDirectUrl(followResp.url || '')
+    if (/\.mp4(?:[?#]|$)/i.test(effective)) return effective
+  } catch {
+    // keep original
+  }
+  return normalized
+}
+
+function collectDirectCandidatesFromPayload(payload: unknown): DirectCandidate[] {
+  const out: DirectCandidate[] = []
+
+  const walk = (value: unknown, inheritedResolution: number, depth: number) => {
+    if (depth > 10) return
+    if (typeof value === 'string') {
+      const candidate = normalizeDirectUrl(value)
+      if (isDirectLikeUrl(candidate)) {
+        out.push({ url: candidate, resolution: Math.max(inheritedResolution, getUrlResolution(candidate)) })
+      }
+      return
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, inheritedResolution, depth + 1)
+      return
+    }
+    if (!value || typeof value !== 'object') return
+
+    const obj = value as Record<string, unknown>
+    if (obj.premium === true) return
+    const ownResolution = Math.max(inheritedResolution, getSourceResolution(obj))
+    for (const key of ['src', 'url', 'video_url', 'file', 'download']) {
+      if (typeof obj[key] === 'string') walk(obj[key], ownResolution, depth + 1)
+    }
+    for (const nested of Object.values(obj)) walk(nested, ownResolution, depth + 1)
+  }
+
+  walk(payload, 0, 0)
+  return rankDirectCandidates(out)
+}
+
+function directCandidatesFromUrls(urls: string[]): DirectCandidate[] {
+  return rankDirectCandidates(
+    urls.map((url) => {
+      const normalized = normalizeDirectUrl(url)
+      return { url: normalized, resolution: getUrlResolution(normalized) }
+    })
+  )
+}
+
 // Call Apify Universal Bypasser actor (same as ani3rbscrap repo)
 async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: string; error?: string }> {
   // Using macheta/universal-bypasser - proven to work in ani3rbscrap
@@ -191,13 +366,11 @@ function extractPlayerIframeUrl(html: string): string | null {
 }
 
 // Parse video_sources from player page HTML (same as ani3rbscrap)
-function parseVideoSourcesFromHtml(html: string): string | null {
-  // Extract video_sources = [{src: "...", ...}, ...];
-  const matches = html.matchAll(/video_sources\s*=\s*(\[.*?\]);/gs)
-  const allMatches = Array.from(matches)
+function parseVideoSourceCandidatesFromHtml(html: string): DirectCandidate[] {
+  const out: DirectCandidate[] = []
+  const matches = Array.from(html.matchAll(/video_sources\s*=\s*(\[.*?\]);/gs))
 
-  // Process matches in reverse order (last match is usually the real one)
-  for (const match of allMatches.reverse()) {
+  for (const match of matches.reverse()) {
     const raw = match[1]
     if (!raw || raw.length <= 5) continue
 
@@ -205,25 +378,22 @@ function parseVideoSourcesFromHtml(html: string): string | null {
       const sources = JSON.parse(raw)
       if (!Array.isArray(sources)) continue
 
-      // Filter out premium sources, sort by resolution
-      const valid = sources.filter((s: any) => s.src && !s.premium)
-      valid.sort((a: any, b: any) => {
-        const resA = parseInt(a.res || a.label || '0')
-        const resB = parseInt(b.res || b.label || '0')
-        return resB - resA
-      })
-
-      if (valid.length > 0) {
-        const best = valid[0].src.replace(/\\\//g, '/')
-        console.log(`[Video Sources] Found ${valid.length} source(s), best: ${valid[0].label || valid[0].res || '?'}`)
-        return best
+      for (const source of sources) {
+        if (source?.premium) continue
+        const resolution = getSourceResolution(source)
+        for (const field of [source?.src, source?.url, source?.video_url, source?.file, source?.download]) {
+          if (!field) continue
+          const candidate = normalizeDirectUrl(String(field))
+          if (!isDirectLikeUrl(candidate)) continue
+          out.push({ url: candidate, resolution: Math.max(resolution, getUrlResolution(candidate)) })
+        }
       }
     } catch (error: any) {
       console.log(`[Video Sources] Failed to parse JSON: ${error.message}`)
     }
   }
 
-  return null
+  return rankDirectCandidates(out)
 }
 
 // Fetch player page and extract MP4 URL (Phase 2 - same as ani3rbscrap)
@@ -268,93 +438,81 @@ async function fetchPlayerAndExtract(playerUrl: string, refererUrl: string): Pro
       }
     }
 
-    if (cfToken) {
-      // Try /sources? API with cf_token
-      const playerUuid = playerUrl.match(/\/player\/([a-f0-9-]+)/)?.[1]
-      if (playerUuid) {
-        const sourcesUrl = `https://video.vid3rb.com/player/${playerUuid}/sources?cf_token=${encodeURIComponent(cfToken)}`
-        console.log(`[Phase 2.0] Trying sources API with cf_token: ${sourcesUrl.slice(0, 100)}...`)
+    const candidates: DirectCandidate[] = []
+    const playerUuid = playerUrl.match(/\/player\/([a-f0-9-]+)/)?.[1] || null
+    const sourcesUrl = cfToken && playerUuid
+      ? `https://video.vid3rb.com/player/${playerUuid}/sources?cf_token=${encodeURIComponent(cfToken)}`
+      : null
 
+    const collectFromSourcesApi = async (): Promise<DirectCandidate[]> => {
+      if (!sourcesUrl) return []
+      try {
+        const sourcesResp = await fetch(sourcesUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': playerUrl,
+            'Accept': 'application/json,*/*',
+            'Origin': 'https://video.vid3rb.com',
+          },
+          signal: AbortSignal.timeout(15000),
+        })
+        console.log(`[Phase 2.0] Sources API returned status: ${sourcesResp.status}`)
+        if (!sourcesResp.ok) return []
+        const text = await sourcesResp.text()
+        if (!text) return []
         try {
-          const sourcesResp = await fetch(sourcesUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-              'Referer': playerUrl,
-              'Accept': 'application/json,*/*',
-              'Origin': 'https://video.vid3rb.com',
-            },
-            signal: AbortSignal.timeout(15000),
-          })
-
-          console.log(`[Phase 2.0] Sources API returned status: ${sourcesResp.status}`)
-
-          if (sourcesResp.ok) {
-            const text = await sourcesResp.text()
-            console.log(`[Phase 2.0] Response text (${text.length} chars):`, text.slice(0, 500))
-
-            let sourcesJson: any
-            try {
-              sourcesJson = JSON.parse(text)
-              console.log(`[Phase 2.0] Parsed JSON:`, JSON.stringify(sourcesJson).slice(0, 500))
-
-              // Try to extract video URL from JSON response
-              if (Array.isArray(sourcesJson)) {
-                console.log(`[Phase 2.0] Response is array with ${sourcesJson.length} items`)
-                const best = sourcesJson.filter((s: any) => s.src && !s.premium)
-                  .sort((a: any, b: any) => parseInt(b.res || b.label || '0') - parseInt(a.res || a.label || '0'))[0]
-                if (best?.src) {
-                  const videoUrl = best.src.replace(/\\\//g, '/')
-                  console.log(`[Phase 2.0] ✅ Found video from sources API: ${videoUrl.slice(0, 100)}...`)
-                  return videoUrl
-                }
-              } else if (sourcesJson.url || sourcesJson.src || sourcesJson.video_url) {
-                const videoUrl = (sourcesJson.url || sourcesJson.src || sourcesJson.video_url).replace(/\\\//g, '/')
-                console.log(`[Phase 2.0] ✅ Found video from sources API: ${videoUrl.slice(0, 100)}...`)
-                return videoUrl
-              }
-            } catch (jsonErr: any) {
-              console.log(`[Phase 2.0] Not valid JSON: ${jsonErr.message}`)
-            }
-          } else {
-            const errorText = await sourcesResp.text()
-            console.log(`[Phase 2.0] Sources API error (${sourcesResp.status}): ${errorText.slice(0, 200)}`)
-          }
-        } catch (err: any) {
-          console.log(`[Phase 2.0] Sources API exception: ${err.message}`)
+          const payload = JSON.parse(text)
+          return collectDirectCandidatesFromPayload(payload)
+        } catch {
+          return []
         }
+      } catch {
+        return []
       }
+    }
+
+    if (sourcesUrl) {
+      console.log(`[Phase 2.0] Trying sources API with cf_token: ${sourcesUrl.slice(0, 120)}...`)
+      candidates.push(...(await collectFromSourcesApi()))
     } else {
-      console.log(`[Phase 2.0] No cf_token found in player HTML`)
+      console.log(`[Phase 2.0] No cf_token or player UUID found in player HTML`)
     }
 
-    // Try to extract video URLs from HTML
+    const fromVideoSources = parseVideoSourceCandidatesFromHtml(html)
+    candidates.push(...fromVideoSources)
+
     const foundUrls = extractVideoUrls(html)
+    candidates.push(...directCandidatesFromUrls(foundUrls))
 
-    // Priority 1: video.vid3rb.com/video/xxx?speed=...&token=... (primary format)
-    const videoUrl = foundUrls.find(u => u.includes('video.vid3rb.com/video/') && u.includes('token='))
-    if (videoUrl) {
-      console.log(`[Phase 2] Found video.vid3rb.com/video/ URL`)
-      return videoUrl
+    let ranked = rankDirectCandidates(candidates)
+    let chosen = pickPreferredCandidate(ranked)
+
+    // Give sources endpoint extra time to surface 1080, same behavior as scraper flow.
+    const has1080 = (items: DirectCandidate[]) => items.some((item) => {
+      const res = Math.max(item.resolution || 0, getUrlResolution(item.url))
+      return res >= 1080 || /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(item.url)
+    })
+
+    if (sourcesUrl && !has1080(ranked)) {
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        await sleep(1500)
+        const retried = await collectFromSourcesApi()
+        if (retried.length === 0) continue
+        ranked = rankDirectCandidates([...ranked, ...retried])
+        chosen = pickPreferredCandidate(ranked)
+        if (has1080(ranked)) break
+      }
     }
 
-    // Priority 2: Try to parse video_sources JavaScript array
-    const parsedUrl = parseVideoSourcesFromHtml(html)
-    if (parsedUrl) {
-      return parsedUrl
+    if (!chosen) {
+      console.log(`[Phase 2] No video URL found in player page. Found ${foundUrls.length} URLs total`)
+      if (foundUrls.length > 0) console.log(`[Phase 2] Sample URLs:`, foundUrls.slice(0, 3))
+      return null
     }
 
-    // Priority 3: files.vid3rb.com MP4 files
-    const mp4Url = foundUrls.find(u => u.includes('files.vid3rb.com') && u.includes('.mp4'))
-    if (mp4Url) {
-      console.log(`[Phase 2] Found files.vid3rb.com MP4 URL`)
-      return mp4Url
-    }
-
-    console.log(`[Phase 2] No video URL found in player page. Found ${foundUrls.length} URLs total`)
-    if (foundUrls.length > 0) {
-      console.log(`[Phase 2] Sample URLs:`, foundUrls.slice(0, 3))
-    }
-    return null
+    const resolvedChosenUrl = await resolveSignedVideoToFinalUrl(chosen.url)
+    console.log(`[Phase 2] Selected URL (${qualityFromUrl(resolvedChosenUrl)}): ${resolvedChosenUrl.slice(0, 140)}...`)
+    return resolvedChosenUrl
   } catch (error: any) {
     console.error(`[Phase 2] Error fetching player page: ${error.message}`)
     return null
@@ -364,28 +522,29 @@ async function fetchPlayerAndExtract(playerUrl: string, refererUrl: string): Pro
 // Extract video URLs from HTML content
 function extractVideoUrls(html: string): string[] {
   const urls: string[] = []
+  const normalize = (raw: string) => normalizeDirectUrl(raw)
 
   // Pattern 1: video.vid3rb.com/video/xxx?speed=...&token=... (primary video URL)
   const videoPattern = /https:\/\/video\.vid3rb\.com\/video\/[a-f0-9-]+\?[^\s"'<>]+/g
   const videoMatches = html.match(videoPattern) || []
-  urls.push(...videoMatches)
+  urls.push(...videoMatches.map(normalize))
 
-  // Pattern 2: files.vid3rb.com MP4 URLs
-  const mp4Pattern = /https:\/\/files\.vid3rb\.com\/[^\s"'<>]+\.mp4[^\s"'<>]*/g
+  // Pattern 2: files*.vid3rb.com MP4 URLs
+  const mp4Pattern = /https:\/\/files(?:-\d+)?\.vid3rb\.com\/[^\s"'<>]+\.mp4[^\s"'<>]*/g
   const mp4Matches = html.match(mp4Pattern) || []
-  urls.push(...mp4Matches)
+  urls.push(...mp4Matches.map(normalize))
 
   // Pattern 3: Any vid3rb.com URLs (player, embed, etc.)
   const vid3rbPattern = /https:\/\/[^/]*vid3rb\.com\/[^\s"'<>]+/g
   const vid3rbMatches = html.match(vid3rbPattern) || []
-  urls.push(...vid3rbMatches)
+  urls.push(...vid3rbMatches.map(normalize))
 
   // Pattern 4: iframe src with vid3rb
   const iframePattern = /<iframe[^>]+src=["']([^"']+)["']/gi
   let match
   while ((match = iframePattern.exec(html)) !== null) {
     if (match[1].includes('vid3rb')) {
-      urls.push(match[1])
+      urls.push(normalize(match[1]))
     }
   }
 
@@ -474,19 +633,21 @@ serve(async (req: Request) => {
               const videoUrl = await fetchPlayerAndExtract(playerUrl, url)
 
               if (videoUrl) {
+                const quality = qualityFromUrl(videoUrl)
                 return jsonResponse({
                   url: videoUrl,
                   urls: [{
                     url: videoUrl,
                     type: 'direct',
                     server_name: 'anime3rb',
-                    quality: '1080p'
+                    quality
                   }],
                   debug: {
                     method: 'apify',
                     phase: '2-phase-extraction',
                     pageTitle,
                     playerUrl: playerUrl.slice(0, 100),
+                    selectedQuality: quality,
                   }
                 })
               }
@@ -496,23 +657,26 @@ serve(async (req: Request) => {
 
             // Fallback: try to find direct MP4 URLs in episode page HTML
             const foundUrls = extractVideoUrls(html)
-            const mp4Url = foundUrls.find(u => u.includes('files.vid3rb.com') && u.includes('.mp4'))
-
-            if (mp4Url) {
+            const fallbackCandidates = directCandidatesFromUrls(foundUrls)
+            const fallbackChosen = pickPreferredCandidate(fallbackCandidates)
+            if (fallbackChosen) {
+              const resolvedFallback = await resolveSignedVideoToFinalUrl(fallbackChosen.url)
+              const quality = qualityFromUrl(resolvedFallback)
               console.log('[Phase 1] Found direct MP4 URL in episode page')
               return jsonResponse({
-                url: mp4Url,
-                urls: foundUrls.map(u => ({
-                  url: u,
+                url: resolvedFallback,
+                urls: fallbackCandidates.map((c) => ({
+                  url: c.url,
                   type: 'direct',
                   server_name: 'anime3rb',
-                  quality: '720p'
+                  quality: qualityFromUrl(c.url)
                 })),
                 debug: {
                   method: 'apify',
                   phase: 'direct-extraction',
                   pageTitle,
                   foundCount: foundUrls.length,
+                  selectedQuality: quality,
                 }
               })
             }
@@ -561,24 +725,25 @@ serve(async (req: Request) => {
             // Extract video URLs from HTML
             const foundUrls = extractVideoUrls(html)
 
-            // Prioritize direct MP4 files
-            const mp4Url = foundUrls.find(u => u.includes('files.vid3rb.com') && u.includes('.mp4'))
-            const vid3rbUrl = foundUrls.find(u => u.includes('vid3rb.com'))
-            const videoUrl = mp4Url || vid3rbUrl || foundUrls[0] || ''
+            const ranked = directCandidatesFromUrls(foundUrls)
+            const preferred = pickPreferredCandidate(ranked)
+            const videoUrl = preferred ? await resolveSignedVideoToFinalUrl(preferred.url) : ''
 
             if (videoUrl) {
+              const quality = qualityFromUrl(videoUrl)
               return jsonResponse({
                 url: videoUrl,
-                urls: foundUrls.map(u => ({
-                  url: u,
+                urls: ranked.map((c) => ({
+                  url: c.url,
                   type: 'embed',
                   server_name: 'anime3rb',
-                  quality: '720p'
+                  quality: qualityFromUrl(c.url)
                 })),
                 debug: {
                   method: 'flaresolverr',
                   pageTitle,
                   foundCount: foundUrls.length,
+                  selectedQuality: quality,
                 }
               })
             }
@@ -779,12 +944,10 @@ export default async function({ page }) {
 
     // Extract video URL from captured URLs
     const allUrls = [...(browserlessData.found || []), ...(browserlessData.iframes || [])]
-    const uniqueUrls = [...new Set(allUrls)].filter(Boolean)
-
-    // Prioritize direct MP4 files from files.vid3rb.com, then any vid3rb URL
-    const mp4Url = uniqueUrls.find((u: string) => u.includes('files.vid3rb.com') && u.includes('.mp4'))
-    const vid3rbUrl = uniqueUrls.find((u: string) => u.includes('vid3rb.com'))
-    const videoUrl = mp4Url || vid3rbUrl || uniqueUrls[0] || ''
+    const uniqueUrls = [...new Set(allUrls)].map((u) => normalizeDirectUrl(String(u || ''))).filter(Boolean)
+    const ranked = directCandidatesFromUrls(uniqueUrls)
+    const preferred = pickPreferredCandidate(ranked)
+    const videoUrl = preferred ? await resolveSignedVideoToFinalUrl(preferred.url) : ''
 
     if (!videoUrl) {
       return jsonResponse({
@@ -799,16 +962,18 @@ export default async function({ page }) {
     }
 
     // Return the resolved URL(s)
+    const quality = qualityFromUrl(videoUrl)
     return jsonResponse({
       url: videoUrl,
-      urls: uniqueUrls.map((u: string) => ({
-        url: u,
+      urls: ranked.map((c) => ({
+        url: c.url,
         type: 'embed',
         server_name: 'anime3rb',
-        quality: '720p'
+        quality: qualityFromUrl(c.url)
       })),
       debug: {
         method: 'browserless',
+        selectedQuality: quality,
         ...(browserlessData.debug || {})
       }
     })
