@@ -2,7 +2,12 @@
 // On-demand scraper that fetches anime3rb.com episode pages directly,
 // bypasses Cloudflare using Apify's Cloudflare Bypasser actor, extracts the video URL,
 // and caches the result in the database for future use.
-// Strategy: Try direct episode URL first (slug from title), fall back to search if needed.
+// Strategy:
+// 1) provided episode URL (directEpisodeUrl)
+// 2) stored DB episode_page_url
+// 3) built canonical URL from MAL title + episode
+// 4) anime3rb search fallback
+// Stop on first successful 1080p resolution.
 //
 // Deploy to: Supabase Dashboard → Edge Functions → scrape-anime3rb
 
@@ -301,7 +306,6 @@ function buildEpisodeUrlCandidates(animeSlug: string, episodeNumber: number, tit
   // Pattern fallbacks
   candidates.push(
     `https://anime3rb.com/episode/${animeSlug}/${episodeNumber}`,
-    `https://anime3rb.com/episode/${animeSlug}-episode-${episodeNumber}`,
   )
 
   return [...new Set(candidates)]
@@ -1045,14 +1049,17 @@ serve(async (req: Request) => {
     if (!apifyToken) {
       return jsonResponse({ error: 'APIFY_TOKEN not configured' }, 500)
     }
-    const pythonScraperUrl = Deno.env.get('PY_SCRAPER_URL')
-
     // Initialize Supabase client for caching
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     const supabase = supabaseUrl && supabaseServiceKey
       ? createClient(supabaseUrl, supabaseServiceKey)
       : null
+
+    let dbEpisodePageUrl: string | null = null
+    const providedEpisodeUrl = directEpisodeUrl ? String(directEpisodeUrl) : null
+    let resolutionStepUsed: 'provided_link' | 'db_link' | 'built_link' | 'search' | null = null
+    let savedEpisodePageUrl: string | null = null
 
     // Step 0: Check if we already have this episode cached
     if (!forceRefresh && supabase && malId) {
@@ -1086,6 +1093,12 @@ serve(async (req: Request) => {
             cached: true,
             debug: {
               method: 'cache',
+              resolution_step_used: null,
+              provided_episode_url: providedEpisodeUrl,
+              db_episode_page_url: typeof (cached as any)?.episode_page_url === 'string'
+                ? String((cached as any).episode_page_url)
+                : null,
+              saved_episode_page_url: null,
               raw_episode_number: rawEpisodeNumber ?? null,
               normalized_episode_number: normalizedEpisodeNumber,
               episode_candidates: [],
@@ -1099,73 +1112,22 @@ serve(async (req: Request) => {
       }
     }
 
-    // Step 0.5: Optional online Python resolver (fast path), then fallback to this scraper logic.
-    if (!directEpisodeUrl && pythonScraperUrl) {
-      const pythonNameCandidates = [...new Set(
-        [animeTitle, animeTitleEnglish].filter((n): n is string => Boolean(n && String(n).trim()))
-      )]
-      const pythonResult = await resolveFromPythonService(
-        pythonScraperUrl,
-        pythonNameCandidates,
-        normalizedEpisodeNumber,
-      )
+    // Step 1 (DB): use episode_page_url from anime_episodes as fallback after provided URL.
+    if (supabase && malId) {
+      try {
+        const { data: dbEpisode } = await supabase
+          .from('anime_episodes')
+          .select('episode_page_url')
+          .eq('mal_id', malId)
+          .eq('episode_number', normalizedEpisodeNumber)
+          .eq('is_active', true)
+          .maybeSingle()
 
-      if (pythonResult) {
-        const resolvedUrl = await resolveSignedVideoToFinalUrl(pythonResult.videoUrl)
-        const is1080 = getUrlResolution(resolvedUrl) >= 1080 || /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(resolvedUrl)
-
-        if (is1080) {
-          const videoSources = [
-            {
-              url: resolvedUrl,
-              type: 'direct' as const,
-              server_name: 'anime3rb-python',
-              quality: '1080p',
-            },
-          ]
-
-          if (supabase && malId) {
-            const { error: upsertError } = await supabase
-              .from('anime_episodes')
-              .upsert(
-                {
-                  mal_id: malId,
-                  episode_number: normalizedEpisodeNumber,
-                  video_url: videoSources[0].url,
-                  video_sources: videoSources,
-                  quality: videoSources[0].quality,
-                  subtitle_language: 'ar',
-                  is_active: true,
-                  updated_at: new Date().toISOString(),
-                },
-                { onConflict: 'mal_id,episode_number' }
-              )
-
-            if (upsertError) {
-              console.error('[Cache] Failed to cache episode from python resolver:', upsertError.message)
-            } else {
-              console.log(`[Cache] Cached episode (python resolver): mal_id=${malId}, ep=${normalizedEpisodeNumber}`)
-            }
-          }
-
-          return jsonResponse({
-            video_sources: videoSources,
-            cached: false,
-            debug: {
-              method: 'python_api',
-              python_service_url: pythonScraperUrl,
-              python_matched_name: pythonResult.matchedAnimeName,
-              python_episode_page_url: pythonResult.episodePageUrl,
-              python_attempts: pythonResult.attempts,
-              raw_episode_number: rawEpisodeNumber ?? null,
-              normalized_episode_number: normalizedEpisodeNumber,
-              enforced_1080_only: true,
-              episode_candidates: [],
-            },
-          })
-        } else {
-          console.log('[Python Resolver] Received non-1080 URL, continuing with edge scraper fallback')
+        if (dbEpisode && typeof (dbEpisode as any).episode_page_url === 'string') {
+          dbEpisodePageUrl = String((dbEpisode as any).episode_page_url)
         }
+      } catch {
+        // Keep DB link optional.
       }
     }
 
@@ -1175,53 +1137,7 @@ serve(async (req: Request) => {
     let searchQueries: string[] = []
     let lastSearchDebug: any = null
     let searchFallbackUsed = false
-
-    if (directEpisodeUrl) {
-      // ── Direct URL mode: skip MAL-title direct step + search fallback ──
-      console.log(`[Scraper] Direct URL mode — skipping search. Episode URL: ${directEpisodeUrl}`)
-
-      // Extract slug from the URL for debug info only
-      const slugMatch = directEpisodeUrl.match(/anime3rb\.com\/episode\/([^/?#]+)/)
-      if (slugMatch) {
-        // Strip trailing -episode-N if present (format B)
-        animeSlug = slugMatch[1].replace(/-episode-\d+$/, '')
-      }
-
-      rawEpisodeCandidates = [directEpisodeUrl]
-      episodeCandidates = sanitizeEpisodeUrlCandidates(rawEpisodeCandidates, normalizedEpisodeNumber)
-      console.log(`[Step 1] Direct URL candidates:`, episodeCandidates)
-      if (episodeCandidates.length === 0) {
-        return jsonResponse({
-          error: 'No valid episode URL candidates generated',
-          debug: {
-            step: 'candidate_generation',
-            animeSlug,
-            raw_episode_number: rawEpisodeNumber ?? null,
-            normalized_episode_number: normalizedEpisodeNumber,
-            episode_candidates: episodeCandidates,
-          },
-        })
-      }
-    } else {
-      // ── Normal mode: direct MAL-title URL first, search fallback only if needed ──
-      console.log(`[Scraper] Starting for "${animeTitle}" Episode ${normalizedEpisodeNumber}`)
-      searchQueries = buildSearchQueries(animeTitle, animeTitleEnglish)
-
-      const directSlugCandidates = [...new Set(
-        searchQueries
-          .map((q) => slugify(q))
-          .filter((slug) => Boolean(slug))
-      )]
-
-      rawEpisodeCandidates = directSlugCandidates.flatMap((slug) => ([
-        `https://anime3rb.com/episode/${slug}/${normalizedEpisodeNumber}`,
-        `https://anime3rb.com/episode/${slug}-episode-${normalizedEpisodeNumber}`,
-      ]))
-
-      episodeCandidates = sanitizeEpisodeUrlCandidates(rawEpisodeCandidates, normalizedEpisodeNumber)
-      animeSlug = directSlugCandidates[0] || null
-      console.log(`[Step 1] Direct URL candidates from MAL title:`, episodeCandidates)
-    }
+    searchQueries = animeTitle ? buildSearchQueries(animeTitle, animeTitleEnglish) : []
 
     // Step 3: Try candidate episode pages until one yields direct video URLs
     let videoSources: ReturnType<typeof extractVideoUrls> = []
@@ -1272,18 +1188,20 @@ serve(async (req: Request) => {
         }
 
         // Strict 1080-only policy: never return 720/480 fallback URLs.
-        const candidates1080 = rankedCandidates.filter((candidate) => {
+        // Some signed URLs do not expose resolution until redirect is resolved,
+        // so probe top-ranked candidates when no explicit 1080 hint is present.
+        const candidatesWith1080Hint = rankedCandidates.filter((candidate) => {
           const sourceRes = Math.max(candidate.resolution || 0, getUrlResolution(candidate.url))
           return sourceRes >= 1080 || /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(candidate.url)
         })
-        if (candidates1080.length === 0) {
-          lastEpisodeError = 'No 1080p direct video URL found'
-          continue
-        }
+        const candidatesToProbe =
+          candidatesWith1080Hint.length > 0
+            ? candidatesWith1080Hint
+            : rankedCandidates.slice(0, 5)
 
         let chosenCandidate: DirectCandidate | null = null
         let resolvedChosenUrl: string | null = null
-        for (const candidate of candidates1080) {
+        for (const candidate of candidatesToProbe) {
           const resolved = await resolveSignedVideoToFinalUrl(candidate.url)
           const resolvedRes = getUrlResolution(resolved)
           const sourceRes = Math.max(candidate.resolution || 0, getUrlResolution(candidate.url))
@@ -1296,13 +1214,15 @@ serve(async (req: Request) => {
           }
         }
         if (!chosenCandidate || !resolvedChosenUrl) {
-          lastEpisodeError = '1080p candidates found, but no playable 1080p URL could be resolved'
+          lastEpisodeError = candidatesWith1080Hint.length > 0
+            ? '1080p candidates found, but no playable 1080p URL could be resolved'
+            : 'No 1080p direct video URL found'
           continue
         }
 
         // Non-blocking diagnostics: probe reachability but do NOT filter output.
         const reachabilityByCandidate: Record<string, boolean | null> = {}
-        for (const candidate of candidates1080.slice(0, 5)) {
+        for (const candidate of candidatesToProbe.slice(0, 5)) {
           const normalized = normalizeDirectUrl(candidate.url)
           try {
             reachabilityByCandidate[normalized] = await isDirectUrlReachable(normalized)
@@ -1331,18 +1251,61 @@ serve(async (req: Request) => {
     }
 
     let resolved = false
+
+    // Step 1: Provided episode URL first, then DB episode_page_url
+    const providedCandidates = providedEpisodeUrl
+      ? sanitizeEpisodeUrlCandidates([providedEpisodeUrl], normalizedEpisodeNumber)
+      : []
+    const dbCandidates = dbEpisodePageUrl
+      ? sanitizeEpisodeUrlCandidates([dbEpisodePageUrl], normalizedEpisodeNumber)
+      : []
+    episodeCandidates = [...new Set([...providedCandidates, ...dbCandidates])]
+    rawEpisodeCandidates = [...episodeCandidates]
+
     if (episodeCandidates.length > 0) {
+      console.log(`[Step 1] Candidate URLs (provided/db):`, episodeCandidates)
+      const slugMatch = episodeCandidates[0].match(/anime3rb\.com\/episode\/([^/?#]+)/)
+      if (slugMatch) {
+        animeSlug = slugMatch[1].replace(/-episode-\d+$/, '')
+      }
       resolved = await tryResolveFromCandidates(episodeCandidates)
+      if (resolved && usedEpisodeUrl) {
+        resolutionStepUsed = providedCandidates.includes(usedEpisodeUrl) ? 'provided_link' : 'db_link'
+      }
     }
 
-    // Direct URL attempt failed: fall back to search flow.
-    if (!resolved && !directEpisodeUrl) {
+    // Step 2: Build canonical URL from MAL title + episode number
+    if (!resolved && animeTitle) {
+      console.log(`[Step 2] Building URL from MAL title for "${animeTitle}" Episode ${normalizedEpisodeNumber}`)
+      const directSlugCandidates = [...new Set(
+        searchQueries
+          .map((q) => slugify(q))
+          .filter((slug) => Boolean(slug))
+      )]
+
+      rawEpisodeCandidates = directSlugCandidates.map(
+        (slug) => `https://anime3rb.com/episode/${slug}/${normalizedEpisodeNumber}`
+      )
+      episodeCandidates = sanitizeEpisodeUrlCandidates(rawEpisodeCandidates, normalizedEpisodeNumber)
+      animeSlug = directSlugCandidates[0] || animeSlug
+      console.log(`[Step 2] Built URL candidates:`, episodeCandidates)
+
+      if (episodeCandidates.length > 0) {
+        resolved = await tryResolveFromCandidates(episodeCandidates)
+        if (resolved) {
+          resolutionStepUsed = 'built_link'
+        }
+      }
+    }
+
+    // Step 3: Search fallback on anime3rb
+    if (!resolved && animeTitle) {
       searchFallbackUsed = true
-      console.log('[Step Fallback] Direct MAL-title URL failed, starting search fallback...')
+      console.log('[Step 3] Built URL failed, starting anime3rb search fallback...')
 
       for (const query of searchQueries) {
         const searchUrl = `https://anime3rb.com/search?q=${encodeURIComponent(query)}`
-        console.log(`[Step Fallback] Searching anime3rb: ${searchUrl}`)
+        console.log(`[Step 3] Searching anime3rb: ${searchUrl}`)
 
         const searchResult = await fetchWithApify(searchUrl, apifyToken)
         lastSearchDebug = {
@@ -1359,16 +1322,19 @@ serve(async (req: Request) => {
       }
 
       if (animeSlug) {
-        console.log(`[Step Fallback] Found anime slug: ${animeSlug}`)
+        console.log(`[Step 3] Found anime slug: ${animeSlug}`)
         const titleUrl = `https://anime3rb.com/titles/${animeSlug}`
-        console.log(`[Step Fallback] Fetching title page: ${titleUrl}`)
+        console.log(`[Step 3] Fetching title page: ${titleUrl}`)
         const titleResult = await fetchWithApify(titleUrl, apifyToken)
         rawEpisodeCandidates = buildEpisodeUrlCandidates(animeSlug, normalizedEpisodeNumber, titleResult.html || '')
         episodeCandidates = sanitizeEpisodeUrlCandidates(rawEpisodeCandidates, normalizedEpisodeNumber)
-        console.log(`[Step Fallback] Episode URL candidates:`, episodeCandidates)
+        console.log(`[Step 3] Search candidates:`, episodeCandidates)
 
         if (episodeCandidates.length > 0) {
           resolved = await tryResolveFromCandidates(episodeCandidates)
+          if (resolved) {
+            resolutionStepUsed = 'search'
+          }
         }
       }
     }
@@ -1378,6 +1344,10 @@ serve(async (req: Request) => {
         error: 'No 1080p direct video URLs found on candidate episode pages',
         debug: {
           step: 'extract',
+          resolution_step_used: resolutionStepUsed,
+          provided_episode_url: providedEpisodeUrl,
+          db_episode_page_url: dbEpisodePageUrl,
+          saved_episode_page_url: savedEpisodePageUrl,
           animeSlug,
           search_fallback_used: searchFallbackUsed,
           lastSearchDebug,
@@ -1396,21 +1366,30 @@ serve(async (req: Request) => {
 
     console.log(`[Step 3] Found ${videoSources.length} video source(s)`)
 
+    if (usedEpisodeUrl && (resolutionStepUsed === 'built_link' || resolutionStepUsed === 'search')) {
+      savedEpisodePageUrl = usedEpisodeUrl
+    }
+
     // Step 4: Cache the result in the database
     if (supabase && malId) {
+      const upsertPayload: Record<string, unknown> = {
+        mal_id: malId,
+        episode_number: normalizedEpisodeNumber,
+        video_url: videoSources[0].url,
+        video_sources: videoSources,
+        quality: videoSources[0].quality,
+        subtitle_language: 'ar',
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      }
+      if (savedEpisodePageUrl) {
+        upsertPayload.episode_page_url = savedEpisodePageUrl
+      }
+
       const { error: upsertError } = await supabase
         .from('anime_episodes')
         .upsert(
-          {
-            mal_id: malId,
-            episode_number: normalizedEpisodeNumber,
-            video_url: videoSources[0].url,
-            video_sources: videoSources,
-            quality: videoSources[0].quality,
-            subtitle_language: 'ar',
-            is_active: true,
-            updated_at: new Date().toISOString(),
-          },
+          upsertPayload,
           { onConflict: 'mal_id,episode_number' }
         )
 
@@ -1427,6 +1406,10 @@ serve(async (req: Request) => {
       debug: {
         method: 'apify',
         enforced_1080_only: true,
+        resolution_step_used: resolutionStepUsed,
+        provided_episode_url: providedEpisodeUrl,
+        db_episode_page_url: dbEpisodePageUrl,
+        saved_episode_page_url: savedEpisodePageUrl,
         search_fallback_used: searchFallbackUsed,
         animeSlug,
         episodeUrl: usedEpisodeUrl,

@@ -26,6 +26,7 @@ export interface AnimeEpisode {
   id: string
   mal_id: number
   episode_number: number
+  episode_page_url?: string | null
   video_url: string
   quality: string
   video_sources: VideoSource[] | null
