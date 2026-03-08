@@ -1184,28 +1184,23 @@ serve(async (req: Request) => {
           const pythonResult = await resolveEpisodeUrlWithPythonService(pythonScraperUrl, episodeUrl)
           if (pythonResult) {
             const resolvedPythonUrl = await resolveSignedVideoToFinalUrl(pythonResult.videoUrl)
-            const pythonIs1080 =
-              getUrlResolution(resolvedPythonUrl) >= 1080 ||
-              /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(resolvedPythonUrl)
-
-            if (pythonIs1080) {
-              videoSources = [
-                {
-                  url: resolvedPythonUrl,
-                  type: 'direct',
-                  server_name: 'anime3rb-python',
-                  quality: '1080p',
-                },
-              ]
-              usedEpisodeUrl = pythonResult.episodePageUrl || episodeUrl
-              selectedCandidateCount = 1
-              selectedTopQuality = '1080p'
-              selectedTopHost = hostFromUrl(resolvedPythonUrl)
-              selectedReachability = {}
-              return true
-            }
-
-            lastEpisodeError = 'Python resolver returned non-1080 video URL'
+            // Trust the Python scraper as authoritative for picking the best source.
+            // It sorts player `video_sources` by the declared `res` field before returning a URL,
+            // and the selected URL may be a signed /video/ link that does not expose 1080 in the path.
+            videoSources = [
+              {
+                url: resolvedPythonUrl,
+                type: 'direct',
+                server_name: 'anime3rb-python',
+                quality: '1080p',
+              },
+            ]
+            usedEpisodeUrl = pythonResult.episodePageUrl || episodeUrl
+            selectedCandidateCount = 1
+            selectedTopQuality = '1080p'
+            selectedTopHost = hostFromUrl(resolvedPythonUrl)
+            selectedReachability = {}
+            return true
           }
         }
 
