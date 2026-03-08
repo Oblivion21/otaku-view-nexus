@@ -90,36 +90,70 @@ function extractAnimeSlugFromSearch(html: string, animeTitle: string): string | 
   return uniqueSlugs[0]
 }
 
+// Detect quality from a vid3rb URL (e.g. /1080p.mp4, /720p.mp4, /480p.mp4)
+function detectQualityFromUrl(url: string): string {
+  const match = url.match(/\/(\d{3,4})p\.mp4/)
+  return match ? `${match[1]}p` : 'unknown'
+}
+
+// Quality sort order (highest first)
+const QUALITY_ORDER: Record<string, number> = { '1080p': 0, '720p': 1, '480p': 2, '360p': 3, 'unknown': 4 }
+
+// Given a vid3rb direct MP4 URL, generate quality variants (1080p, 720p, 480p)
+// URL format: https://files.vid3rb.com/files/{folder}/{uuid}/{quality}.mp4?params
+function generateQualityVariants(url: string): { url: string; quality: string }[] {
+  const qualityMatch = url.match(/\/(\d{3,4})p\.mp4/)
+  if (!qualityMatch) return [{ url, quality: 'unknown' }]
+
+  const originalQuality = qualityMatch[1]
+  const qualities = ['1080', '720', '480']
+  const variants: { url: string; quality: string }[] = []
+
+  for (const q of qualities) {
+    const variantUrl = url.replace(`/${originalQuality}p.mp4`, `/${q}p.mp4`)
+    variants.push({ url: variantUrl, quality: `${q}p` })
+  }
+
+  return variants
+}
+
 // Extract video URLs from anime3rb episode page HTML
 function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'; server_name: string; quality: string }[] {
   const sources: { url: string; type: 'direct' | 'embed'; server_name: string; quality: string }[] = []
+  const seenUrls = new Set<string>()
+
+  function addSource(url: string, type: 'direct' | 'embed', server_name: string, quality: string) {
+    if (seenUrls.has(url)) return
+    seenUrls.add(url)
+    sources.push({ url, type, server_name, quality })
+  }
 
   // Pattern 1: Direct MP4 files from files.vid3rb.com
+  // Generate 1080p/720p/480p variants from any found URL
   const mp4Pattern = /https:\/\/files\.vid3rb\.com\/[^\s"'<>]+\.mp4[^\s"'<>]*/g
   const mp4Matches = html.match(mp4Pattern) || []
   for (const url of mp4Matches) {
-    sources.push({ url, type: 'direct', server_name: 'anime3rb', quality: '720p' })
+    const variants = generateQualityVariants(url)
+    for (const v of variants) {
+      addSource(v.url, 'direct', 'anime3rb', v.quality)
+    }
   }
 
   // Pattern 2: vid3rb.com player/embed URLs
   const vid3rbPattern = /https:\/\/[^/]*vid3rb\.com\/(?:embed|player|v)\/[^\s"'<>]+/g
   const vid3rbMatches = html.match(vid3rbPattern) || []
   for (const url of vid3rbMatches) {
-    if (!sources.some(s => s.url === url)) {
-      sources.push({ url, type: 'embed', server_name: 'anime3rb', quality: '720p' })
-    }
+    addSource(url, 'embed', 'anime3rb', detectQualityFromUrl(url))
   }
 
   // Pattern 3: Any vid3rb.com URL not already captured
   const anyVid3rbPattern = /https:\/\/[^/]*vid3rb\.com\/[^\s"'<>]+/g
   const anyVid3rbMatches = html.match(anyVid3rbPattern) || []
   for (const url of anyVid3rbMatches) {
-    if (!sources.some(s => s.url === url)) {
-      // Filter out thumbnails and images
-      if (url.match(/\.(jpg|jpeg|png|webp|gif|svg|vtt|srt)$/i)) continue
-      if (url.match(/thumbnail/i)) continue
-      sources.push({ url, type: 'embed', server_name: 'anime3rb', quality: '720p' })
-    }
+    if (seenUrls.has(url)) continue
+    if (url.match(/\.(jpg|jpeg|png|webp|gif|svg|vtt|srt)$/i)) continue
+    if (url.match(/thumbnail/i)) continue
+    addSource(url, 'embed', 'anime3rb', detectQualityFromUrl(url))
   }
 
   // Pattern 4: iframe sources (may contain external players)
@@ -127,8 +161,8 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   let iframeMatch
   while ((iframeMatch = iframePattern.exec(html)) !== null) {
     const url = iframeMatch[1]
-    if (!sources.some(s => s.url === url) && !url.includes('google') && !url.includes('facebook')) {
-      sources.push({ url, type: 'embed', server_name: 'iframe-player', quality: '720p' })
+    if (!url.includes('google') && !url.includes('facebook')) {
+      addSource(url, 'embed', 'iframe-player', detectQualityFromUrl(url))
     }
   }
 
@@ -137,9 +171,7 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   let videoMatch
   while ((videoMatch = videoSrcPattern.exec(html)) !== null) {
     const url = videoMatch[1]
-    if (!sources.some(s => s.url === url)) {
-      sources.push({ url, type: 'direct', server_name: 'anime3rb', quality: '720p' })
-    }
+    addSource(url, 'direct', 'anime3rb', detectQualityFromUrl(url))
   }
 
   // Pattern 6: Look for video URL in JavaScript variables/objects
@@ -147,16 +179,21 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   let jsMatch
   while ((jsMatch = jsVideoPattern.exec(html)) !== null) {
     const url = jsMatch[1]
-    if (!sources.some(s => s.url === url)) {
-      const isDirectVideo = url.match(/\.(mp4|m3u8|webm)/)
-      sources.push({
-        url,
-        type: isDirectVideo ? 'direct' : 'embed',
-        server_name: 'anime3rb',
-        quality: '720p',
-      })
+    const isDirectVideo = url.match(/\.(mp4|m3u8|webm)/)
+    if (isDirectVideo && url.includes('vid3rb.com')) {
+      const variants = generateQualityVariants(url)
+      for (const v of variants) {
+        addSource(v.url, 'direct', 'anime3rb', v.quality)
+      }
+    } else {
+      addSource(url, isDirectVideo ? 'direct' : 'embed', 'anime3rb', detectQualityFromUrl(url))
     }
   }
+
+  // Sort: highest quality first (1080p > 720p > 480p > unknown)
+  sources.sort((a, b) => (QUALITY_ORDER[a.quality] ?? 99) - (QUALITY_ORDER[b.quality] ?? 99))
+
+  console.log(`[Extract] Found ${sources.length} sources:`, sources.map(s => `${s.quality} ${s.type}`))
 
   return sources
 }
