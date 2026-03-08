@@ -12,6 +12,7 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
+const MIN_PREFERRED_RESOLUTION = 1080
 
 function jsonResponse(data: object, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -460,6 +461,10 @@ function pickBestDirectUrl(urls: string[]): string | null {
   if (!unique.length) return null
 
   unique.sort((a, b) => {
+    const aSigned = isSignedVid3rbVideo(a) ? 1 : 0
+    const bSigned = isSignedVid3rbVideo(b) ? 1 : 0
+    if (aSigned !== bSigned) return bSigned - aSigned
+
     const resDiff = getUrlResolution(b) - getUrlResolution(a)
     if (resDiff !== 0) return resDiff
     // Prefer files mp4 when resolution ties.
@@ -477,8 +482,147 @@ function qualityFromUrl(url: string): string {
   return res > 0 ? `${res}p` : 'auto'
 }
 
-function parseBestDirectFromPlayerHtml(html: string): string | null {
-  const candidates: string[] = []
+function extractCfTokenFromPlayerHtml(html: string): string | null {
+  const patterns = [
+    /cf_token\s*[=:]\s*["']([^"']+)["']/i,
+    /["']cf_token["']\s*:\s*["']([^"']+)["']/i,
+    /window\.cf_token\s*=\s*["']([^"']+)["']/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern)
+    if (match?.[1]) return match[1]
+  }
+  return null
+}
+
+type DirectCandidate = {
+  url: string
+  resolution: number
+}
+
+function rankDirectCandidates(candidates: DirectCandidate[]): DirectCandidate[] {
+  if (!candidates.length) return []
+
+  const byUrl = new Map<string, number>()
+  for (const item of candidates) {
+    const url = normalizeDirectUrl(item.url)
+    if (!isDirectLikeUrl(url)) continue
+    const res = Math.max(item.resolution || 0, getUrlResolution(url))
+    byUrl.set(url, Math.max(byUrl.get(url) || 0, res))
+  }
+
+  const ranked = Array.from(byUrl.entries()).map(([url, resolution]) => ({ url, resolution }))
+  ranked.sort((a, b) => {
+    const aSigned = isSignedVid3rbVideo(a.url) ? 1 : 0
+    const bSigned = isSignedVid3rbVideo(b.url) ? 1 : 0
+    if (aSigned !== bSigned) return bSigned - aSigned
+
+    const resDiff = b.resolution - a.resolution
+    if (resDiff !== 0) return resDiff
+
+    const aMp4 = /\.mp4(?:$|[?#])/i.test(a.url) ? 1 : 0
+    const bMp4 = /\.mp4(?:$|[?#])/i.test(b.url) ? 1 : 0
+    if (aMp4 !== bMp4) return bMp4 - aMp4
+    return a.url.length - b.url.length
+  })
+
+  return ranked
+}
+
+function pickBestDirectCandidate(candidates: DirectCandidate[]): string | null {
+  const ranked = rankDirectCandidates(candidates)
+  return ranked.length > 0 ? ranked[0].url : null
+}
+
+function collectDirectCandidatesFromPayload(payload: unknown): DirectCandidate[] {
+  const out: DirectCandidate[] = []
+
+  const walk = (value: unknown, inheritedResolution: number, depth: number) => {
+    if (depth > 10) return
+
+    if (typeof value === 'string') {
+      const candidate = normalizeDirectUrl(value)
+      if (isDirectLikeUrl(candidate)) {
+        out.push({ url: candidate, resolution: Math.max(inheritedResolution, getUrlResolution(candidate)) })
+      }
+      return
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        walk(item, inheritedResolution, depth + 1)
+      }
+      return
+    }
+
+    if (!value || typeof value !== 'object') return
+
+    const obj = value as Record<string, unknown>
+    if (obj.premium === true) return
+
+    const ownResolution = Math.max(inheritedResolution, getSourceResolution(obj))
+
+    for (const key of ['src', 'url', 'video_url', 'file', 'download']) {
+      if (typeof obj[key] === 'string') {
+        walk(obj[key], ownResolution, depth + 1)
+      }
+    }
+
+    for (const nested of Object.values(obj)) {
+      walk(nested, ownResolution, depth + 1)
+    }
+  }
+
+  walk(payload, 0, 0)
+  return out
+}
+
+async function fetchBestDirectFromSourcesApi(playerUrl: string, playerHtml: string): Promise<string | null> {
+  const candidates = await fetchDirectCandidatesFromSourcesApi(playerUrl, playerHtml)
+  return pickBestDirectCandidate(candidates)
+}
+
+async function fetchDirectCandidatesFromSourcesApi(playerUrl: string, playerHtml: string): Promise<DirectCandidate[]> {
+  const cfToken = extractCfTokenFromPlayerHtml(playerHtml)
+  if (!cfToken) return []
+
+  const playerUuid = playerUrl.match(/\/player\/([a-f0-9-]+)/i)?.[1]
+  if (!playerUuid) return []
+
+  const sourcesUrl = `https://video.vid3rb.com/player/${playerUuid}/sources?cf_token=${encodeURIComponent(cfToken)}`
+
+  try {
+    const response = await fetch(sourcesUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': playerUrl,
+        'Accept': 'application/json,*/*',
+        'Origin': 'https://video.vid3rb.com',
+      },
+      signal: AbortSignal.timeout(20000),
+    })
+
+    if (!response.ok) return []
+
+    const text = await response.text()
+    if (!text) return []
+
+    let payload: any
+    try {
+      payload = JSON.parse(text)
+    } catch {
+      return []
+    }
+
+    return rankDirectCandidates(collectDirectCandidatesFromPayload(payload))
+  } catch {
+    return []
+  }
+}
+
+function parseDirectCandidatesFromPlayerHtml(html: string): DirectCandidate[] {
+  const candidates: DirectCandidate[] = []
   const matches = Array.from(html.matchAll(/video_sources\s*=\s*(\[.*?\]);/gs))
   for (const match of matches.reverse()) {
     const raw = match[1]
@@ -488,13 +632,17 @@ function parseBestDirectFromPlayerHtml(html: string): string | null {
       if (!Array.isArray(sources)) continue
 
       const valid = sources
-        .filter((s: any) => s?.src && !s?.premium)
+        .filter((s: any) => !s?.premium)
         .sort((a: any, b: any) => getSourceResolution(b) - getSourceResolution(a))
 
       for (const src of valid) {
-        const candidate = normalizeDirectUrl(String(src.src))
-        if (isDirectLikeUrl(candidate)) {
-          candidates.push(candidate)
+        const resolution = getSourceResolution(src)
+        for (const field of [src?.src, src?.url, src?.video_url, src?.file, src?.download]) {
+          if (!field) continue
+          const candidate = normalizeDirectUrl(String(field))
+          if (isDirectLikeUrl(candidate)) {
+            candidates.push({ url: candidate, resolution })
+          }
         }
       }
     } catch {
@@ -502,14 +650,22 @@ function parseBestDirectFromPlayerHtml(html: string): string | null {
     }
   }
 
-  const bestFromSources = pickBestDirectUrl(candidates)
-  if (bestFromSources) return bestFromSources
+  const textDirects = extractDirectUrlFromText(html)
+  if (textDirects) {
+    candidates.push({ url: textDirects, resolution: getUrlResolution(textDirects) })
+  }
 
-  return extractDirectUrlFromText(html)
+  return rankDirectCandidates(candidates)
 }
 
-async function fetchDirectVideoFromPlayer(playerUrl: string, refererUrl: string, apifyToken: string): Promise<string | null> {
+function parseBestDirectFromPlayerHtml(html: string): string | null {
+  const ranked = parseDirectCandidatesFromPlayerHtml(html)
+  return ranked.length > 0 ? ranked[0].url : null
+}
+
+async function fetchDirectVideoLinksFromPlayer(playerUrl: string, refererUrl: string, apifyToken: string): Promise<string[]> {
   const normalizedPlayerUrl = normalizeDirectUrl(playerUrl)
+  let collected: DirectCandidate[] = []
 
   try {
     const resp = await fetch(normalizedPlayerUrl, {
@@ -524,24 +680,39 @@ async function fetchDirectVideoFromPlayer(playerUrl: string, refererUrl: string,
 
     if (resp.ok) {
       const html = await resp.text()
-      const direct = parseBestDirectFromPlayerHtml(html)
-      if (direct) return direct
+
+      // Prefer signed sources endpoint when available (dynamic token flow).
+      const fromSourcesApi = await fetchDirectCandidatesFromSourcesApi(normalizedPlayerUrl, html)
+      const fromHtml = parseDirectCandidatesFromPlayerHtml(html)
+      collected = rankDirectCandidates([...collected, ...fromSourcesApi, ...fromHtml])
+      if (collected.length > 0) {
+        return collected.map((c) => c.url)
+      }
     }
   } catch {
     // Fall back to Apify path below.
   }
 
   const playerResult = await fetchWithApify(normalizedPlayerUrl, apifyToken)
-  if (!playerResult.html) return null
-  return parseBestDirectFromPlayerHtml(playerResult.html)
+  if (!playerResult.html) return []
+
+  const fromSourcesApiFallback = await fetchDirectCandidatesFromSourcesApi(normalizedPlayerUrl, playerResult.html)
+  const fromHtmlFallback = parseDirectCandidatesFromPlayerHtml(playerResult.html)
+  collected = rankDirectCandidates([...collected, ...fromSourcesApiFallback, ...fromHtmlFallback])
+
+  return collected.map((c) => c.url)
 }
 
 function isDirectLikeUrl(url: string): boolean {
-  const isSignedVid3rbVideo = /video\.vid3rb\.com\/video\//i.test(url) && /(?:\?|&)token=/i.test(url)
+  const isSigned = isSignedVid3rbVideo(url)
   return (
     /\.mp4(?:$|[?#])/i.test(url) ||
-    isSignedVid3rbVideo
+    isSigned
   )
+}
+
+function isSignedVid3rbVideo(url: string): boolean {
+  return /video\.vid3rb\.com\/video\//i.test(url) && /(?:\?|&)token=/i.test(url)
 }
 
 function normalizeDirectUrl(url: string): string {
@@ -597,7 +768,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { animeTitle, animeTitleEnglish, episodeNumber, malId } = await req.json()
+    const { animeTitle, animeTitleEnglish, episodeNumber, malId, forceRefresh } = await req.json()
 
     if (!animeTitle || !episodeNumber) {
       return jsonResponse({ error: 'animeTitle and episodeNumber are required' }, 400)
@@ -616,7 +787,7 @@ serve(async (req: Request) => {
       : null
 
     // Step 0: Check if we already have this episode cached
-    if (supabase && malId) {
+    if (!forceRefresh && supabase && malId) {
       const { data: cached } = await supabase
         .from('anime_episodes')
         .select('*')
@@ -627,10 +798,12 @@ serve(async (req: Request) => {
 
       if (cached?.video_sources && cached.video_sources.length > 0) {
         let hasPlayableDirect = false
+        let bestCachedResolution = 0
         for (const s of cached.video_sources as any[]) {
           const url = String(s?.url || '')
           const type = String(s?.type || '')
           if (type !== 'direct' && !isDirectLikeUrl(url)) continue
+          bestCachedResolution = Math.max(bestCachedResolution, getUrlResolution(url))
           if (isUrlExpiringSoon(url, 180)) continue
           if (await isDirectUrlReachable(url)) {
             hasPlayableDirect = true
@@ -638,7 +811,7 @@ serve(async (req: Request) => {
           }
         }
 
-        if (hasPlayableDirect) {
+        if (hasPlayableDirect && bestCachedResolution >= MIN_PREFERRED_RESOLUTION) {
           console.log(`[Cache] Found cached episode: mal_id=${malId}, ep=${episodeNumber}`)
           return jsonResponse({
             video_sources: cached.video_sources,
@@ -647,7 +820,9 @@ serve(async (req: Request) => {
           })
         }
 
-        console.log(`[Cache] Cached sources are proxy-only; re-scraping mal_id=${malId}, ep=${episodeNumber}`)
+        console.log(
+          `[Cache] Cached direct is missing/low-quality (${bestCachedResolution}p); re-scraping mal_id=${malId}, ep=${episodeNumber}`
+        )
       }
     }
 
@@ -699,7 +874,7 @@ serve(async (req: Request) => {
 
     console.log(`[Step 2] Episode URL candidates:`, episodeCandidates)
 
-    // Step 3: Try candidate episode pages until one yields a signed direct URL
+    // Step 3: Try candidate episode pages until one yields direct video URLs
     let videoSources: ReturnType<typeof extractVideoUrls> = []
     let usedEpisodeUrl: string | null = null
     let lastEpisodeError: string | undefined = undefined
@@ -720,50 +895,55 @@ serve(async (req: Request) => {
         extracted.find((s) => /video\.vid3rb\.com\/player\//i.test(s.url))?.url ||
         null
 
-      let directUrl: string | null = null
+      const directCandidates: DirectCandidate[] = []
       if (playerUrl) {
-        directUrl = await fetchDirectVideoFromPlayer(playerUrl, episodeUrl, apifyToken)
-      }
-
-      // 2) Fallback: signed direct URL already present in episode HTML.
-      if (!directUrl) {
-        const fallbackCandidates = extracted
-          .map((s) => normalizeDirectUrl(s.url))
-          .filter((url) => isDirectLikeUrl(url))
-        const bestFallback = pickBestDirectUrl(fallbackCandidates)
-        if (bestFallback) {
-          directUrl = bestFallback
+        const playerUrls = await fetchDirectVideoLinksFromPlayer(playerUrl, episodeUrl, apifyToken)
+        for (const url of playerUrls) {
+          directCandidates.push({ url, resolution: getUrlResolution(url) })
         }
       }
 
-      if (!directUrl) {
-        lastEpisodeError = 'No signed direct URL found'
+      // 2) Also include direct URLs already present in episode HTML.
+      const fallbackCandidates = extracted
+        .map((s) => normalizeDirectUrl(s.url))
+        .filter((url) => isDirectLikeUrl(url))
+      for (const url of fallbackCandidates) {
+        directCandidates.push({ url, resolution: getUrlResolution(url) })
+      }
+
+      const rankedCandidates = rankDirectCandidates(directCandidates)
+      if (rankedCandidates.length === 0) {
+        lastEpisodeError = 'No direct video URL found'
         continue
       }
 
-      directUrl = normalizeDirectUrl(directUrl)
-      const reachable = await isDirectUrlReachable(directUrl)
-      if (!reachable) {
-        lastEpisodeError = 'Signed direct URL is not reachable'
+      const reachableCandidates: DirectCandidate[] = []
+      for (const candidate of rankedCandidates) {
+        const normalized = normalizeDirectUrl(candidate.url)
+        if (await isDirectUrlReachable(normalized)) {
+          reachableCandidates.push({ url: normalized, resolution: Math.max(candidate.resolution, getUrlResolution(normalized)) })
+        }
+      }
+
+      if (reachableCandidates.length === 0) {
+        lastEpisodeError = 'Direct video URLs are not reachable'
         continue
       }
 
-      // Return ONLY one direct source, as requested.
-      videoSources = [
-        {
-          url: directUrl,
+      // Return all reachable direct sources, ranked best-first.
+      videoSources = reachableCandidates.map((candidate) => ({
+          url: candidate.url,
           type: 'direct',
           server_name: 'anime3rb-direct',
-          quality: qualityFromUrl(directUrl),
-        },
-      ]
+          quality: qualityFromUrl(candidate.url),
+        }))
       usedEpisodeUrl = episodeUrl
       break
     }
 
     if (videoSources.length === 0) {
       return jsonResponse({
-        error: 'No signed direct video URL found on candidate episode pages',
+        error: 'No direct video URLs found on candidate episode pages',
         debug: {
           step: 'extract',
           animeSlug,
