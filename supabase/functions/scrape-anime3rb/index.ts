@@ -19,6 +19,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 const MIN_PREFERRED_RESOLUTION = 1080
+const SCRAPE_CACHE_TTL_MS = 2 * 60 * 60 * 1000
 
 function jsonResponse(data: object, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -625,6 +626,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function isScrapedVideoFresh(scrapedAt: unknown, maxAgeMs = SCRAPE_CACHE_TTL_MS): boolean {
+  if (typeof scrapedAt !== 'string' || !scrapedAt) return false
+  const parsed = Date.parse(scrapedAt)
+  if (!Number.isFinite(parsed)) return false
+  return Date.now() - parsed < maxAgeMs
+}
+
 function extractCfTokenFromPlayerHtml(html: string): string | null {
   const patterns = [
     /cf_token\s*[=:]\s*["']([^"']+)["']/i,
@@ -1074,6 +1082,10 @@ serve(async (req: Request) => {
       if (cached?.video_sources && cached.video_sources.length > 0) {
         let hasPlayableDirect = false
         let bestCachedResolution = 0
+        const cachedScrapedAt = typeof (cached as any)?.scraped_at === 'string'
+          ? String((cached as any).scraped_at)
+          : null
+        const isFreshCache = isScrapedVideoFresh(cachedScrapedAt)
         for (const s of cached.video_sources as any[]) {
           const url = String(s?.url || '')
           const type = String(s?.type || '')
@@ -1086,13 +1098,14 @@ serve(async (req: Request) => {
           }
         }
 
-        if (hasPlayableDirect && bestCachedResolution >= MIN_PREFERRED_RESOLUTION) {
+        if (isFreshCache && hasPlayableDirect && bestCachedResolution >= MIN_PREFERRED_RESOLUTION) {
           console.log(`[Cache] Found cached episode: mal_id=${malId}, ep=${normalizedEpisodeNumber}`)
           return jsonResponse({
             video_sources: cached.video_sources,
             cached: true,
             debug: {
               method: 'cache',
+              scraped_at: cachedScrapedAt,
               resolution_step_used: null,
               provided_episode_url: providedEpisodeUrl,
               db_episode_page_url: typeof (cached as any)?.episode_page_url === 'string'
@@ -1107,7 +1120,7 @@ serve(async (req: Request) => {
         }
 
         console.log(
-          `[Cache] Cached direct is missing/low-quality (${bestCachedResolution}p); re-scraping mal_id=${malId}, ep=${normalizedEpisodeNumber}`
+          `[Cache] Cached direct is stale/missing/low-quality (${bestCachedResolution}p); re-scraping mal_id=${malId}, ep=${normalizedEpisodeNumber}`
         )
       }
     }
@@ -1380,6 +1393,7 @@ serve(async (req: Request) => {
         quality: videoSources[0].quality,
         subtitle_language: 'ar',
         is_active: true,
+        scraped_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
       if (savedEpisodePageUrl) {

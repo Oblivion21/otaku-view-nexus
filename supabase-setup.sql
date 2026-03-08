@@ -6,16 +6,19 @@
 
 -- ===================================================================
 -- TABLE 1: anime_episodes
--- Stores episode video URLs for each anime
+-- Stores anime episode source page URLs and cached resolved video URLs
 -- ===================================================================
 CREATE TABLE IF NOT EXISTS anime_episodes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   mal_id INTEGER NOT NULL,
   episode_number INTEGER NOT NULL,
-  video_url TEXT NOT NULL,
+  episode_page_url TEXT,
+  video_url TEXT,
+  video_sources JSONB,
   quality TEXT DEFAULT '1080p',
   subtitle_language TEXT DEFAULT 'arabic',
   is_active BOOLEAN DEFAULT true,
+  scraped_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
 
@@ -29,10 +32,13 @@ CREATE INDEX IF NOT EXISTS idx_anime_episodes_mal_id ON anime_episodes(mal_id);
 -- Create index for active episodes
 CREATE INDEX IF NOT EXISTS idx_anime_episodes_active ON anime_episodes(is_active);
 
-COMMENT ON TABLE anime_episodes IS 'Stores video URLs for anime episodes';
+COMMENT ON TABLE anime_episodes IS 'Stores source page URLs and cached direct video URLs for anime episodes';
 COMMENT ON COLUMN anime_episodes.mal_id IS 'MyAnimeList anime ID';
 COMMENT ON COLUMN anime_episodes.episode_number IS 'Episode number (1, 2, 3, etc.)';
-COMMENT ON COLUMN anime_episodes.video_url IS 'External video URL (Gogoanime, etc.)';
+COMMENT ON COLUMN anime_episodes.episode_page_url IS 'Canonical anime3rb episode page URL managed by admins';
+COMMENT ON COLUMN anime_episodes.video_url IS 'Cached direct 1080p playback URL resolved by the scraper';
+COMMENT ON COLUMN anime_episodes.video_sources IS 'Cached playback source payload returned by the scraper';
+COMMENT ON COLUMN anime_episodes.scraped_at IS 'Timestamp of the last successful direct video scrape';
 
 -- ===================================================================
 -- TABLE 2: site_settings
@@ -139,9 +145,9 @@ INSERT INTO site_settings (key, value, description) VALUES
 ON CONFLICT (key) DO NOTHING;
 
 -- Insert sample episodes for testing (Attack on Titan - MAL ID 16498)
-INSERT INTO anime_episodes (mal_id, episode_number, video_url, quality) VALUES
-  (16498, 1, 'https://example.com/aot-ep1', '1080p'),
-  (16498, 2, 'https://example.com/aot-ep2', '1080p')
+INSERT INTO anime_episodes (mal_id, episode_number, episode_page_url, video_url, quality, scraped_at) VALUES
+  (16498, 1, 'https://anime3rb.com/episode/sample-aot/1', 'https://example.com/aot-ep1', '1080p', NOW()),
+  (16498, 2, 'https://anime3rb.com/episode/sample-aot/2', 'https://example.com/aot-ep2', '1080p', NOW())
 ON CONFLICT (mal_id, episode_number) DO NOTHING;
 
 -- ===================================================================

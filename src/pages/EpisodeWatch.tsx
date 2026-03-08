@@ -46,6 +46,22 @@ function isDirectPlayableUrl(url: string): boolean {
   );
 }
 
+const SCRAPE_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+
+function isScrapeCacheFresh(scrapedAt: string | null | undefined): boolean {
+  if (!scrapedAt) return false;
+  const parsed = Date.parse(scrapedAt);
+  if (Number.isNaN(parsed)) return false;
+  return Date.now() - parsed < SCRAPE_CACHE_TTL_MS;
+}
+
+function hasCachedVideo(data: AnimeEpisode): boolean {
+  return Boolean(
+    (data.video_sources && data.video_sources.length > 0) ||
+    data.video_url
+  );
+}
+
 export default function EpisodeWatch() {
   const { id, episode } = useParams<{ id: string; episode: string }>();
   const animeId = Number(id);
@@ -72,7 +88,7 @@ export default function EpisodeWatch() {
 
   const anime = animeData?.data;
 
-  // Resolve from DB cache first, then scrape via Supabase edge function if needed.
+  // Use a cached direct URL for up to 2 hours, then re-scrape on demand.
   useEffect(() => {
     async function fetchEpisodeVideo() {
       if (isTrailer || !animeId || !epNum) return;
@@ -90,24 +106,26 @@ export default function EpisodeWatch() {
         return;
       }
 
-      setScraping(true);
-      setLoadingVideo(false);
-
-      // Step 1: try cached DB sources
+      // Step 1: load DB row and use cached direct URL only while it is still fresh.
       const data = await getEpisodeData(animeId, epNum);
-      if (data && ((data.video_sources && data.video_sources.length > 0) || data.video_url)) {
+      if (data && hasCachedVideo(data) && isScrapeCacheFresh(data.scraped_at)) {
         setEpisodeData(data);
         setSelectedServerIndex(0);
+        setLoadingVideo(false);
         setScraping(false);
         return;
       }
 
-      // Step 2: scrape and cache via Supabase edge function
+      setScraping(true);
+      setLoadingVideo(false);
+
+      // Step 2: scrape and cache via Supabase edge function.
       const result = await scrapeAnime3rbEpisode(
         anime.title,
         anime.title_english || null,
         epNum,
-        animeId
+        animeId,
+        true,
       );
 
       setScraping(false);
@@ -115,17 +133,19 @@ export default function EpisodeWatch() {
       if (result.video_sources && result.video_sources.length > 0) {
         // Scraper found video sources — set them as episode data
         setEpisodeData({
-          id: '',
+          id: data?.id || '',
           mal_id: animeId,
           episode_number: epNum,
+          episode_page_url: data?.episode_page_url || null,
           video_url: result.video_sources[0].url,
           quality: result.video_sources[0].quality,
           video_sources: result.video_sources,
-          subtitle_language: 'ar',
-          is_active: true,
-          category: null,
-          tags: [],
-          created_at: new Date().toISOString(),
+          subtitle_language: data?.subtitle_language || 'ar',
+          is_active: data?.is_active ?? true,
+          category: data?.category ?? null,
+          tags: data?.tags || [],
+          scraped_at: new Date().toISOString(),
+          created_at: data?.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
         setSelectedServerIndex(0);

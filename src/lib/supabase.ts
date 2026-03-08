@@ -26,14 +26,15 @@ export interface AnimeEpisode {
   id: string
   mal_id: number
   episode_number: number
-  episode_page_url?: string | null
-  video_url: string
+  episode_page_url: string | null
+  video_url: string | null
   quality: string
   video_sources: VideoSource[] | null
   subtitle_language: string
   is_active: boolean
   category: EpisodeCategory
   tags: EpisodeTag[]
+  scraped_at: string | null
   created_at: string
   updated_at: string
 }
@@ -74,7 +75,7 @@ export async function getEpisodeUrl(malId: number, episodeNumber: number): Promi
     return null
   }
 
-  return data.video_url
+  return data.video_url || null
 }
 
 // Fetch full episode data including video sources
@@ -122,13 +123,14 @@ export async function scrapeAnime3rbEpisode(
   animeTitle: string,
   animeTitleEnglish: string | null,
   episodeNumber: number,
-  malId: number
+  malId: number,
+  forceRefresh = true,
 ): Promise<{ video_sources: VideoSource[] | null; cached: boolean; error?: string }> {
   if (!supabase) return { video_sources: null, cached: false, error: 'Supabase not configured' }
 
   try {
     const { data, error } = await supabase.functions.invoke('scrape-anime3rb', {
-      body: { animeTitle, animeTitleEnglish, episodeNumber, malId, forceRefresh: true },
+      body: { animeTitle, animeTitleEnglish, episodeNumber, malId, forceRefresh },
     })
 
     if (error) return { video_sources: null, cached: false, error: error.message }
