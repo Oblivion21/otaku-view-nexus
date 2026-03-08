@@ -113,6 +113,81 @@ async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: 
   return { html: '', error: lastError }
 }
 
+type PythonResolveByNameResponse = {
+  success?: boolean
+  video_url?: string | null
+  episode_page_url?: string | null
+  error?: string | null
+}
+
+async function resolveFromPythonService(
+  serviceBaseUrl: string,
+  animeNames: string[],
+  episodeNumber: number,
+): Promise<{
+  videoUrl: string
+  episodePageUrl: string | null
+  matchedAnimeName: string
+  attempts: Array<{ animeName: string; ok: boolean; status?: number; error?: string | null }>
+} | null> {
+  const base = serviceBaseUrl.replace(/\/+$/, '')
+  const attempts: Array<{ animeName: string; ok: boolean; status?: number; error?: string | null }> = []
+
+  for (const animeName of animeNames) {
+    const trimmed = String(animeName || '').trim()
+    if (!trimmed) continue
+
+    try {
+      const response = await fetch(`${base}/api/resolve-by-name`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          anime_name: trimmed,
+          episode_number: episodeNumber,
+        }),
+        signal: AbortSignal.timeout(30000),
+      })
+
+      if (!response.ok) {
+        let errorSnippet: string | null = null
+        try {
+          const text = await response.text()
+          errorSnippet = text ? text.slice(0, 160) : null
+        } catch {
+          // ignore
+        }
+        attempts.push({ animeName: trimmed, ok: false, status: response.status, error: errorSnippet })
+        continue
+      }
+
+      const payload = (await response.json()) as PythonResolveByNameResponse
+      if (payload.success && payload.video_url) {
+        attempts.push({ animeName: trimmed, ok: true })
+        return {
+          videoUrl: payload.video_url,
+          episodePageUrl: payload.episode_page_url || null,
+          matchedAnimeName: trimmed,
+          attempts,
+        }
+      }
+
+      attempts.push({
+        animeName: trimmed,
+        ok: false,
+        error: payload.error || 'No video URL',
+      })
+    } catch (error: any) {
+      attempts.push({
+        animeName: trimmed,
+        ok: false,
+        error: error?.message || 'Request failed',
+      })
+    }
+  }
+
+  return null
+}
+
 function normalizeText(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
@@ -970,6 +1045,7 @@ serve(async (req: Request) => {
     if (!apifyToken) {
       return jsonResponse({ error: 'APIFY_TOKEN not configured' }, 500)
     }
+    const pythonScraperUrl = Deno.env.get('PY_SCRAPER_URL')
 
     // Initialize Supabase client for caching
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -1020,6 +1096,76 @@ serve(async (req: Request) => {
         console.log(
           `[Cache] Cached direct is missing/low-quality (${bestCachedResolution}p); re-scraping mal_id=${malId}, ep=${normalizedEpisodeNumber}`
         )
+      }
+    }
+
+    // Step 0.5: Optional online Python resolver (fast path), then fallback to this scraper logic.
+    if (!directEpisodeUrl && pythonScraperUrl) {
+      const pythonNameCandidates = [...new Set(
+        [animeTitle, animeTitleEnglish].filter((n): n is string => Boolean(n && String(n).trim()))
+      )]
+      const pythonResult = await resolveFromPythonService(
+        pythonScraperUrl,
+        pythonNameCandidates,
+        normalizedEpisodeNumber,
+      )
+
+      if (pythonResult) {
+        const resolvedUrl = await resolveSignedVideoToFinalUrl(pythonResult.videoUrl)
+        const is1080 = getUrlResolution(resolvedUrl) >= 1080 || /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(resolvedUrl)
+
+        if (is1080) {
+          const videoSources = [
+            {
+              url: resolvedUrl,
+              type: 'direct' as const,
+              server_name: 'anime3rb-python',
+              quality: '1080p',
+            },
+          ]
+
+          if (supabase && malId) {
+            const { error: upsertError } = await supabase
+              .from('anime_episodes')
+              .upsert(
+                {
+                  mal_id: malId,
+                  episode_number: normalizedEpisodeNumber,
+                  video_url: videoSources[0].url,
+                  video_sources: videoSources,
+                  quality: videoSources[0].quality,
+                  subtitle_language: 'ar',
+                  is_active: true,
+                  updated_at: new Date().toISOString(),
+                },
+                { onConflict: 'mal_id,episode_number' }
+              )
+
+            if (upsertError) {
+              console.error('[Cache] Failed to cache episode from python resolver:', upsertError.message)
+            } else {
+              console.log(`[Cache] Cached episode (python resolver): mal_id=${malId}, ep=${normalizedEpisodeNumber}`)
+            }
+          }
+
+          return jsonResponse({
+            video_sources: videoSources,
+            cached: false,
+            debug: {
+              method: 'python_api',
+              python_service_url: pythonScraperUrl,
+              python_matched_name: pythonResult.matchedAnimeName,
+              python_episode_page_url: pythonResult.episodePageUrl,
+              python_attempts: pythonResult.attempts,
+              raw_episode_number: rawEpisodeNumber ?? null,
+              normalized_episode_number: normalizedEpisodeNumber,
+              enforced_1080_only: true,
+              episode_candidates: [],
+            },
+          })
+        } else {
+          console.log('[Python Resolver] Received non-1080 URL, continuing with edge scraper fallback')
+        }
       }
     }
 
