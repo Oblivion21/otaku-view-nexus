@@ -1,7 +1,8 @@
 // Supabase Edge Function: scrape-anime3rb
-// On-demand scraper that searches anime3rb.com for a specific anime episode,
+// On-demand scraper that fetches anime3rb.com episode pages directly,
 // bypasses Cloudflare using Apify's Cloudflare Bypasser actor, extracts the video URL,
 // and caches the result in the database for future use.
+// Strategy: Try direct episode URL first (slug from title), fall back to search if needed.
 //
 // Deploy to: Supabase Dashboard → Edge Functions → scrape-anime3rb
 
@@ -168,6 +169,7 @@ function extractAnimeSlugFromSearch(html: string, animeTitle: string): string | 
   return uniqueSlugs[0]
 }
 
+<<<<<<< HEAD
 function extractEpisodeLinksFromTitlePage(html: string, animeSlug: string): string[] {
   const links: string[] = []
   const seen = new Set<string>()
@@ -236,29 +238,81 @@ function buildEpisodeUrlCandidates(animeSlug: string, episodeNumber: number, tit
 function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed' | 'proxy'; server_name: string; quality: string }[] {
   const sources: { url: string; type: 'direct' | 'embed' | 'proxy'; server_name: string; quality: string }[] = []
   const normalizeUrl = (raw: string) => raw.replace(/\\\//g, '/').replace(/&amp;/g, '&').trim()
+=======
+// Detect quality from a vid3rb URL (e.g. /1080p.mp4, /720p.mp4, /480p.mp4)
+function detectQualityFromUrl(url: string): string {
+  const match = url.match(/\/(\d{3,4})p\.mp4/)
+  return match ? `${match[1]}p` : 'unknown'
+}
+
+// Quality sort order (highest first)
+const QUALITY_ORDER: Record<string, number> = { '1080p': 0, '720p': 1, '480p': 2, '360p': 3, 'unknown': 4 }
+
+// Given a vid3rb direct MP4 URL, generate quality variants (1080p, 720p, 480p)
+// URL format: https://files.vid3rb.com/files/{folder}/{uuid}/{quality}.mp4?params
+function generateQualityVariants(url: string): { url: string; quality: string }[] {
+  const qualityMatch = url.match(/\/(\d{3,4})p\.mp4/)
+  if (!qualityMatch) return [{ url, quality: 'unknown' }]
+
+  const originalQuality = qualityMatch[1]
+  const qualities = ['1080', '720', '480']
+  const variants: { url: string; quality: string }[] = []
+
+  for (const q of qualities) {
+    const variantUrl = url.replace(`/${originalQuality}p.mp4`, `/${q}p.mp4`)
+    variants.push({ url: variantUrl, quality: `${q}p` })
+  }
+
+  return variants
+}
+
+// Extract video URLs from anime3rb episode page HTML
+function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'; server_name: string; quality: string }[] {
+  const sources: { url: string; type: 'direct' | 'embed'; server_name: string; quality: string }[] = []
+  const seenUrls = new Set<string>()
+
+  function addSource(url: string, type: 'direct' | 'embed', server_name: string, quality: string) {
+    if (seenUrls.has(url)) return
+    seenUrls.add(url)
+    sources.push({ url, type, server_name, quality })
+  }
+>>>>>>> claude/anime-episode-scraper-LmExy
 
   // Pattern 1: Direct MP4 files from files.vid3rb.com
+  // Generate 1080p/720p/480p variants from any found URL
   const mp4Pattern = /https:\/\/files\.vid3rb\.com\/[^\s"'<>]+\.mp4[^\s"'<>]*/g
   const mp4Matches = html.match(mp4Pattern) || []
   for (const url of mp4Matches) {
+<<<<<<< HEAD
     const normalized = normalizeUrl(url)
     sources.push({ url: normalized, type: 'direct', server_name: 'anime3rb', quality: '720p' })
+=======
+    const variants = generateQualityVariants(url)
+    for (const v of variants) {
+      addSource(v.url, 'direct', 'anime3rb', v.quality)
+    }
+>>>>>>> claude/anime-episode-scraper-LmExy
   }
 
   // Pattern 2: vid3rb.com player/embed URLs (these need proxy resolution due to Cloudflare)
   const vid3rbPattern = /https:\/\/[^/]*vid3rb\.com\/(?:embed|player|v)\/[^\s"'<>]+/g
   const vid3rbMatches = html.match(vid3rbPattern) || []
   for (const url of vid3rbMatches) {
+<<<<<<< HEAD
     const normalized = normalizeUrl(url)
     if (!sources.some(s => s.url === normalized)) {
       sources.push({ url: normalized, type: 'proxy', server_name: 'anime3rb', quality: '720p' })
     }
+=======
+    addSource(url, 'embed', 'anime3rb', detectQualityFromUrl(url))
+>>>>>>> claude/anime-episode-scraper-LmExy
   }
 
   // Pattern 3: Any vid3rb.com URL not already captured (also needs proxy)
   const anyVid3rbPattern = /https:\/\/[^/]*vid3rb\.com\/[^\s"'<>]+/g
   const anyVid3rbMatches = html.match(anyVid3rbPattern) || []
   for (const url of anyVid3rbMatches) {
+<<<<<<< HEAD
     const normalized = normalizeUrl(url)
     if (!sources.some(s => s.url === normalized)) {
       // Filter out thumbnails and images
@@ -271,17 +325,29 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
       const isDirect = normalized.match(/\.mp4/i) || isSignedVid3rbVideo
       sources.push({ url: normalized, type: isDirect ? 'direct' : 'proxy', server_name: 'anime3rb', quality: '720p' })
     }
+=======
+    if (seenUrls.has(url)) continue
+    if (url.match(/\.(jpg|jpeg|png|webp|gif|svg|vtt|srt)$/i)) continue
+    if (url.match(/thumbnail/i)) continue
+    addSource(url, 'embed', 'anime3rb', detectQualityFromUrl(url))
+>>>>>>> claude/anime-episode-scraper-LmExy
   }
 
   // Pattern 4: iframe sources (may contain external players)
   const iframePattern = /<iframe[^>]+src=["']([^"']+)["']/gi
   let iframeMatch
   while ((iframeMatch = iframePattern.exec(html)) !== null) {
+<<<<<<< HEAD
     const url = normalizeUrl(iframeMatch[1])
     if (!sources.some(s => s.url === url) && !url.includes('google') && !url.includes('facebook')) {
       // Determine if iframe needs proxy resolution
       const needsProxy = url.includes('anime3rb.com') || url.includes('vid3rb.com')
       sources.push({ url, type: needsProxy ? 'proxy' : 'embed', server_name: 'iframe-player', quality: '720p' })
+=======
+    const url = iframeMatch[1]
+    if (!url.includes('google') && !url.includes('facebook')) {
+      addSource(url, 'embed', 'iframe-player', detectQualityFromUrl(url))
+>>>>>>> claude/anime-episode-scraper-LmExy
     }
   }
 
@@ -289,16 +355,22 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
   const videoSrcPattern = /<source[^>]+src=["']([^"']+)["'][^>]*type=["']video\/[^"']+["']/gi
   let videoMatch
   while ((videoMatch = videoSrcPattern.exec(html)) !== null) {
+<<<<<<< HEAD
     const url = normalizeUrl(videoMatch[1])
     if (!sources.some(s => s.url === url)) {
       sources.push({ url, type: 'direct', server_name: 'anime3rb', quality: '720p' })
     }
+=======
+    const url = videoMatch[1]
+    addSource(url, 'direct', 'anime3rb', detectQualityFromUrl(url))
+>>>>>>> claude/anime-episode-scraper-LmExy
   }
 
   // Pattern 6: Look for video URL in JavaScript variables/objects
   const jsVideoPattern = /["'](?:src|file|url|source|video_url)["']\s*:\s*["'](https?:\/\/[^"']+(?:\.mp4|\.m3u8|\.webm|vid3rb)[^"']*)["']/gi
   let jsMatch
   while ((jsMatch = jsVideoPattern.exec(html)) !== null) {
+<<<<<<< HEAD
     const url = normalizeUrl(jsMatch[1])
     if (!sources.some(s => s.url === url)) {
       const isSignedVid3rbVideo = /video\.vid3rb\.com\/video\//i.test(url) && /(?:\?|&)token=/i.test(url)
@@ -320,6 +392,24 @@ function extractVideoUrls(html: string): { url: string; type: 'direct' | 'embed'
     )
     return rank(a.type) - rank(b.type)
   })
+=======
+    const url = jsMatch[1]
+    const isDirectVideo = url.match(/\.(mp4|m3u8|webm)/)
+    if (isDirectVideo && url.includes('vid3rb.com')) {
+      const variants = generateQualityVariants(url)
+      for (const v of variants) {
+        addSource(v.url, 'direct', 'anime3rb', v.quality)
+      }
+    } else {
+      addSource(url, isDirectVideo ? 'direct' : 'embed', 'anime3rb', detectQualityFromUrl(url))
+    }
+  }
+
+  // Sort: highest quality first (1080p > 720p > 480p > unknown)
+  sources.sort((a, b) => (QUALITY_ORDER[a.quality] ?? 99) - (QUALITY_ORDER[b.quality] ?? 99))
+
+  console.log(`[Extract] Found ${sources.length} sources:`, sources.map(s => `${s.quality} ${s.type}`))
+>>>>>>> claude/anime-episode-scraper-LmExy
 
   return sources
 }
@@ -853,6 +943,36 @@ async function isDirectUrlReachable(url: string): Promise<boolean> {
   }
 }
 
+// Convert a title to a URL slug (lowercase, hyphenated)
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\s*\(TV\)\s*/gi, '')
+    .replace(/\s*Season\s*\d+/gi, '')
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+// Try fetching episode page directly with a constructed slug, return video sources if found
+async function tryDirectEpisodeUrl(
+  slug: string,
+  episodeNumber: number,
+  apifyToken: string
+): Promise<{ url: string; sources: ReturnType<typeof extractVideoUrls> } | null> {
+  const episodeUrl = `https://anime3rb.com/episode/${slug}/${episodeNumber}`
+  console.log(`[Direct] Trying: ${episodeUrl}`)
+
+  const result = await fetchWithApify(episodeUrl, apifyToken)
+  if (result.error && !result.html) return null
+
+  const sources = extractVideoUrls(result.html)
+  if (sources.length === 0) return null
+
+  return { url: episodeUrl, sources }
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -992,14 +1112,41 @@ serve(async (req: Request) => {
     let selectedTopHost: string | null = null
     let selectedReachability: Record<string, boolean | null> = {}
 
+<<<<<<< HEAD
     for (const episodeUrl of episodeCandidates) {
       console.log(`[Step 3] Fetching episode page: ${episodeUrl}`)
       const episodeResult = await fetchWithApify(episodeUrl, apifyToken)
       if (episodeResult.error && !episodeResult.html) {
         lastEpisodeError = episodeResult.error
         continue
+=======
+    // Step 1: Try direct episode URL construction (skip search entirely)
+    // Generate slug candidates from the title(s) and try fetching the episode page directly
+    const slugCandidates: string[] = []
+    const mainSlug = slugify(animeTitle)
+    if (mainSlug) slugCandidates.push(mainSlug)
+    if (animeTitleEnglish && animeTitleEnglish !== animeTitle) {
+      const englishSlug = slugify(animeTitleEnglish)
+      if (englishSlug && englishSlug !== mainSlug) slugCandidates.push(englishSlug)
+    }
+
+    console.log(`[Step 1] Trying direct slugs:`, slugCandidates)
+
+    let directResult: { url: string; sources: ReturnType<typeof extractVideoUrls> } | null = null
+    let animeSlug = ''
+    let episodeUrl = ''
+
+    for (const slug of slugCandidates) {
+      directResult = await tryDirectEpisodeUrl(slug, episodeNumber, apifyToken)
+      if (directResult) {
+        animeSlug = slug
+        episodeUrl = directResult.url
+        console.log(`[Step 1] Direct hit with slug: ${slug}`)
+        break
+>>>>>>> claude/anime-episode-scraper-LmExy
       }
 
+<<<<<<< HEAD
       const extracted = extractVideoUrls(episodeResult.html)
 
       // 1) Best path: resolve signed direct URL from player page.
@@ -1085,6 +1232,89 @@ serve(async (req: Request) => {
 
     console.log(`[Step 3] Found ${videoSources.length} video source(s)`)
 
+=======
+    let videoSources: ReturnType<typeof extractVideoUrls> = []
+
+    if (directResult) {
+      // Direct URL worked — use the video sources from it
+      videoSources = directResult.sources
+      console.log(`[Step 1] Found ${videoSources.length} video source(s) via direct URL`)
+    } else {
+      // Step 2: Fallback to search if direct URL didn't work
+      console.log(`[Step 2] Direct slugs failed, falling back to search`)
+      const searchQuery = normalizeForSearch(animeTitle)
+      const searchUrl = `https://anime3rb.com/search?q=${encodeURIComponent(searchQuery)}`
+
+      console.log(`[Step 2] Searching anime3rb: ${searchUrl}`)
+      const searchResult = await fetchWithApify(searchUrl, apifyToken)
+
+      if (searchResult.error && !searchResult.html) {
+        return jsonResponse({
+          error: 'Failed to search anime3rb',
+          debug: { step: 'search', searchUrl, error: searchResult.error },
+        })
+      }
+
+      // Extract anime slug from search results
+      animeSlug = extractAnimeSlugFromSearch(searchResult.html, animeTitle) || ''
+
+      // If search with main title fails, try English title
+      if (!animeSlug && animeTitleEnglish && animeTitleEnglish !== animeTitle) {
+        console.log(`[Step 2b] Retrying search with English title: "${animeTitleEnglish}"`)
+        const searchUrl2 = `https://anime3rb.com/search?q=${encodeURIComponent(normalizeForSearch(animeTitleEnglish))}`
+        const searchResult2 = await fetchWithApify(searchUrl2, apifyToken)
+        if (searchResult2.html) {
+          animeSlug = extractAnimeSlugFromSearch(searchResult2.html, animeTitleEnglish) || ''
+        }
+      }
+
+      if (!animeSlug) {
+        return jsonResponse({
+          error: 'Anime not found on anime3rb',
+          debug: {
+            step: 'search',
+            searchUrl,
+            searchQuery,
+            slugsAttempted: slugCandidates,
+            htmlLength: searchResult.html.length,
+            htmlSample: searchResult.html.slice(0, 500),
+          },
+        })
+      }
+
+      console.log(`[Step 2] Found anime slug via search: ${animeSlug}`)
+
+      // Step 3: Fetch the episode page using the slug from search
+      episodeUrl = `https://anime3rb.com/episode/${animeSlug}/${episodeNumber}`
+      console.log(`[Step 3] Fetching episode page: ${episodeUrl}`)
+
+      const episodeResult = await fetchWithApify(episodeUrl, apifyToken)
+
+      if (episodeResult.error && !episodeResult.html) {
+        return jsonResponse({
+          error: 'Failed to fetch episode page',
+          debug: { step: 'episode', episodeUrl, error: episodeResult.error },
+        })
+      }
+
+      videoSources = extractVideoUrls(episodeResult.html)
+
+      if (videoSources.length === 0) {
+        return jsonResponse({
+          error: 'No video sources found on episode page',
+          debug: {
+            step: 'extract',
+            episodeUrl,
+            htmlLength: episodeResult.html.length,
+            htmlSample: episodeResult.html.slice(0, 1000),
+          },
+        })
+      }
+
+      console.log(`[Step 3] Found ${videoSources.length} video source(s) via search`)
+    }
+
+>>>>>>> claude/anime-episode-scraper-LmExy
     // Step 4: Cache the result in the database
     if (supabase && malId) {
       const { error: upsertError } = await supabase
