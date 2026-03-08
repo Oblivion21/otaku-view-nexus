@@ -62,7 +62,7 @@ function extractHtmlFromApifyItems(items: any[]): string {
 }
 
 // Call Apify Universal Bypasser actor (same as ani3rbscrap repo)
-async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: string; error?: string }> {
+async function fetchWithApify(url: string, apifyToken: string, maxAttempts = 1): Promise<{ html: string; error?: string }> {
   // Using macheta/universal-bypasser - proven to work in ani3rbscrap
   // Note: API uses ~ instead of / in actor ID
   const actorId = 'macheta~universal-bypasser'
@@ -72,7 +72,7 @@ async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: 
 
   let lastError = 'Unknown Apify error'
 
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -111,8 +111,8 @@ async function fetchWithApify(url: string, apifyToken: string): Promise<{ html: 
       return { html }
     } catch (error: any) {
       lastError = error.message
-      console.error(`[Apify] Error (attempt ${attempt}/2):`, error.message)
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1500))
+      console.error(`[Apify] Error (attempt ${attempt}/${maxAttempts}):`, error.message)
+      if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1500))
     }
   }
 
@@ -124,6 +124,44 @@ type PythonResolveByNameResponse = {
   video_url?: string | null
   episode_page_url?: string | null
   error?: string | null
+}
+
+type PythonResolveByUrlResponse = {
+  success?: boolean
+  video_url?: string | null
+  episode_page_url?: string | null
+  error?: string | null
+}
+
+async function resolveEpisodeUrlWithPythonService(
+  serviceBaseUrl: string,
+  episodeUrl: string,
+): Promise<{
+  videoUrl: string
+  episodePageUrl: string | null
+} | null> {
+  const base = serviceBaseUrl.replace(/\/+$/, '')
+
+  try {
+    const response = await fetch(`${base}/api/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: episodeUrl }),
+      signal: AbortSignal.timeout(30000),
+    })
+
+    if (!response.ok) return null
+
+    const payload = (await response.json()) as PythonResolveByUrlResponse
+    if (!payload.success || !payload.video_url) return null
+
+    return {
+      videoUrl: payload.video_url,
+      episodePageUrl: payload.episode_page_url || episodeUrl,
+    }
+  } catch {
+    return null
+  }
 }
 
 async function resolveFromPythonService(
@@ -872,7 +910,7 @@ function parseBestDirectFromPlayerHtml(html: string): string | null {
 async function fetchDirectVideoLinksFromPlayer(playerUrl: string, refererUrl: string, apifyToken: string): Promise<DirectCandidate[]> {
   const normalizedPlayerUrl = normalizeDirectUrl(playerUrl)
   let collected: DirectCandidate[] = []
-  const maxWaitAttempts = 4
+  const maxWaitAttempts = 1
   const waitMs = 1500
 
   try {
@@ -969,30 +1007,6 @@ function isUrlExpiringSoon(url: string, skewSeconds = 180): boolean {
   return expires <= nowSec + skewSeconds
 }
 
-async function isDirectUrlReachable(url: string): Promise<boolean> {
-  if (!isDirectLikeUrl(url)) return false
-  if (isUrlExpiringSoon(url, 90)) return false
-
-  try {
-    const resp = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Range': 'bytes=0-1',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': '*/*',
-        'Referer': 'https://anime3rb.com/',
-      },
-      signal: AbortSignal.timeout(15000),
-    })
-
-    if (resp.status !== 200 && resp.status !== 206) return false
-    const ct = (resp.headers.get('content-type') || '').toLowerCase()
-    return ct.includes('video') || ct.includes('octet-stream') || ct.includes('binary')
-  } catch {
-    return false
-  }
-}
-
 // Convert a title to a URL slug (lowercase, hyphenated)
 function slugify(title: string): string {
   return title
@@ -1054,8 +1068,9 @@ serve(async (req: Request) => {
     }
 
     const apifyToken = Deno.env.get('APIFY_TOKEN')
-    if (!apifyToken) {
-      return jsonResponse({ error: 'APIFY_TOKEN not configured' }, 500)
+    const pythonScraperUrl = Deno.env.get('PY_SCRAPER_URL')
+    if (!pythonScraperUrl && !apifyToken) {
+      return jsonResponse({ error: 'No scraper configured (set PY_SCRAPER_URL or APIFY_TOKEN)' }, 500)
     }
     // Initialize Supabase client for caching
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -1080,7 +1095,6 @@ serve(async (req: Request) => {
         .single()
 
       if (cached?.video_sources && cached.video_sources.length > 0) {
-        let hasPlayableDirect = false
         let bestCachedResolution = 0
         const cachedScrapedAt = typeof (cached as any)?.scraped_at === 'string'
           ? String((cached as any).scraped_at)
@@ -1091,14 +1105,16 @@ serve(async (req: Request) => {
           const type = String(s?.type || '')
           if (type !== 'direct' && !isDirectLikeUrl(url)) continue
           bestCachedResolution = Math.max(bestCachedResolution, getUrlResolution(url))
-          if (isUrlExpiringSoon(url, 180)) continue
-          if (await isDirectUrlReachable(url)) {
-            hasPlayableDirect = true
-            break
-          }
         }
 
-        if (isFreshCache && hasPlayableDirect && bestCachedResolution >= MIN_PREFERRED_RESOLUTION) {
+        const hasUsableExpiry = (cached.video_sources as any[]).some((s) => {
+          const url = String(s?.url || '')
+          const type = String(s?.type || '')
+          if (type !== 'direct' && !isDirectLikeUrl(url)) return false
+          return !isUrlExpiringSoon(url, 180)
+        })
+
+        if (isFreshCache && hasUsableExpiry && bestCachedResolution >= MIN_PREFERRED_RESOLUTION) {
           console.log(`[Cache] Found cached episode: mal_id=${malId}, ep=${normalizedEpisodeNumber}`)
           return jsonResponse({
             video_sources: cached.video_sources,
@@ -1164,6 +1180,40 @@ serve(async (req: Request) => {
     const tryResolveFromCandidates = async (candidates: string[]): Promise<boolean> => {
       for (const episodeUrl of candidates) {
         console.log(`[Step 3] Fetching episode page: ${episodeUrl}`)
+        if (pythonScraperUrl) {
+          const pythonResult = await resolveEpisodeUrlWithPythonService(pythonScraperUrl, episodeUrl)
+          if (pythonResult) {
+            const resolvedPythonUrl = await resolveSignedVideoToFinalUrl(pythonResult.videoUrl)
+            const pythonIs1080 =
+              getUrlResolution(resolvedPythonUrl) >= 1080 ||
+              /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(resolvedPythonUrl)
+
+            if (pythonIs1080) {
+              videoSources = [
+                {
+                  url: resolvedPythonUrl,
+                  type: 'direct',
+                  server_name: 'anime3rb-python',
+                  quality: '1080p',
+                },
+              ]
+              usedEpisodeUrl = pythonResult.episodePageUrl || episodeUrl
+              selectedCandidateCount = 1
+              selectedTopQuality = '1080p'
+              selectedTopHost = hostFromUrl(resolvedPythonUrl)
+              selectedReachability = {}
+              return true
+            }
+
+            lastEpisodeError = 'Python resolver returned non-1080 video URL'
+          }
+        }
+
+        if (!apifyToken) {
+          if (!lastEpisodeError) lastEpisodeError = 'No edge fallback available (APIFY_TOKEN not configured)'
+          continue
+        }
+
         const episodeResult = await fetchWithApify(episodeUrl, apifyToken)
         if (episodeResult.error && !episodeResult.html) {
           lastEpisodeError = episodeResult.error
@@ -1209,8 +1259,8 @@ serve(async (req: Request) => {
         })
         const candidatesToProbe =
           candidatesWith1080Hint.length > 0
-            ? candidatesWith1080Hint
-            : rankedCandidates.slice(0, 5)
+            ? [candidatesWith1080Hint[0]]
+            : [rankedCandidates[0]]
 
         let chosenCandidate: DirectCandidate | null = null
         let resolvedChosenUrl: string | null = null
@@ -1233,17 +1283,6 @@ serve(async (req: Request) => {
           continue
         }
 
-        // Non-blocking diagnostics: probe reachability but do NOT filter output.
-        const reachabilityByCandidate: Record<string, boolean | null> = {}
-        for (const candidate of candidatesToProbe.slice(0, 5)) {
-          const normalized = normalizeDirectUrl(candidate.url)
-          try {
-            reachabilityByCandidate[normalized] = await isDirectUrlReachable(normalized)
-          } catch {
-            reachabilityByCandidate[normalized] = null
-          }
-        }
-
         // Return one preferred source (1080p first when available).
         videoSources = [
           {
@@ -1257,7 +1296,7 @@ serve(async (req: Request) => {
         selectedCandidateCount = rankedCandidates.length
         selectedTopQuality = videoSources[0]?.quality || null
         selectedTopHost = videoSources[0]?.url ? hostFromUrl(videoSources[0].url) : null
-        selectedReachability = reachabilityByCandidate
+        selectedReachability = {}
         return true
       }
       return false
@@ -1313,6 +1352,9 @@ serve(async (req: Request) => {
 
     // Step 3: Search fallback on anime3rb
     if (!resolved && animeTitle) {
+      if (!apifyToken) {
+        lastEpisodeError = lastEpisodeError || 'Search fallback unavailable without APIFY_TOKEN'
+      } else {
       searchFallbackUsed = true
       console.log('[Step 3] Built URL failed, starting anime3rb search fallback...')
 
@@ -1349,6 +1391,7 @@ serve(async (req: Request) => {
             resolutionStepUsed = 'search'
           }
         }
+      }
       }
     }
 
