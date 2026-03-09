@@ -45,6 +45,7 @@ type ResolveEpisodeParams = {
   malId?: number | null
   forceRefresh?: boolean
   directEpisodeUrl?: string | null
+  directUrlOnly?: boolean
   remoteScraperUrl: string
   supabase: any
 }
@@ -793,6 +794,7 @@ async function resolveAndCacheEpisode({
   malId,
   forceRefresh = false,
   directEpisodeUrl,
+  directUrlOnly = false,
   remoteScraperUrl,
   supabase,
 }: ResolveEpisodeParams): Promise<ResolveEpisodeResult> {
@@ -847,7 +849,7 @@ async function resolveAndCacheEpisode({
     }
   }
 
-  if (supabase && malId) {
+  if (!directUrlOnly && supabase && malId) {
     try {
       const { data: dbEpisode } = await supabase
         .from('anime_episodes')
@@ -942,7 +944,7 @@ async function resolveAndCacheEpisode({
     console.log('[Step 2] Skipping search fallback because a direct episode candidate was already tried.')
   }
 
-  if (!resolved && animeTitle && episodeCandidates.length === 0) {
+  if (!resolved && !directUrlOnly && animeTitle && episodeCandidates.length === 0) {
     searchFallbackUsed = true
     console.log('[Step 2] Building episode URL from MAL title...')
 
@@ -1154,6 +1156,7 @@ async function prefetchUpcomingEpisodes(
         episodeNumber: targetEpisodeNumber,
         rawEpisodeNumber: targetEpisodeNumber,
         forceRefresh: false,
+        directUrlOnly: Boolean(directCandidate),
         directEpisodeUrl: directCandidate,
       })
 
