@@ -939,12 +939,12 @@ async function resolveAndCacheEpisode({
     }
   }
 
-  if (!resolved && episodeCandidates.length > 0) {
+  if (!resolved && episodeCandidates.length > 0 && directUrlOnly) {
     searchSkippedAfterDirectCandidate = true
     console.log('[Step 2] Skipping search fallback because a direct episode candidate was already tried.')
   }
 
-  if (!resolved && !directUrlOnly && animeTitle && episodeCandidates.length === 0) {
+  if (!resolved && !directUrlOnly && animeTitle) {
     searchFallbackUsed = true
     console.log('[Step 2] Building episode URL from MAL title...')
 
@@ -1151,7 +1151,7 @@ async function prefetchUpcomingEpisodes(
   await Promise.allSettled(
     episodeNumbers.map(async (targetEpisodeNumber) => {
       const directCandidate = buildEpisodeUrlFromKnownEpisodeUrl(currentEpisodeUrl, targetEpisodeNumber)
-      const result = await resolveAndCacheEpisode({
+      let result = await resolveAndCacheEpisode({
         ...baseParams,
         episodeNumber: targetEpisodeNumber,
         rawEpisodeNumber: targetEpisodeNumber,
@@ -1159,6 +1159,18 @@ async function prefetchUpcomingEpisodes(
         directUrlOnly: Boolean(directCandidate),
         directEpisodeUrl: directCandidate,
       })
+
+      if (!result.ok && directCandidate) {
+        console.log(`[Prefetch] Exact episode URL failed for ${targetEpisodeNumber}, falling back to full Render resolver`)
+        result = await resolveAndCacheEpisode({
+          ...baseParams,
+          episodeNumber: targetEpisodeNumber,
+          rawEpisodeNumber: targetEpisodeNumber,
+          forceRefresh: false,
+          directUrlOnly: false,
+          directEpisodeUrl: directCandidate,
+        })
+      }
 
       if (result.ok) {
         console.log(`[Prefetch] Episode ${targetEpisodeNumber} cached (${result.cached ? 'cache-hit' : 'fresh'})`)
