@@ -1,10 +1,13 @@
 import { useParams, Link } from "react-router-dom";
-import { ChevronRight, ChevronLeft, Server } from "lucide-react";
-import { useState, useEffect } from "react";
+import { ChevronRight, ChevronLeft, Search, Server } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAnimeById, useAnimeEpisodes } from "@/hooks/useAnime";
+import { isBlockedAnime } from "@/lib/jikan";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getEpisodeData, getAnimeEpisodes, resolveProxyVideoUrl, scrapeAnime3rbEpisode, type AnimeEpisode } from "@/lib/supabase";
 
@@ -62,6 +65,17 @@ function hasCachedVideo(data: AnimeEpisode): boolean {
   );
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return (
+    target.isContentEditable ||
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT"
+  );
+}
+
 export default function EpisodeWatch() {
   const { id, episode } = useParams<{ id: string; episode: string }>();
   const animeId = Number(id);
@@ -85,8 +99,51 @@ export default function EpisodeWatch() {
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [scraping, setScraping] = useState(false);
   const [scrapeError, setScrapeError] = useState<string | null>(null);
+  const [episodeSearchQuery, setEpisodeSearchQuery] = useState("");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const anime = animeData?.data;
+  const supabaseEpisodeMap = new Map(
+    availableEpisodes.map((ep) => [ep.episode_number, ep])
+  );
+  const displayEpisodes = episodes?.data && episodes.data.length > 0
+    ? episodes.data.map((ep) => {
+        const dbEpisode = supabaseEpisodeMap.get(ep.mal_id);
+        return {
+          id: dbEpisode?.id || `jikan-${ep.mal_id}`,
+          episode_number: ep.mal_id,
+          title: ep.title || `الحلقة ${ep.mal_id}`,
+          category: dbEpisode?.category ?? null,
+          tags: dbEpisode?.tags ?? [],
+        };
+      })
+    : availableEpisodes.map((ep) => ({
+        id: ep.id,
+        episode_number: ep.episode_number,
+        title: `الحلقة ${ep.episode_number}`,
+        category: ep.category ?? null,
+        tags: ep.tags ?? [],
+      }));
+  const filteredEpisodes = displayEpisodes.filter((ep) => {
+    const query = episodeSearchQuery.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      String(ep.episode_number).includes(query) ||
+      String(ep.title || "").toLowerCase().includes(query)
+    );
+  });
+  const selectedSource = !isTrailer && episodeData?.video_sources
+    ? episodeData.video_sources[selectedServerIndex]
+    : null;
+  const selectedResolvedUrl = selectedSource ? resolvedProxyUrls[selectedServerIndex] : "";
+  const activeVideoUrl = selectedSource
+    ? selectedSource.type === "proxy"
+      ? selectedResolvedUrl
+      : selectedSource.url
+    : !isTrailer && episodeData?.video_url
+      ? episodeData.video_url
+      : "";
+  const isActiveDirectVideo = Boolean(activeVideoUrl && isDirectPlayableUrl(activeVideoUrl));
 
   // Use a cached direct URL for up to 2 hours, then re-scrape on demand.
   useEffect(() => {
@@ -193,6 +250,45 @@ export default function EpisodeWatch() {
     fetchAvailableEpisodes();
   }, [animeId]);
 
+  useEffect(() => {
+    setEpisodeSearchQuery("");
+  }, [animeId, epNum, isTrailer]);
+
+  useEffect(() => {
+    if (!isActiveDirectVideo || !videoRef.current) return;
+
+    const playPromise = videoRef.current.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {
+        // Browser autoplay policy can block playback; keep controls usable.
+      });
+    }
+  }, [activeVideoUrl, isActiveDirectVideo, selectedServerIndex, epNum]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.code !== "Space" && event.key !== " ") return;
+      if (event.defaultPrevented) return;
+      if (isEditableTarget(event.target)) return;
+      if (!videoRef.current || !isActiveDirectVideo) return;
+
+      event.preventDefault();
+      if (videoRef.current.paused) {
+        const playPromise = videoRef.current.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+          playPromise.catch(() => {
+            // Ignore autoplay/play promise failures from keyboard toggle.
+          });
+        }
+      } else {
+        videoRef.current.pause();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isActiveDirectVideo]);
+
   if (isLoading) {
     return (
       <Layout>
@@ -205,6 +301,10 @@ export default function EpisodeWatch() {
   }
 
   if (!anime) {
+    return <Layout><div className="container py-16 text-center">لم يتم العثور على الأنمي</div></Layout>;
+  }
+
+  if (isBlockedAnime(anime)) {
     return <Layout><div className="container py-16 text-center">لم يتم العثور على الأنمي</div></Layout>;
   }
 
@@ -223,6 +323,7 @@ export default function EpisodeWatch() {
       // Direct video file - use HTML5 video player
       return (
         <video
+          ref={videoRef}
           className="w-full h-full rounded-lg bg-black"
           controls
           autoPlay
@@ -248,7 +349,7 @@ export default function EpisodeWatch() {
 
   return (
     <Layout>
-      <div className="container py-6 space-y-6">
+      <div className="container py-4 md:py-6 space-y-6">
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Link to="/" className="hover:text-foreground">الرئيسية</Link>
@@ -268,7 +369,6 @@ export default function EpisodeWatch() {
                 <>
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                   <p className="text-muted-foreground">جاري البحث عن مصدر الفيديو...</p>
-                  <p className="text-xs text-muted-foreground opacity-60">يتم البحث في anime3rb - قد يستغرق هذا بضع ثوانٍ</p>
                 </>
               ) : (
                 <p className="text-muted-foreground">جاري التحميل...</p>
@@ -288,8 +388,8 @@ export default function EpisodeWatch() {
             <>
               {/* Server selector */}
               {episodeData.video_sources && episodeData.video_sources.length > 1 && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground shrink-0">
                     <Server className="h-4 w-4" />
                     <span>السيرفر:</span>
                   </div>
@@ -300,7 +400,7 @@ export default function EpisodeWatch() {
                         variant={selectedServerIndex === index ? "default" : "outline"}
                         size="sm"
                         onClick={() => setSelectedServerIndex(index)}
-                        className="min-w-[100px]"
+                        className="min-w-[100px] max-w-full"
                       >
                         {source.server_name}
                         {source.quality && (
@@ -432,46 +532,63 @@ export default function EpisodeWatch() {
           )}
         </div>
 
-        {/* Episode list - show available episodes from database */}
-        {availableEpisodes.length > 0 && (
-          <div className="max-w-4xl mx-auto space-y-4">
-            <h2 className="text-lg font-bold border-r-4 border-primary pr-3">
-              الحلقات ({availableEpisodes.length})
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {availableEpisodes.map((ep) => {
-                const style = getEpisodeStyle(ep, animeId);
-                const isCurrentEpisode = ep.episode_number === epNum;
+        {!isTrailer && (
+          <div className="max-w-4xl mx-auto">
+            <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-bold">الحلقات</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {filteredEpisodes.length} من {displayEpisodes.length}
+                  </p>
+                </div>
+                <div className="relative w-full sm:max-w-xs">
+                  <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={episodeSearchQuery}
+                    onChange={(e) => setEpisodeSearchQuery(e.target.value)}
+                    placeholder="ابحث عن حلقة..."
+                    className="pr-9"
+                  />
+                </div>
+              </div>
 
-                return (
-                  <Link
-                    key={ep.id}
-                    to={`/watch/${animeId}/${ep.episode_number}`}
-                    className={`p-4 rounded-lg border-2 transition-all hover:scale-105 ${
-                      isCurrentEpisode
-                        ? "bg-primary text-primary-foreground border-primary ring-2 ring-primary/50"
-                        : `hover:border-primary/50 ${style.background} ${style.border}`
-                    }`}
-                  >
-                    <div className="flex items-center justify-center">
-                      <span className="text-xl font-bold">
-                        {ep.episode_number}
-                      </span>
-                    </div>
-                  </Link>
-                );
-              })}
+              {displayEpisodes.length > 0 ? (
+                <ScrollArea className="h-72 rounded-lg border border-border/70">
+                  <div className="space-y-2 p-2">
+                    {filteredEpisodes.map((ep) => {
+                      const style = getEpisodeStyle(ep, animeId);
+                      const isCurrentEpisode = ep.episode_number === epNum;
+
+                      return (
+                        <Link
+                          key={ep.id}
+                          to={`/watch/${animeId}/${ep.episode_number}`}
+                          className={`flex items-center gap-3 rounded-lg border-2 p-3 transition-colors ${
+                            isCurrentEpisode
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : `${style.background} ${style.border} hover:border-primary/50 hover:bg-secondary/40`
+                          }`}
+                        >
+                          <span className="w-10 shrink-0 text-center text-base font-bold">
+                            {ep.episode_number}
+                          </span>
+                          <span className="min-w-0 flex-1 text-sm line-clamp-1">
+                            {ep.title || `الحلقة ${ep.episode_number}`}
+                          </span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              ) : (
+                <div className="rounded-lg border border-dashed border-border p-6 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    {episodeSearchQuery ? "لا توجد نتائج مطابقة للبحث" : "لا توجد حلقات متاحة حالياً"}
+                  </p>
+                </div>
+              )}
             </div>
-          </div>
-        )}
-
-        {/* Fallback to Jikan episode list if no database episodes */}
-        {availableEpisodes.length === 0 && episodes?.data && episodes.data.length > 0 && (
-          <div className="max-w-4xl mx-auto space-y-3">
-            <h2 className="text-lg font-bold border-r-4 border-primary pr-3">جميع الحلقات</h2>
-            <p className="text-sm text-muted-foreground">
-              لا توجد حلقات متوفرة حالياً - قريباً!
-            </p>
           </div>
         )}
       </div>

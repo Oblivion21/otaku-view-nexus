@@ -3,7 +3,7 @@ import { useAnimeById } from "@/hooks/useAnime";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Star } from "lucide-react";
-import { TYPE_MAP } from "@/lib/jikan";
+import { TYPE_MAP, isBlockedAnime } from "@/lib/jikan";
 
 interface RelatedAnimeCardProps {
   mal_id: number;
@@ -14,6 +14,11 @@ interface RelatedAnimeCardProps {
 export default function RelatedAnimeCard({ mal_id, name, relationLabel }: RelatedAnimeCardProps) {
   const { data, isLoading } = useAnimeById(mal_id);
   const anime = data?.data;
+
+  if (anime && isBlockedAnime(anime)) {
+    return null;
+  }
+
   const imageUrl = anime?.images?.webp?.large_image_url || anime?.images?.webp?.image_url;
 
   return (

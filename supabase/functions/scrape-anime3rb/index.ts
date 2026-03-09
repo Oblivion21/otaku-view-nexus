@@ -1,12 +1,10 @@
 // Supabase Edge Function: scrape-anime3rb
-// On-demand scraper that fetches anime3rb.com episode pages directly,
-// bypasses Cloudflare using Apify's Cloudflare Bypasser actor, extracts the video URL,
-// and caches the result in the database for future use.
+// On-demand resolver that delegates anime3rb scraping to the remote ani3rbscraper service
+// and caches the resolved video URL in the database for future use.
 // Strategy:
-// 1) provided episode URL (directEpisodeUrl) via Python /api/resolve
-// 2) stored DB episode_page_url via Python /api/resolve
-// 3) anime title + episode via Python /api/resolve-by-name
-// 4) legacy inline Apify fallback only when PY_SCRAPER_URL is unavailable
+// 1) provided episode URL (directEpisodeUrl) via remote /api/resolve
+// 2) stored DB episode_page_url via remote /api/resolve
+// 3) anime title + episode via remote /api/resolve-by-name
 // Stop on first successful direct video URL.
 //
 // Deploy to: Supabase Dashboard → Edge Functions → scrape-anime3rb
@@ -18,7 +16,56 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
+const MIN_PREFERRED_RESOLUTION = 1080
+const DEFAULT_REMOTE_SCRAPER_URL = 'https://ani3rbscraper.onrender.com'
 const SCRAPE_CACHE_TTL_MS = 2 * 60 * 60 * 1000
+const PREFETCH_EPISODE_COUNT = 3
+
+type RemoteResolveResponse = {
+  success?: boolean
+  video_url?: string | null
+  episode_page_url?: string | null
+  error?: string | null
+}
+
+type VideoSource = {
+  url: string
+  type: 'direct' | 'embed' | 'proxy'
+  server_name: string
+  quality: string
+}
+
+type ResolveStep = 'provided_link' | 'db_link' | 'search' | null
+
+type ResolveEpisodeParams = {
+  animeTitle?: string | null
+  animeTitleEnglish?: string | null
+  episodeNumber: number
+  rawEpisodeNumber: unknown
+  malId?: number | null
+  forceRefresh?: boolean
+  directEpisodeUrl?: string | null
+  remoteScraperUrl: string
+  supabase: any
+}
+
+type ResolveEpisodeSuccess = {
+  ok: true
+  cached: boolean
+  videoSources: VideoSource[]
+  usedEpisodeUrl: string | null
+  savedEpisodePageUrl: string | null
+  resolutionStepUsed: ResolveStep
+  debug: Record<string, unknown>
+}
+
+type ResolveEpisodeFailure = {
+  ok: false
+  error: string
+  debug: Record<string, unknown>
+}
+
+type ResolveEpisodeResult = ResolveEpisodeSuccess | ResolveEpisodeFailure
 
 function jsonResponse(data: object, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -60,180 +107,55 @@ function extractHtmlFromApifyItems(items: any[]): string {
   return ''
 }
 
-// Call Apify Universal Bypasser actor (same as ani3rbscrap repo)
-async function fetchWithApify(url: string, apifyToken: string, maxAttempts = 1): Promise<{ html: string; error?: string }> {
-  // Using macheta/universal-bypasser - proven to work in ani3rbscrap
-  // Note: API uses ~ instead of / in actor ID
-  const actorId = 'macheta~universal-bypasser'
-  const endpoint = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${apifyToken}`
-
-  console.log(`[Apify] Using universal-bypasser for: ${url}`)
-
-  let lastError = 'Unknown Apify error'
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-        // Longer timeout for Cloudflare bypass
-        signal: AbortSignal.timeout(90000), // 90 seconds
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        lastError = `Apify request failed: ${response.status}`
-        console.error(`[Apify] HTTP ${response.status}: ${errorText.slice(0, 300)}`)
-        continue
-      }
-
-      const items = await response.json()
-
-      if (!Array.isArray(items) || items.length === 0) {
-        lastError = 'Apify returned no data'
-        console.log('[Apify] No items returned')
-        continue
-      }
-
-      console.log(`[Apify] Got ${items.length} item(s) from dataset`)
-
-      const html = extractHtmlFromApifyItems(items)
-
-      if (!html) {
-        lastError = 'No HTML content in Apify response'
-        console.log('[Apify] No HTML in response')
-        continue
-      }
-
-      console.log(`[Apify] Got HTML, length: ${html.length}`)
-      return { html }
-    } catch (error: any) {
-      lastError = error.message
-      console.error(`[Apify] Error (attempt ${attempt}/${maxAttempts}):`, error.message)
-      if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1500))
-    }
-  }
-
-  return { html: '', error: lastError }
-}
-
-type PythonResolveByNameResponse = {
-  success?: boolean
-  video_url?: string | null
-  episode_page_url?: string | null
-  error?: string | null
-}
-
-type PythonResolveByUrlResponse = {
-  success?: boolean
-  video_url?: string | null
-  episode_page_url?: string | null
-  error?: string | null
-}
-
-async function resolveEpisodeUrlWithPythonService(
+async function callRemoteResolveByUrl(
   serviceBaseUrl: string,
   episodeUrl: string,
 ): Promise<{
-  result: {
-    videoUrl: string
-    episodePageUrl: string | null
-  } | null
-  attempt: {
-    episodeUrl: string
-    ok: boolean
-    status?: number
-    error?: string | null
-  }
+  result: { videoUrl: string; episodePageUrl: string | null } | null
+  error: string | null
 }> {
   const base = serviceBaseUrl.replace(/\/+$/, '')
 
   try {
-    console.log(`[Python] Calling /api/resolve for: ${episodeUrl}`)
     const response = await fetch(`${base}/api/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: episodeUrl }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(120000),
     })
 
     if (!response.ok) {
-      let errorSnippet: string | null = null
-      try {
-        const text = await response.text()
-        errorSnippet = text ? text.slice(0, 200) : null
-      } catch {
-        // ignore
-      }
-      console.error(`[Python] /api/resolve failed (${response.status}) for ${episodeUrl}: ${errorSnippet || 'no body'}`)
-      return {
-        result: null,
-        attempt: {
-          episodeUrl,
-          ok: false,
-          status: response.status,
-          error: errorSnippet,
-        },
-      }
+      const text = await response.text()
+      return { result: null, error: text?.slice(0, 200) || `HTTP ${response.status}` }
     }
 
-    const payload = (await response.json()) as PythonResolveByUrlResponse
+    const payload = await response.json() as RemoteResolveResponse
     if (!payload.success || !payload.video_url) {
-      console.error(
-        `[Python] /api/resolve returned no video for ${episodeUrl}: ${payload.error || 'No video URL'}`
-      )
-      return {
-        result: null,
-        attempt: {
-          episodeUrl,
-          ok: false,
-          status: response.status,
-          error: payload.error || 'No video URL',
-        },
-      }
+      return { result: null, error: payload.error || 'No video URL returned' }
     }
-
-    console.log(`[Python] /api/resolve succeeded for: ${episodeUrl}`)
 
     return {
       result: {
         videoUrl: payload.video_url,
         episodePageUrl: payload.episode_page_url || episodeUrl,
       },
-      attempt: {
-        episodeUrl,
-        ok: true,
-        status: response.status,
-        error: null,
-      },
+      error: null,
     }
   } catch (error: any) {
-    const message = error?.message || 'Request failed'
-    console.error(`[Python] /api/resolve error for ${episodeUrl}: ${message}`)
-    return {
-      result: null,
-      attempt: {
-        episodeUrl,
-        ok: false,
-        error: message,
-      },
-    }
+    return { result: null, error: error?.message || 'Request failed' }
   }
 }
 
-async function resolveFromPythonService(
+async function callRemoteResolveByName(
   serviceBaseUrl: string,
   animeNames: string[],
   episodeNumber: number,
 ): Promise<{
-  videoUrl: string
-  episodePageUrl: string | null
-  matchedAnimeName: string
-  attempts: Array<{ animeName: string; ok: boolean; status?: number; error?: string | null }>
-} | null> {
+  result: { videoUrl: string; episodePageUrl: string | null; matchedAnimeName: string } | null
+  attempts: Array<{ animeName: string; ok: boolean; error?: string | null }>
+}> {
   const base = serviceBaseUrl.replace(/\/+$/, '')
-  const attempts: Array<{ animeName: string; ok: boolean; status?: number; error?: string | null }> = []
+  const attempts: Array<{ animeName: string; ok: boolean; error?: string | null }> = []
 
   for (const animeName of animeNames) {
     const trimmed = String(animeName || '').trim()
@@ -247,47 +169,35 @@ async function resolveFromPythonService(
           anime_name: trimmed,
           episode_number: episodeNumber,
         }),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(120000),
       })
 
       if (!response.ok) {
-        let errorSnippet: string | null = null
-        try {
-          const text = await response.text()
-          errorSnippet = text ? text.slice(0, 160) : null
-        } catch {
-          // ignore
-        }
-        attempts.push({ animeName: trimmed, ok: false, status: response.status, error: errorSnippet })
+        const text = await response.text()
+        attempts.push({ animeName: trimmed, ok: false, error: text?.slice(0, 160) || `HTTP ${response.status}` })
         continue
       }
 
-      const payload = (await response.json()) as PythonResolveByNameResponse
+      const payload = await response.json() as RemoteResolveResponse
       if (payload.success && payload.video_url) {
         attempts.push({ animeName: trimmed, ok: true })
         return {
-          videoUrl: payload.video_url,
-          episodePageUrl: payload.episode_page_url || null,
-          matchedAnimeName: trimmed,
+          result: {
+            videoUrl: payload.video_url,
+            episodePageUrl: payload.episode_page_url || null,
+            matchedAnimeName: trimmed,
+          },
           attempts,
         }
       }
 
-      attempts.push({
-        animeName: trimmed,
-        ok: false,
-        error: payload.error || 'No video URL',
-      })
+      attempts.push({ animeName: trimmed, ok: false, error: payload.error || 'No video URL returned' })
     } catch (error: any) {
-      attempts.push({
-        animeName: trimmed,
-        ok: false,
-        error: error?.message || 'Request failed',
-      })
+      attempts.push({ animeName: trimmed, ok: false, error: error?.message || 'Request failed' })
     }
   }
 
-  return null
+  return { result: null, attempts }
 }
 
 function normalizeText(text: string): string {
@@ -328,6 +238,17 @@ function buildSearchQueries(animeTitle: string, animeTitleEnglish?: string | nul
   return [...new Set(queries.filter(Boolean))]
 }
 
+function slugifyAnimeTitle(title: string): string {
+  return String(title || '')
+    .toLowerCase()
+    .replace(/\s*\(tv\)\s*/gi, ' ')
+    .replace(/\s*season\s*\d+/gi, ' ')
+    .replace(/[^\w\s-]/g, ' ')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
 // Extract the best anime slug from anime3rb search results HTML.
 function extractAnimeSlugFromSearch(html: string, animeTitle: string): string | null {
   const pattern = /href=["'](?:https?:\/\/(?:www\.)?anime3rb\.com)?\/(?:anime|titles)\/([a-z0-9-]+)["']/gi
@@ -344,68 +265,6 @@ function extractAnimeSlugFromSearch(html: string, animeTitle: string): string | 
   uniqueSlugs.sort((a, b) => scoreSlug(b, animeTitle) - scoreSlug(a, animeTitle))
   console.log(`[Search] Found ${uniqueSlugs.length} anime slugs:`, uniqueSlugs.slice(0, 5))
   return uniqueSlugs[0]
-}
-
-function extractEpisodeLinksFromTitlePage(html: string, animeSlug: string): string[] {
-  const links: string[] = []
-  const seen = new Set<string>()
-  const pattern = /href=["'](?:https?:\/\/(?:www\.)?anime3rb\.com)?\/episode\/([^"'?#]+)["']/gi
-  let match
-
-  while ((match = pattern.exec(html)) !== null) {
-    const raw = (match[1] || '').replace(/^\/+|\/+$/g, '')
-    if (!raw) continue
-
-    let url = ''
-    let slug = ''
-
-    const slashFormat = raw.match(/^([^/]+)\/(\d+)$/)
-    if (slashFormat) {
-      slug = slashFormat[1]
-      url = `https://anime3rb.com/episode/${slug}/${slashFormat[2]}`
-    } else {
-      const dashFormat = raw.match(/^(.+)-episode-(\d+)$/)
-      if (dashFormat) {
-        slug = dashFormat[1]
-        url = `https://anime3rb.com/episode/${slug}-episode-${dashFormat[2]}`
-      }
-    }
-
-    if (!url || !slug) continue
-    if (slug !== animeSlug && !slug.includes(animeSlug) && !animeSlug.includes(slug)) continue
-    if (!seen.has(url)) {
-      seen.add(url)
-      links.push(url)
-    }
-  }
-
-  return links
-}
-
-function buildEpisodeUrlCandidates(animeSlug: string, episodeNumber: number, titleHtml: string): string[] {
-  const candidates: string[] = []
-
-  const titleLinks = extractEpisodeLinksFromTitlePage(titleHtml, animeSlug)
-  if (titleLinks.length > 0 && episodeNumber >= 1 && episodeNumber <= titleLinks.length) {
-    // Forward mapping only (ep1 -> /1)
-    candidates.push(titleLinks[episodeNumber - 1])
-  }
-
-  // Exact numeric fallback if link exists
-  const exactSuffix = `/${episodeNumber}`
-  for (const link of titleLinks) {
-    if (link.endsWith(exactSuffix)) {
-      candidates.push(link)
-      break
-    }
-  }
-
-  // Pattern fallbacks
-  candidates.push(
-    `https://anime3rb.com/episode/${animeSlug}/${episodeNumber}`,
-  )
-
-  return [...new Set(candidates)]
 }
 
 function parseEpisodeNumberInput(input: unknown): number | null {
@@ -634,23 +493,34 @@ function extractPlayerUrlFromEpisodeHtml(html: string): string | null {
 }
 
 function extractDirectUrlFromText(text: string): string | null {
+  const candidates = extractDirectCandidatesFromText(text)
+  const best = pickBestDirectCandidate(candidates)
+  return best?.url || null
+}
+
+type DirectCandidate = {
+  url: string
+  resolution: number
+}
+
+function extractDirectCandidatesFromText(text: string): DirectCandidate[] {
   const patterns = [
     /https?:\/\/[^\s"'<>]*files\.vid3rb\.com[^\s"'<>]*\.mp4[^\s"'<>]*/gi,
     /https?:\/\/video\.vid3rb\.com\/video\/[a-f0-9-]{36}(?:\?[^\s"'<>]*)?/gi,
   ]
 
-  const candidates: string[] = []
+  const candidates: DirectCandidate[] = []
   for (const pattern of patterns) {
     const matches = text.match(pattern) || []
     for (const raw of matches) {
       const normalized = normalizeDirectUrl(raw)
       if (isDirectLikeUrl(normalized)) {
-        candidates.push(normalized)
+        candidates.push({ url: normalized, resolution: getUrlResolution(normalized) })
       }
     }
   }
 
-  return pickBestDirectUrl(candidates)
+  return rankDirectCandidates(candidates)
 }
 
 function extractResolution(text: string): number {
@@ -668,41 +538,11 @@ function getUrlResolution(url: string): number {
   return extractResolution(normalized)
 }
 
-function getSourceResolution(source: any): number {
-  const fields = [source?.res, source?.label, source?.quality, source?.name, source?.src]
-  let best = 0
-  for (const field of fields) {
-    const asNumber = Number(field)
-    if (Number.isFinite(asNumber) && [2160, 1440, 1080, 720, 480, 360, 240].includes(asNumber)) {
-      best = Math.max(best, asNumber)
-      continue
-    }
-    best = Math.max(best, extractResolution(String(field ?? '')))
-  }
-  return best
-}
-
 function pickBestDirectUrl(urls: string[]): string | null {
-  if (!urls.length) return null
-
-  const unique = [...new Set(urls.map((u) => normalizeDirectUrl(u)).filter((u) => isDirectLikeUrl(u)))]
-  if (!unique.length) return null
-
-  unique.sort((a, b) => {
-    const aSigned = isSignedVid3rbVideo(a) ? 1 : 0
-    const bSigned = isSignedVid3rbVideo(b) ? 1 : 0
-    if (aSigned !== bSigned) return bSigned - aSigned
-
-    const resDiff = getUrlResolution(b) - getUrlResolution(a)
-    if (resDiff !== 0) return resDiff
-    // Prefer files mp4 when resolution ties.
-    const aMp4 = /\.mp4(?:$|[?#])/i.test(a) ? 1 : 0
-    const bMp4 = /\.mp4(?:$|[?#])/i.test(b) ? 1 : 0
-    if (aMp4 !== bMp4) return bMp4 - aMp4
-    return a.length - b.length
-  })
-
-  return unique[0]
+  return pickBestDirectCandidate(urls.map((url) => ({
+    url,
+    resolution: getUrlResolution(url),
+  })))?.url || null
 }
 
 function qualityFromUrl(url: string): string {
@@ -718,10 +558,6 @@ function hostFromUrl(url: string): string | null {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 function isScrapedVideoFresh(scrapedAt: unknown, maxAgeMs = SCRAPE_CACHE_TTL_MS): boolean {
   if (typeof scrapedAt !== 'string' || !scrapedAt) return false
   const parsed = Date.parse(scrapedAt)
@@ -729,64 +565,45 @@ function isScrapedVideoFresh(scrapedAt: unknown, maxAgeMs = SCRAPE_CACHE_TTL_MS)
   return Date.now() - parsed < maxAgeMs
 }
 
-function extractCfTokenFromPlayerHtml(html: string): string | null {
-  const patterns = [
-    /cf_token\s*[=:]\s*["']([^"']+)["']/i,
-    /["']cf_token["']\s*:\s*["']([^"']+)["']/i,
-    /window\.cf_token\s*=\s*["']([^"']+)["']/i,
-  ]
-
-  for (const pattern of patterns) {
-    const match = html.match(pattern)
-    if (match?.[1]) return match[1]
-  }
-  return null
-}
-
-type DirectCandidate = {
-  url: string
-  resolution: number
-}
-
 function rankDirectCandidates(candidates: DirectCandidate[]): DirectCandidate[] {
-  if (!candidates.length) return []
-
   const byUrl = new Map<string, number>()
-  for (const item of candidates) {
-    const url = normalizeDirectUrl(item.url)
-    if (!isDirectLikeUrl(url)) continue
-    const res = Math.max(item.resolution || 0, getUrlResolution(url))
-    byUrl.set(url, Math.max(byUrl.get(url) || 0, res))
+
+  for (const candidate of candidates) {
+    const normalized = normalizeDirectUrl(candidate.url)
+    if (!isDirectLikeUrl(normalized)) continue
+    const resolution = Math.max(candidate.resolution || 0, getUrlResolution(normalized))
+    byUrl.set(normalized, Math.max(byUrl.get(normalized) || 0, resolution))
   }
 
-  const ranked = Array.from(byUrl.entries()).map(([url, resolution]) => ({ url, resolution }))
-  ranked.sort((a, b) => {
-    const aSigned = isSignedVid3rbVideo(a.url) ? 1 : 0
-    const bSigned = isSignedVid3rbVideo(b.url) ? 1 : 0
-    if (aSigned !== bSigned) return bSigned - aSigned
+  return Array.from(byUrl.entries())
+    .map(([url, resolution]) => ({ url, resolution }))
+    .sort((a, b) => {
+      const aSigned = isSignedVid3rbVideo(a.url) ? 1 : 0
+      const bSigned = isSignedVid3rbVideo(b.url) ? 1 : 0
+      if (aSigned !== bSigned) return bSigned - aSigned
 
-    const resDiff = b.resolution - a.resolution
-    if (resDiff !== 0) return resDiff
+      const resDiff = b.resolution - a.resolution
+      if (resDiff !== 0) return resDiff
 
-    const aMp4 = /\.mp4(?:$|[?#])/i.test(a.url) ? 1 : 0
-    const bMp4 = /\.mp4(?:$|[?#])/i.test(b.url) ? 1 : 0
-    if (aMp4 !== bMp4) return bMp4 - aMp4
-    return a.url.length - b.url.length
-  })
+      const aMp4 = /\.mp4(?:$|[?#])/i.test(a.url) ? 1 : 0
+      const bMp4 = /\.mp4(?:$|[?#])/i.test(b.url) ? 1 : 0
+      if (aMp4 !== bMp4) return bMp4 - aMp4
 
-  return ranked
+      return a.url.length - b.url.length
+    })
 }
 
-function pickBestDirectCandidate(candidates: DirectCandidate[]): string | null {
+function pickBestDirectCandidate(candidates: DirectCandidate[]): DirectCandidate | null {
   const ranked = rankDirectCandidates(candidates)
-  return ranked.length > 0 ? ranked[0].url : null
+  return ranked[0] || null
 }
 
-function has1080Candidate(candidates: DirectCandidate[]): boolean {
-  return candidates.some((candidate) => {
-    const res = Math.max(candidate.resolution || 0, getUrlResolution(candidate.url))
-    return res >= 1080 || /(?:^|\/)1080p(?:\.mp4|[/?#]|$)/i.test(candidate.url)
-  })
+function isPreferredResolution(url: string, resolution = 0): boolean {
+  if (isSignedVid3rbVideo(url)) {
+    return true
+  }
+  const effectiveResolution = Math.max(resolution, getUrlResolution(url))
+  return effectiveResolution >= MIN_PREFERRED_RESOLUTION
 }
 
 async function resolveSignedVideoToFinalUrl(url: string): Promise<string> {
@@ -837,139 +654,19 @@ async function resolveSignedVideoToFinalUrl(url: string): Promise<string> {
   return normalized
 }
 
-function collectDirectCandidatesFromPayload(payload: unknown): DirectCandidate[] {
-  const out: DirectCandidate[] = []
-
-  const walk = (value: unknown, inheritedResolution: number, depth: number) => {
-    if (depth > 10) return
-
-    if (typeof value === 'string') {
-      const candidate = normalizeDirectUrl(value)
-      if (isDirectLikeUrl(candidate)) {
-        out.push({ url: candidate, resolution: Math.max(inheritedResolution, getUrlResolution(candidate)) })
-      }
-      return
-    }
-
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        walk(item, inheritedResolution, depth + 1)
-      }
-      return
-    }
-
-    if (!value || typeof value !== 'object') return
-
-    const obj = value as Record<string, unknown>
-    if (obj.premium === true) return
-
-    const ownResolution = Math.max(inheritedResolution, getSourceResolution(obj))
-
-    for (const key of ['src', 'url', 'video_url', 'file', 'download']) {
-      if (typeof obj[key] === 'string') {
-        walk(obj[key], ownResolution, depth + 1)
-      }
-    }
-
-    for (const nested of Object.values(obj)) {
-      walk(nested, ownResolution, depth + 1)
-    }
-  }
-
-  walk(payload, 0, 0)
-  return out
-}
-
-async function fetchBestDirectFromSourcesApi(playerUrl: string, playerHtml: string): Promise<string | null> {
-  const candidates = await fetchDirectCandidatesFromSourcesApi(playerUrl, playerHtml)
-  return pickBestDirectCandidate(candidates)
-}
-
-async function fetchDirectCandidatesFromSourcesApi(playerUrl: string, playerHtml: string): Promise<DirectCandidate[]> {
-  const cfToken = extractCfTokenFromPlayerHtml(playerHtml)
-  if (!cfToken) return []
-
-  const playerUuid = playerUrl.match(/\/player\/([a-f0-9-]+)/i)?.[1]
-  if (!playerUuid) return []
-
-  const sourcesUrl = `https://video.vid3rb.com/player/${playerUuid}/sources?cf_token=${encodeURIComponent(cfToken)}`
-
-  try {
-    const response = await fetch(sourcesUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': playerUrl,
-        'Accept': 'application/json,*/*',
-        'Origin': 'https://video.vid3rb.com',
-      },
-      signal: AbortSignal.timeout(20000),
-    })
-
-    if (!response.ok) return []
-
-    const text = await response.text()
-    if (!text) return []
-
-    let payload: any
-    try {
-      payload = JSON.parse(text)
-    } catch {
-      return []
-    }
-
-    return rankDirectCandidates(collectDirectCandidatesFromPayload(payload))
-  } catch {
-    return []
-  }
-}
-
-function parseDirectCandidatesFromPlayerHtml(html: string): DirectCandidate[] {
-  const candidates: DirectCandidate[] = []
-  const matches = Array.from(html.matchAll(/video_sources\s*=\s*(\[.*?\]);/gs))
-  for (const match of matches.reverse()) {
-    const raw = match[1]
-    if (!raw || raw.length <= 5) continue
-    try {
-      const sources = JSON.parse(raw)
-      if (!Array.isArray(sources)) continue
-
-      const valid = sources
-        .filter((s: any) => !s?.premium)
-        .sort((a: any, b: any) => getSourceResolution(b) - getSourceResolution(a))
-
-      for (const src of valid) {
-        const resolution = getSourceResolution(src)
-        for (const field of [src?.src, src?.url, src?.video_url, src?.file, src?.download]) {
-          if (!field) continue
-          const candidate = normalizeDirectUrl(String(field))
-          if (isDirectLikeUrl(candidate)) {
-            candidates.push({ url: candidate, resolution })
-          }
-        }
-      }
-    } catch {
-      // Keep checking the other matches.
-    }
-  }
-
-  const textDirects = extractDirectUrlFromText(html)
-  if (textDirects) {
-    candidates.push({ url: textDirects, resolution: getUrlResolution(textDirects) })
-  }
-
-  return rankDirectCandidates(candidates)
-}
-
-function parseBestDirectFromPlayerHtml(html: string): string | null {
-  const ranked = parseDirectCandidatesFromPlayerHtml(html)
-  return ranked.length > 0 ? ranked[0].url : null
-}
-
-async function fetchDirectVideoLinksFromPlayer(playerUrl: string, refererUrl: string, apifyToken: string): Promise<DirectCandidate[]> {
+async function fetchPlayerVideoUrl(
+  playerUrl: string,
+  refererUrl: string,
+  apifyToken: string,
+): Promise<DirectCandidate[]> {
   const normalizedPlayerUrl = normalizeDirectUrl(playerUrl)
-  let collected: DirectCandidate[] = []
-  const maxWaitAttempts = 1
-  const waitMs = 1500
+
+  const parsePlayerHtml = (html: string): DirectCandidate[] => {
+    return rankDirectCandidates([
+      ...parseDirectCandidatesFromPlayerHtml(html),
+      ...extractDirectCandidatesFromText(html),
+    ])
+  }
 
   try {
     const resp = await fetch(normalizedPlayerUrl, {
@@ -984,50 +681,42 @@ async function fetchDirectVideoLinksFromPlayer(playerUrl: string, refererUrl: st
 
     if (resp.ok) {
       const html = await resp.text()
-
-      // Prefer signed sources endpoint when available (dynamic token flow).
-      const fromSourcesApi = await fetchDirectCandidatesFromSourcesApi(normalizedPlayerUrl, html)
-      const fromHtml = parseDirectCandidatesFromPlayerHtml(html)
-      collected = rankDirectCandidates([...collected, ...fromSourcesApi, ...fromHtml])
-      if (has1080Candidate(collected)) {
-        return collected
-      }
-
-      // Player sources can populate progressively; give it a short window before fallback.
-      for (let i = 0; i < maxWaitAttempts; i++) {
-        await sleep(waitMs)
-        const retrySources = await fetchDirectCandidatesFromSourcesApi(normalizedPlayerUrl, html)
-        collected = rankDirectCandidates([...collected, ...retrySources])
-        if (has1080Candidate(collected)) {
-          return collected
-        }
-      }
-
-      if (collected.length > 0) return collected
+      const directCandidates = parsePlayerHtml(html)
+      if (directCandidates.length > 0) return directCandidates
     }
   } catch {
-    // Fall back to Apify path below.
+    // Fall back to Apify below.
   }
 
-  const playerResult = await fetchWithApify(normalizedPlayerUrl, apifyToken)
-  if (!playerResult.html) return []
+  return []
+}
 
-  const fromSourcesApiFallback = await fetchDirectCandidatesFromSourcesApi(normalizedPlayerUrl, playerResult.html)
-  const fromHtmlFallback = parseDirectCandidatesFromPlayerHtml(playerResult.html)
-  collected = rankDirectCandidates([...collected, ...fromSourcesApiFallback, ...fromHtmlFallback])
+function parseDirectCandidatesFromPlayerHtml(html: string): DirectCandidate[] {
+  const candidates: DirectCandidate[] = []
+  const matches = Array.from(html.matchAll(/video_sources\s*=\s*(\[.*?\]);/gs))
+  for (const match of matches.reverse()) {
+    const raw = match[1]
+    if (!raw || raw.length <= 5) continue
+    try {
+      const sources = JSON.parse(raw)
+      if (!Array.isArray(sources)) continue
 
-  if (!has1080Candidate(collected)) {
-    for (let i = 0; i < maxWaitAttempts; i++) {
-      await sleep(waitMs)
-      const retrySourcesFallback = await fetchDirectCandidatesFromSourcesApi(normalizedPlayerUrl, playerResult.html)
-      collected = rankDirectCandidates([...collected, ...retrySourcesFallback])
-      if (has1080Candidate(collected)) {
-        break
+      const valid = sources
+        .filter((source: any) => source?.src && !source?.premium)
+        .sort((a: any, b: any) => Number(b?.res || 0) - Number(a?.res || 0))
+
+      for (const source of valid) {
+        candidates.push({
+          url: normalizeDirectUrl(String(source.src)),
+          resolution: Number(source?.res || 0),
+        })
       }
+    } catch {
+      // Keep checking later matches.
     }
   }
 
-  return collected
+  return rankDirectCandidates(candidates)
 }
 
 function isDirectLikeUrl(url: string): boolean {
@@ -1065,34 +754,418 @@ function isUrlExpiringSoon(url: string, skewSeconds = 180): boolean {
   return expires <= nowSec + skewSeconds
 }
 
-// Convert a title to a URL slug (lowercase, hyphenated)
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/\s*\(TV\)\s*/gi, '')
-    .replace(/\s*Season\s*\d+/gi, '')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
+function hasUsableCachedVideoSources(videoSources: unknown): videoSources is VideoSource[] {
+  if (!Array.isArray(videoSources) || videoSources.length === 0) return false
+
+  return videoSources.some((source) => {
+    const url = String(source?.url || '')
+    const type = String(source?.type || '')
+    if (type !== 'direct' && !isDirectLikeUrl(url)) return false
+    return !isUrlExpiringSoon(url, 180)
+  })
 }
 
-// Try fetching episode page directly with a constructed slug, return video sources if found
-async function tryDirectEpisodeUrl(
-  slug: string,
-  episodeNumber: number,
-  apifyToken: string
-): Promise<{ url: string; sources: ReturnType<typeof extractVideoUrls> } | null> {
-  const episodeUrl = `https://anime3rb.com/episode/${slug}/${episodeNumber}`
-  console.log(`[Direct] Trying: ${episodeUrl}`)
+function buildEpisodeUrlFromKnownEpisodeUrl(episodeUrl: string | null, episodeNumber: number): string | null {
+  const normalized = normalizeDirectUrl(String(episodeUrl || ''))
+    .replace(/[#?].*$/, '')
+    .replace(/\/+$/, '')
 
-  const result = await fetchWithApify(episodeUrl, apifyToken)
-  if (result.error && !result.html) return null
+  if (!normalized) return null
 
-  const sources = extractVideoUrls(result.html)
-  if (sources.length === 0) return null
+  const slashFormat = normalized.match(/^https?:\/\/(?:www\.)?anime3rb\.com\/episode\/([a-z0-9-]+)\/\d+$/i)
+  if (slashFormat?.[1]) {
+    return `https://anime3rb.com/episode/${slashFormat[1]}/${episodeNumber}`
+  }
 
-  return { url: episodeUrl, sources }
+  const dashFormat = normalized.match(/^https?:\/\/(?:www\.)?anime3rb\.com\/episode\/([a-z0-9-]+)-episode-\d+$/i)
+  if (dashFormat?.[1]) {
+    return `https://anime3rb.com/episode/${dashFormat[1]}-episode-${episodeNumber}`
+  }
+
+  return null
+}
+
+async function resolveAndCacheEpisode({
+  animeTitle,
+  animeTitleEnglish,
+  episodeNumber,
+  rawEpisodeNumber,
+  malId,
+  forceRefresh = false,
+  directEpisodeUrl,
+  remoteScraperUrl,
+  supabase,
+}: ResolveEpisodeParams): Promise<ResolveEpisodeResult> {
+  let dbEpisodePageUrl: string | null = null
+  const providedEpisodeUrl = directEpisodeUrl ? String(directEpisodeUrl) : null
+  let resolutionStepUsed: ResolveStep = null
+  let savedEpisodePageUrl: string | null = null
+
+  if (!forceRefresh && supabase && malId) {
+    const { data: cached } = await supabase
+      .from('anime_episodes')
+      .select('*')
+      .eq('mal_id', malId)
+      .eq('episode_number', episodeNumber)
+      .eq('is_active', true)
+      .single()
+
+    if (cached?.video_sources && cached.video_sources.length > 0) {
+      const cachedScrapedAt = typeof cached?.scraped_at === 'string'
+        ? String(cached.scraped_at)
+        : null
+      const isFreshCache = isScrapedVideoFresh(cachedScrapedAt)
+
+      if (isFreshCache && hasUsableCachedVideoSources(cached.video_sources)) {
+        console.log(`[Cache] Found cached episode: mal_id=${malId}, ep=${episodeNumber}`)
+        return {
+          ok: true,
+          cached: true,
+          videoSources: cached.video_sources as VideoSource[],
+          usedEpisodeUrl: typeof cached?.episode_page_url === 'string'
+            ? String(cached.episode_page_url)
+            : providedEpisodeUrl,
+          savedEpisodePageUrl: null,
+          resolutionStepUsed: null,
+          debug: {
+            method: 'cache',
+            scraped_at: cachedScrapedAt,
+            resolution_step_used: null,
+            provided_episode_url: providedEpisodeUrl,
+            db_episode_page_url: typeof cached?.episode_page_url === 'string'
+              ? String(cached.episode_page_url)
+              : null,
+            saved_episode_page_url: null,
+            raw_episode_number: rawEpisodeNumber ?? null,
+            normalized_episode_number: episodeNumber,
+            episode_candidates: [],
+          },
+        }
+      }
+
+      console.log(`[Cache] Cached direct is stale or expiring; re-scraping mal_id=${malId}, ep=${episodeNumber}`)
+    }
+  }
+
+  if (supabase && malId) {
+    try {
+      const { data: dbEpisode } = await supabase
+        .from('anime_episodes')
+        .select('episode_page_url')
+        .eq('mal_id', malId)
+        .eq('episode_number', episodeNumber)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      if (dbEpisode && typeof dbEpisode?.episode_page_url === 'string') {
+        dbEpisodePageUrl = String(dbEpisode.episode_page_url)
+      }
+    } catch {
+      // Keep DB link optional.
+    }
+  }
+
+  let episodeCandidates: string[] = []
+  let animeSlug: string | null = null
+  let lastSearchDebug: Record<string, unknown> | null = null
+  let searchFallbackUsed = false
+  let searchSkippedAfterDirectCandidate = false
+  const remoteAttempts: Array<{ episodeUrl?: string; animeName?: string; ok: boolean; error?: string | null }> = []
+  const searchQueries = animeTitle ? buildSearchQueries(animeTitle, animeTitleEnglish) : []
+
+  let videoSources: VideoSource[] = []
+  let usedEpisodeUrl: string | null = null
+  let lastEpisodeError: string | undefined
+  let selectedCandidateCount = 0
+  let selectedTopQuality: string | null = null
+  let selectedTopHost: string | null = null
+  const selectedReachability: Record<string, boolean | null> = {}
+
+  const tryResolveFromCandidates = async (candidates: string[]): Promise<boolean> => {
+    for (const episodeUrl of candidates) {
+      console.log(`[Remote] Resolving episode page: ${episodeUrl}`)
+      const remoteResponse = await callRemoteResolveByUrl(remoteScraperUrl, episodeUrl)
+      remoteAttempts.push({
+        episodeUrl,
+        ok: Boolean(remoteResponse.result),
+        error: remoteResponse.error,
+      })
+
+      if (!remoteResponse.result) {
+        lastEpisodeError = remoteResponse.error || 'Remote scraper returned no video URL'
+        continue
+      }
+
+      const resolvedChosenUrl = normalizeDirectUrl(remoteResponse.result.videoUrl)
+      const chosenQuality = isSignedVid3rbVideo(resolvedChosenUrl) ? '1080p' : qualityFromUrl(resolvedChosenUrl)
+
+      videoSources = [
+        {
+          url: resolvedChosenUrl,
+          type: 'direct',
+          server_name: 'anime3rb-direct',
+          quality: isSignedVid3rbVideo(resolvedChosenUrl) ? '1080p' : chosenQuality,
+        },
+      ]
+      usedEpisodeUrl = remoteResponse.result.episodePageUrl || episodeUrl
+      selectedCandidateCount = 1
+      selectedTopQuality = videoSources[0].quality
+      selectedTopHost = hostFromUrl(videoSources[0]?.url || '')
+      return true
+    }
+    return false
+  }
+
+  let resolved = false
+  const providedCandidates = providedEpisodeUrl
+    ? sanitizeEpisodeUrlCandidates([providedEpisodeUrl], episodeNumber)
+    : []
+  const dbCandidates = dbEpisodePageUrl
+    ? sanitizeEpisodeUrlCandidates([dbEpisodePageUrl], episodeNumber)
+    : []
+
+  episodeCandidates = [...new Set([...providedCandidates, ...dbCandidates])]
+  if (episodeCandidates.length > 0) {
+    console.log('[Step 1] Candidate URLs (provided/db):', episodeCandidates)
+    const slugMatch = episodeCandidates[0].match(/anime3rb\.com\/episode\/([^/?#]+)/)
+    if (slugMatch) {
+      animeSlug = slugMatch[1].replace(/-episode-\d+$/, '')
+    }
+    resolved = await tryResolveFromCandidates(episodeCandidates)
+    if (resolved && usedEpisodeUrl) {
+      resolutionStepUsed = providedCandidates.includes(usedEpisodeUrl) ? 'provided_link' : 'db_link'
+    }
+  }
+
+  if (!resolved && episodeCandidates.length > 0) {
+    searchSkippedAfterDirectCandidate = true
+    console.log('[Step 2] Skipping search fallback because a direct episode candidate was already tried.')
+  }
+
+  if (!resolved && animeTitle && episodeCandidates.length === 0) {
+    searchFallbackUsed = true
+    console.log('[Step 2] Building episode URL from MAL title...')
+
+    const slugCandidates = [...new Set(
+      searchQueries
+        .map((query) => slugifyAnimeTitle(query))
+        .filter(Boolean)
+    )]
+
+    episodeCandidates = sanitizeEpisodeUrlCandidates(
+      slugCandidates.map((slug) => `https://anime3rb.com/episode/${slug}/${episodeNumber}`),
+      episodeNumber,
+    )
+
+    if (episodeCandidates.length > 0) {
+      animeSlug = slugCandidates[0] || null
+      lastSearchDebug = {
+        strategy: 'built_from_mal_title',
+        slug_candidates: slugCandidates,
+        episode_candidates: episodeCandidates,
+      }
+      resolved = await tryResolveFromCandidates(episodeCandidates)
+      if (resolved) {
+        resolutionStepUsed = 'search'
+      }
+    }
+
+    if (!resolved) {
+      console.log('[Step 2] Built MAL title URL failed, falling back to remote resolve-by-name...')
+
+      const remoteByName = await callRemoteResolveByName(
+        remoteScraperUrl,
+        searchQueries,
+        episodeNumber,
+      )
+      remoteAttempts.push(
+        ...remoteByName.attempts.map((attempt) => ({
+          animeName: attempt.animeName,
+          ok: attempt.ok,
+          error: attempt.error,
+        }))
+      )
+
+      if (remoteByName.result) {
+        const resolvedChosenUrl = normalizeDirectUrl(remoteByName.result.videoUrl)
+        videoSources = [
+          {
+            url: resolvedChosenUrl,
+            type: 'direct',
+            server_name: 'anime3rb-remote',
+            quality: isSignedVid3rbVideo(resolvedChosenUrl) ? '1080p' : qualityFromUrl(resolvedChosenUrl),
+          },
+        ]
+        usedEpisodeUrl = remoteByName.result.episodePageUrl
+        animeSlug = remoteByName.result.episodePageUrl?.match(/anime3rb\.com\/episode\/([^/?#]+)/)?.[1]?.replace(/-episode-\d+$/, '') || null
+        selectedCandidateCount = 1
+        selectedTopQuality = videoSources[0].quality
+        selectedTopHost = hostFromUrl(resolvedChosenUrl)
+        resolutionStepUsed = 'search'
+        lastSearchDebug = {
+          strategy: 'remote_resolve_by_name',
+          matched_anime_name: remoteByName.result.matchedAnimeName,
+          attempts: remoteByName.attempts,
+        }
+        resolved = true
+      } else {
+        lastEpisodeError = remoteByName.attempts[remoteByName.attempts.length - 1]?.error || 'Remote scraper could not find a video URL by name'
+        lastSearchDebug = {
+          strategy: 'remote_resolve_by_name',
+          attempts: remoteByName.attempts,
+        }
+      }
+    }
+  }
+
+  if (!resolved || videoSources.length === 0) {
+    return {
+      ok: false,
+      error: 'No direct video URLs found on candidate episode pages',
+      debug: {
+        step: 'extract',
+        resolution_step_used: resolutionStepUsed,
+        provided_episode_url: providedEpisodeUrl,
+        db_episode_page_url: dbEpisodePageUrl,
+        saved_episode_page_url: savedEpisodePageUrl,
+        animeSlug,
+        search_fallback_used: searchFallbackUsed,
+        search_skipped_after_direct_candidate: searchSkippedAfterDirectCandidate,
+        remote_scraper_url: remoteScraperUrl,
+        remote_attempts: remoteAttempts,
+        lastSearchDebug,
+        searchQueries,
+        raw_episode_number: rawEpisodeNumber ?? null,
+        normalized_episode_number: episodeNumber,
+        episode_candidates: episodeCandidates,
+        lastEpisodeError,
+        candidate_count: selectedCandidateCount,
+        top_candidate_quality: selectedTopQuality,
+        top_candidate_url_host: selectedTopHost,
+        reachability_by_candidate: selectedReachability,
+      },
+    }
+  }
+
+  console.log(`[Step 3] Found ${videoSources.length} video source(s)`)
+
+  if (usedEpisodeUrl && resolutionStepUsed === 'search') {
+    savedEpisodePageUrl = usedEpisodeUrl
+  }
+
+  if (supabase && malId) {
+    const upsertPayload: Record<string, unknown> = {
+      mal_id: malId,
+      episode_number: episodeNumber,
+      video_url: videoSources[0].url,
+      video_sources: videoSources,
+      quality: videoSources[0].quality,
+      subtitle_language: 'ar',
+      is_active: true,
+      scraped_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    if (savedEpisodePageUrl) {
+      upsertPayload.episode_page_url = savedEpisodePageUrl
+    }
+
+    const { error: upsertError } = await supabase
+      .from('anime_episodes')
+      .upsert(
+        upsertPayload,
+        { onConflict: 'mal_id,episode_number' }
+      )
+
+    if (upsertError) {
+      console.error('[Cache] Failed to cache episode:', upsertError.message)
+    } else {
+      console.log(`[Cache] Cached episode: mal_id=${malId}, ep=${episodeNumber}`)
+    }
+  }
+
+  return {
+    ok: true,
+    cached: false,
+    videoSources,
+    usedEpisodeUrl,
+    savedEpisodePageUrl,
+    resolutionStepUsed,
+    debug: {
+      method: 'remote',
+      resolution_step_used: resolutionStepUsed,
+      provided_episode_url: providedEpisodeUrl,
+      db_episode_page_url: dbEpisodePageUrl,
+      saved_episode_page_url: savedEpisodePageUrl,
+      search_fallback_used: searchFallbackUsed,
+      search_skipped_after_direct_candidate: searchSkippedAfterDirectCandidate,
+      remote_scraper_url: remoteScraperUrl,
+      remote_attempts: remoteAttempts,
+      animeSlug,
+      episodeUrl: usedEpisodeUrl,
+      raw_episode_number: rawEpisodeNumber ?? null,
+      normalized_episode_number: episodeNumber,
+      episode_candidates: episodeCandidates,
+      sourceCount: videoSources.length,
+      candidate_count: selectedCandidateCount,
+      top_candidate_quality: selectedTopQuality,
+      top_candidate_url_host: selectedTopHost,
+      reachability_by_candidate: selectedReachability,
+    },
+  }
+}
+
+function scheduleBackgroundTask(task: Promise<unknown>) {
+  const wrappedTask = task.catch((error) => {
+    console.error('[Prefetch] Background task failed:', error)
+  })
+
+  const edgeRuntime = (globalThis as typeof globalThis & {
+    EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void }
+  }).EdgeRuntime
+
+  if (edgeRuntime?.waitUntil) {
+    edgeRuntime.waitUntil(wrappedTask)
+    return
+  }
+
+  void wrappedTask
+}
+
+function getPrefetchEpisodeNumbers(currentEpisodeNumber: number, count = PREFETCH_EPISODE_COUNT): number[] {
+  return Array.from({ length: count }, (_, index) => currentEpisodeNumber + index + 1)
+}
+
+async function prefetchUpcomingEpisodes(
+  baseParams: Omit<ResolveEpisodeParams, 'episodeNumber' | 'rawEpisodeNumber' | 'directEpisodeUrl'>,
+  currentEpisodeNumber: number,
+  currentEpisodeUrl: string | null,
+): Promise<number[]> {
+  if (!baseParams.supabase || !baseParams.malId) return []
+  if (!baseParams.animeTitle && !currentEpisodeUrl) return []
+
+  const episodeNumbers = getPrefetchEpisodeNumbers(currentEpisodeNumber)
+  if (episodeNumbers.length === 0) return []
+
+  await Promise.allSettled(
+    episodeNumbers.map(async (targetEpisodeNumber) => {
+      const directCandidate = buildEpisodeUrlFromKnownEpisodeUrl(currentEpisodeUrl, targetEpisodeNumber)
+      const result = await resolveAndCacheEpisode({
+        ...baseParams,
+        episodeNumber: targetEpisodeNumber,
+        rawEpisodeNumber: targetEpisodeNumber,
+        forceRefresh: false,
+        directEpisodeUrl: directCandidate,
+      })
+
+      if (result.ok) {
+        console.log(`[Prefetch] Episode ${targetEpisodeNumber} cached (${result.cached ? 'cache-hit' : 'fresh'})`)
+      } else {
+        console.log(`[Prefetch] Episode ${targetEpisodeNumber} skipped: ${result.error}`)
+      }
+    })
+  )
+
+  return episodeNumbers
 }
 
 serve(async (req: Request) => {
@@ -1116,435 +1189,64 @@ serve(async (req: Request) => {
       }, 400)
     }
 
-    if (directEpisodeUrl) {
-      // Direct URL mode: episodeNumber still required for DB caching
-      // Input validated above.
-    } else {
-      if (!animeTitle) {
-        return jsonResponse({ error: 'animeTitle and episodeNumber are required' }, 400)
-      }
+    if (!directEpisodeUrl && !animeTitle) {
+      return jsonResponse({ error: 'animeTitle and episodeNumber are required' }, 400)
     }
 
-    const apifyToken = Deno.env.get('APIFY_TOKEN')
-    const pythonScraperUrl = Deno.env.get('PY_SCRAPER_URL')
-    if (!pythonScraperUrl && !apifyToken) {
-      return jsonResponse({ error: 'No scraper configured (set PY_SCRAPER_URL or APIFY_TOKEN)' }, 500)
-    }
-    // Initialize Supabase client for caching
+    const remoteScraperUrl = Deno.env.get('PY_SCRAPER_URL') || DEFAULT_REMOTE_SCRAPER_URL
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     const supabase = supabaseUrl && supabaseServiceKey
       ? createClient(supabaseUrl, supabaseServiceKey)
       : null
 
-    let dbEpisodePageUrl: string | null = null
-    const providedEpisodeUrl = directEpisodeUrl ? String(directEpisodeUrl) : null
-    let resolutionStepUsed: 'provided_link' | 'db_link' | 'built_link' | 'search' | null = null
-    let resolvedMethod: 'python' | 'apify' | null = null
-    let savedEpisodePageUrl: string | null = null
+    const result = await resolveAndCacheEpisode({
+      animeTitle,
+      animeTitleEnglish,
+      episodeNumber: normalizedEpisodeNumber,
+      rawEpisodeNumber,
+      malId,
+      forceRefresh,
+      directEpisodeUrl,
+      remoteScraperUrl,
+      supabase,
+    })
 
-    // Step 0: Check if we already have this episode cached
-    if (!forceRefresh && supabase && malId) {
-      const { data: cached } = await supabase
-        .from('anime_episodes')
-        .select('*')
-        .eq('mal_id', malId)
-        .eq('episode_number', normalizedEpisodeNumber)
-        .eq('is_active', true)
-        .single()
-
-      if (cached?.video_sources && cached.video_sources.length > 0) {
-        let bestCachedResolution = 0
-        const cachedScrapedAt = typeof (cached as any)?.scraped_at === 'string'
-          ? String((cached as any).scraped_at)
-          : null
-        const isFreshCache = isScrapedVideoFresh(cachedScrapedAt)
-        for (const s of cached.video_sources as any[]) {
-          const url = String(s?.url || '')
-          const type = String(s?.type || '')
-          if (type !== 'direct' && !isDirectLikeUrl(url)) continue
-          bestCachedResolution = Math.max(bestCachedResolution, getUrlResolution(url))
-        }
-
-        const hasUsableExpiry = (cached.video_sources as any[]).some((s) => {
-          const url = String(s?.url || '')
-          const type = String(s?.type || '')
-          if (type !== 'direct' && !isDirectLikeUrl(url)) return false
-          return !isUrlExpiringSoon(url, 180)
-        })
-
-        if (isFreshCache && hasUsableExpiry) {
-          console.log(`[Cache] Found cached episode: mal_id=${malId}, ep=${normalizedEpisodeNumber}`)
-          return jsonResponse({
-            video_sources: cached.video_sources,
-            cached: true,
-            debug: {
-              method: 'cache',
-              scraped_at: cachedScrapedAt,
-              resolution_step_used: null,
-              provided_episode_url: providedEpisodeUrl,
-              db_episode_page_url: typeof (cached as any)?.episode_page_url === 'string'
-                ? String((cached as any).episode_page_url)
-                : null,
-              saved_episode_page_url: null,
-              raw_episode_number: rawEpisodeNumber ?? null,
-              normalized_episode_number: normalizedEpisodeNumber,
-              episode_candidates: [],
-            },
-          })
-        }
-
-        console.log(`[Cache] Cached direct is stale or expiring; re-scraping mal_id=${malId}, ep=${normalizedEpisodeNumber}`)
-      }
-    }
-
-    // Step 1 (DB): use episode_page_url from anime_episodes as fallback after provided URL.
-    if (supabase && malId) {
-      try {
-        const { data: dbEpisode } = await supabase
-          .from('anime_episodes')
-          .select('episode_page_url')
-          .eq('mal_id', malId)
-          .eq('episode_number', normalizedEpisodeNumber)
-          .eq('is_active', true)
-          .maybeSingle()
-
-        if (dbEpisode && typeof (dbEpisode as any).episode_page_url === 'string') {
-          dbEpisodePageUrl = String((dbEpisode as any).episode_page_url)
-        }
-      } catch {
-        // Keep DB link optional.
-      }
-    }
-
-    let episodeCandidates: string[] = []
-    let rawEpisodeCandidates: string[] = []
-    let animeSlug: string | null = null
-    let searchQueries: string[] = []
-    let lastSearchDebug: any = null
-    let searchFallbackUsed = false
-    searchQueries = animeTitle ? buildSearchQueries(animeTitle, animeTitleEnglish) : []
-
-    // Step 3: Try candidate episode pages until one yields direct video URLs
-    let videoSources: ReturnType<typeof extractVideoUrls> = []
-    let usedEpisodeUrl: string | null = null
-    let lastEpisodeError: string | undefined = undefined
-    let selectedCandidateCount = 0
-    let selectedTopQuality: string | null = null
-    let selectedTopHost: string | null = null
-    let selectedReachability: Record<string, boolean | null> = {}
-    let pythonAttempts: Array<{ episodeUrl: string; ok: boolean; status?: number; error?: string | null }> = []
-
-    const tryResolveFromCandidates = async (candidates: string[]): Promise<boolean> => {
-      for (const episodeUrl of candidates) {
-        console.log(`[Step 3] Fetching episode page: ${episodeUrl}`)
-        if (pythonScraperUrl) {
-          const pythonResponse = await resolveEpisodeUrlWithPythonService(pythonScraperUrl, episodeUrl)
-          pythonAttempts.push(pythonResponse.attempt)
-          if (pythonResponse.result) {
-            const resolvedPythonUrl = await resolveSignedVideoToFinalUrl(pythonResponse.result.videoUrl)
-            const inferredQuality = qualityFromUrl(resolvedPythonUrl)
-            console.log(`[Python] Using resolved video URL from Python chain for: ${episodeUrl}`)
-            videoSources = [
-              {
-                url: resolvedPythonUrl,
-                type: 'direct',
-                server_name: 'anime3rb-python',
-                quality: inferredQuality,
-              },
-            ]
-            resolvedMethod = 'python'
-            usedEpisodeUrl = pythonResponse.result.episodePageUrl || episodeUrl
-            selectedCandidateCount = 1
-            selectedTopQuality = inferredQuality
-            selectedTopHost = hostFromUrl(resolvedPythonUrl)
-            selectedReachability = {}
-            return true
-          }
-        }
-
-        if (!apifyToken) {
-          if (!lastEpisodeError) lastEpisodeError = 'No edge fallback available (APIFY_TOKEN not configured)'
-          continue
-        }
-
-        const episodeResult = await fetchWithApify(episodeUrl, apifyToken)
-        if (episodeResult.error && !episodeResult.html) {
-          lastEpisodeError = episodeResult.error
-          continue
-        }
-
-        const extracted = extractVideoUrls(episodeResult.html)
-
-        // 1) Best path: resolve signed direct URL from player page.
-        const playerUrl =
-          extractPlayerUrlFromEpisodeHtml(episodeResult.html) ||
-          extracted.find((s) => /video\.vid3rb\.com\/player\//i.test(s.url))?.url ||
-          null
-
-        const directCandidates: DirectCandidate[] = []
-        if (playerUrl) {
-          const playerCandidates = await fetchDirectVideoLinksFromPlayer(playerUrl, episodeUrl, apifyToken)
-          for (const candidate of playerCandidates) {
-            directCandidates.push(candidate)
-          }
-        }
-
-        // 2) Also include direct URLs already present in episode HTML.
-        const fallbackCandidates = extracted
-          .map((s) => normalizeDirectUrl(s.url))
-          .filter((url) => isDirectLikeUrl(url))
-        for (const url of fallbackCandidates) {
-          directCandidates.push({ url, resolution: getUrlResolution(url) })
-        }
-
-        const rankedCandidates = rankDirectCandidates(directCandidates)
-        if (rankedCandidates.length === 0) {
-          lastEpisodeError = 'No direct video URL found'
-          continue
-        }
-
-        const chosenCandidate = rankedCandidates[0]
-        const resolvedChosenUrl = await resolveSignedVideoToFinalUrl(chosenCandidate.url)
-        const chosenQuality = qualityFromUrl(resolvedChosenUrl)
-
-        videoSources = [
-          {
-            url: resolvedChosenUrl,
-            type: 'direct',
-            server_name: 'anime3rb-direct',
-            quality: chosenQuality,
-          },
-        ]
-        resolvedMethod = 'apify'
-        usedEpisodeUrl = episodeUrl
-        selectedCandidateCount = rankedCandidates.length
-        selectedTopQuality = chosenQuality
-        selectedTopHost = videoSources[0]?.url ? hostFromUrl(videoSources[0].url) : null
-        selectedReachability = {}
-        return true
-      }
-      return false
-    }
-
-    let resolved = false
-
-    // Step 1: Provided episode URL first, then DB episode_page_url
-    const providedCandidates = providedEpisodeUrl
-      ? sanitizeEpisodeUrlCandidates([providedEpisodeUrl], normalizedEpisodeNumber)
-      : []
-    const dbCandidates = dbEpisodePageUrl
-      ? sanitizeEpisodeUrlCandidates([dbEpisodePageUrl], normalizedEpisodeNumber)
-      : []
-    episodeCandidates = [...new Set([...providedCandidates, ...dbCandidates])]
-    rawEpisodeCandidates = [...episodeCandidates]
-
-    if (episodeCandidates.length > 0) {
-      console.log(`[Step 1] Candidate URLs (provided/db):`, episodeCandidates)
-      const slugMatch = episodeCandidates[0].match(/anime3rb\.com\/episode\/([^/?#]+)/)
-      if (slugMatch) {
-        animeSlug = slugMatch[1].replace(/-episode-\d+$/, '')
-      }
-      resolved = await tryResolveFromCandidates(episodeCandidates)
-      if (resolved && usedEpisodeUrl) {
-        resolutionStepUsed = providedCandidates.includes(usedEpisodeUrl) ? 'provided_link' : 'db_link'
-      }
-    }
-
-    // Step 2: Use the Python scraper's current search-and-build flow by anime name.
-    if (!resolved && animeTitle && pythonScraperUrl) {
-      console.log(`[Step 2] Resolving by name via Python service for "${animeTitle}" Episode ${normalizedEpisodeNumber}`)
-      searchFallbackUsed = true
-      const pythonByName = await resolveFromPythonService(
-        pythonScraperUrl,
-        searchQueries,
-        normalizedEpisodeNumber,
-      )
-
-      if (pythonByName) {
-        const resolvedPythonUrl = await resolveSignedVideoToFinalUrl(pythonByName.videoUrl)
-        const inferredQuality = qualityFromUrl(resolvedPythonUrl)
-        videoSources = [
-          {
-            url: resolvedPythonUrl,
-            type: 'direct',
-            server_name: 'anime3rb-python',
-            quality: inferredQuality,
-          },
-        ]
-        resolvedMethod = 'python'
-        usedEpisodeUrl = pythonByName.episodePageUrl
-        resolutionStepUsed = 'search'
-        animeSlug = pythonByName.episodePageUrl?.match(/anime3rb\.com\/episode\/([^/?#]+)/)?.[1]?.replace(/-episode-\d+$/, '') || null
-        selectedCandidateCount = 1
-        selectedTopQuality = inferredQuality
-        selectedTopHost = hostFromUrl(resolvedPythonUrl)
-        selectedReachability = {}
-        lastSearchDebug = {
-          matched_anime_name: pythonByName.matchedAnimeName,
-          attempts: pythonByName.attempts,
-        }
-        resolved = true
-      } else {
-        lastEpisodeError = lastEpisodeError || 'Python /api/resolve-by-name did not return a video URL'
-      }
-    }
-
-    // Step 3: Legacy inline built-link fallback only when the Python service is unavailable.
-    if (!resolved && animeTitle && !pythonScraperUrl) {
-      console.log(`[Step 2] Building URL from MAL title for "${animeTitle}" Episode ${normalizedEpisodeNumber}`)
-      const directSlugCandidates = [...new Set(
-        searchQueries
-          .map((q) => slugify(q))
-          .filter((slug) => Boolean(slug))
-      )]
-
-      rawEpisodeCandidates = directSlugCandidates.map(
-        (slug) => `https://anime3rb.com/episode/${slug}/${normalizedEpisodeNumber}`
-      )
-      episodeCandidates = sanitizeEpisodeUrlCandidates(rawEpisodeCandidates, normalizedEpisodeNumber)
-      animeSlug = directSlugCandidates[0] || animeSlug
-      console.log(`[Step 2] Built URL candidates:`, episodeCandidates)
-
-      if (episodeCandidates.length > 0) {
-        resolved = await tryResolveFromCandidates(episodeCandidates)
-        if (resolved) {
-          resolutionStepUsed = 'built_link'
-        }
-      }
-    }
-
-    // Step 4: Legacy inline search fallback on anime3rb when the Python service is unavailable.
-    if (!resolved && animeTitle && !pythonScraperUrl) {
-      if (!apifyToken) {
-        lastEpisodeError = lastEpisodeError || 'Search fallback unavailable without APIFY_TOKEN'
-      } else {
-      searchFallbackUsed = true
-      console.log('[Step 3] Built URL failed, starting anime3rb search fallback...')
-
-      for (const query of searchQueries) {
-        const searchUrl = `https://anime3rb.com/search?q=${encodeURIComponent(query)}`
-        console.log(`[Step 3] Searching anime3rb: ${searchUrl}`)
-
-        const searchResult = await fetchWithApify(searchUrl, apifyToken)
-        lastSearchDebug = {
-          query,
-          searchUrl,
-          error: searchResult.error,
-          htmlLength: searchResult.html?.length || 0,
-        }
-
-        if (!searchResult.html) continue
-
-        animeSlug = extractAnimeSlugFromSearch(searchResult.html, animeTitle)
-        if (animeSlug) break
-      }
-
-      if (animeSlug) {
-        console.log(`[Step 3] Found anime slug: ${animeSlug}`)
-        const titleUrl = `https://anime3rb.com/titles/${animeSlug}`
-        console.log(`[Step 3] Fetching title page: ${titleUrl}`)
-        const titleResult = await fetchWithApify(titleUrl, apifyToken)
-        rawEpisodeCandidates = buildEpisodeUrlCandidates(animeSlug, normalizedEpisodeNumber, titleResult.html || '')
-        episodeCandidates = sanitizeEpisodeUrlCandidates(rawEpisodeCandidates, normalizedEpisodeNumber)
-        console.log(`[Step 3] Search candidates:`, episodeCandidates)
-
-        if (episodeCandidates.length > 0) {
-          resolved = await tryResolveFromCandidates(episodeCandidates)
-          if (resolved) {
-            resolutionStepUsed = 'search'
-          }
-        }
-      }
-      }
-    }
-
-    if (!resolved || videoSources.length === 0) {
+    if (!result.ok) {
       return jsonResponse({
-        error: 'No direct video URLs found on candidate episode pages',
-        debug: {
-          step: 'extract',
-          resolution_step_used: resolutionStepUsed,
-          provided_episode_url: providedEpisodeUrl,
-          db_episode_page_url: dbEpisodePageUrl,
-          saved_episode_page_url: savedEpisodePageUrl,
-          animeSlug,
-          search_fallback_used: searchFallbackUsed,
-          lastSearchDebug,
-          searchQueries,
-          python_service_url: pythonScraperUrl || null,
-          python_attempts: pythonAttempts,
-          raw_episode_number: rawEpisodeNumber ?? null,
-          normalized_episode_number: normalizedEpisodeNumber,
-          episode_candidates: episodeCandidates,
-          lastEpisodeError,
-          candidate_count: selectedCandidateCount,
-          top_candidate_quality: selectedTopQuality,
-          top_candidate_url_host: selectedTopHost,
-          reachability_by_candidate: selectedReachability,
-        },
+        error: result.error,
+        debug: result.debug,
       })
     }
 
-    console.log(`[Step 3] Found ${videoSources.length} video source(s)`)
+    const prefetchBaseUrl = result.usedEpisodeUrl || (directEpisodeUrl ? String(directEpisodeUrl) : null)
+    const canPrefetch = Boolean(supabase && malId && (animeTitle || prefetchBaseUrl))
+    const prefetchedEpisodeNumbers = canPrefetch ? getPrefetchEpisodeNumbers(normalizedEpisodeNumber) : []
 
-    if (usedEpisodeUrl && (resolutionStepUsed === 'built_link' || resolutionStepUsed === 'search')) {
-      savedEpisodePageUrl = usedEpisodeUrl
-    }
-
-    // Step 4: Cache the result in the database
-    if (supabase && malId) {
-      const upsertPayload: Record<string, unknown> = {
-        mal_id: malId,
-        episode_number: normalizedEpisodeNumber,
-        video_url: videoSources[0].url,
-        video_sources: videoSources,
-        quality: videoSources[0].quality,
-        subtitle_language: 'ar',
-        is_active: true,
-        scraped_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
-      if (savedEpisodePageUrl) {
-        upsertPayload.episode_page_url = savedEpisodePageUrl
-      }
-
-      const { error: upsertError } = await supabase
-        .from('anime_episodes')
-        .upsert(
-          upsertPayload,
-          { onConflict: 'mal_id,episode_number' }
+    if (canPrefetch) {
+      scheduleBackgroundTask(
+        prefetchUpcomingEpisodes(
+          {
+            animeTitle,
+            animeTitleEnglish,
+            malId,
+            forceRefresh: false,
+            remoteScraperUrl,
+            supabase,
+          },
+          normalizedEpisodeNumber,
+          prefetchBaseUrl,
         )
-
-      if (upsertError) {
-        console.error('[Cache] Failed to cache episode:', upsertError.message)
-      } else {
-        console.log(`[Cache] Cached episode: mal_id=${malId}, ep=${normalizedEpisodeNumber}`)
-      }
+      )
     }
 
     return jsonResponse({
-      video_sources: videoSources,
-      cached: false,
+      video_sources: result.videoSources,
+      cached: result.cached,
       debug: {
-        method: resolvedMethod || 'apify',
-        resolution_step_used: resolutionStepUsed,
-        provided_episode_url: providedEpisodeUrl,
-        db_episode_page_url: dbEpisodePageUrl,
-        saved_episode_page_url: savedEpisodePageUrl,
-        python_service_url: pythonScraperUrl || null,
-        python_attempts: pythonAttempts,
-        search_fallback_used: searchFallbackUsed,
-        animeSlug,
-        episodeUrl: usedEpisodeUrl,
-        raw_episode_number: rawEpisodeNumber ?? null,
-        normalized_episode_number: normalizedEpisodeNumber,
-        episode_candidates: episodeCandidates,
-        sourceCount: videoSources.length,
-        candidate_count: selectedCandidateCount,
-        top_candidate_quality: selectedTopQuality,
-        top_candidate_url_host: selectedTopHost,
-        reachability_by_candidate: selectedReachability,
+        ...result.debug,
+        prefetch_scheduled: canPrefetch,
+        prefetched_episode_numbers: prefetchedEpisodeNumbers,
       },
     })
   } catch (error: any) {

@@ -70,19 +70,16 @@ export async function fetchAniListByMAL(malId: number): Promise<AniListMedia | n
 // Fetch multiple anime by MAL IDs with rate limiting
 export async function fetchMultipleAniListByMAL(malIds: number[]): Promise<Map<number, AniListMedia>> {
   const results = new Map<number, AniListMedia>()
+  const uniqueMalIds = [...new Set(malIds)].filter(Boolean)
+  const mediaResults = await Promise.allSettled(
+    uniqueMalIds.map((malId) => fetchAniListByMAL(malId))
+  )
 
-  // AniList has rate limits, so we add delays between requests
-  for (let i = 0; i < malIds.length; i++) {
-    const malId = malIds[i]
-
-    // Add 600ms delay between requests to respect rate limits (90 requests per minute)
-    if (i > 0) {
-      await new Promise(resolve => setTimeout(resolve, 700))
-    }
-
-    const media = await fetchAniListByMAL(malId)
-    if (media) {
-      results.set(malId, media)
+  for (let i = 0; i < uniqueMalIds.length; i++) {
+    const malId = uniqueMalIds[i]
+    const result = mediaResults[i]
+    if (result.status === 'fulfilled' && result.value) {
+      results.set(malId, result.value)
     }
   }
 

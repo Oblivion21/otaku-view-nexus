@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Star, Play, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ interface AnimeWithBanner {
 }
 
 export default function HeroCarousel() {
+  const navigate = useNavigate();
   const { data: defaultData, isLoading: defaultLoading } = useTopAnime(1, "airing");
   const [items, setItems] = useState<AnimeWithBanner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -24,8 +25,35 @@ export default function HeroCarousel() {
   const touchEndX = useRef(0);
 
   useEffect(() => {
+    if (!items.length && defaultData?.data?.length) {
+      const fallbackItems: AnimeWithBanner[] = defaultData.data.slice(0, 5).map(anime => ({
+        anime,
+        bannerImage: anime.images.webp.large_image_url
+      }));
+      setItems(fallbackItems);
+      setIsLoading(false);
+    } else if (!defaultLoading && !items.length) {
+      setIsLoading(false);
+    }
+  }, [defaultData, defaultLoading, items.length]);
+
+  useEffect(() => {
     loadFeaturedAnime();
   }, []);
+
+  useEffect(() => {
+    if (!items.length) return;
+
+    const preloadUrls = [
+      items[current]?.bannerImage,
+      items[(current + 1) % items.length]?.bannerImage,
+    ].filter(Boolean);
+
+    preloadUrls.forEach((url) => {
+      const img = new Image();
+      img.src = url;
+    });
+  }, [items, current]);
 
   async function loadFeaturedAnime() {
     try {
@@ -64,7 +92,7 @@ export default function HeroCarousel() {
       }
 
       // Fallback to default airing anime if no featured anime
-      if (defaultData?.data) {
+      if (!items.length && defaultData?.data) {
         const fallbackItems: AnimeWithBanner[] = defaultData.data.slice(0, 5).map(anime => ({
           anime,
           bannerImage: anime.images.webp.large_image_url
@@ -74,7 +102,7 @@ export default function HeroCarousel() {
     } catch (error) {
       console.error('Error loading featured anime:', error);
       // Fallback to default
-      if (defaultData?.data) {
+      if (!items.length && defaultData?.data) {
         const fallbackItems: AnimeWithBanner[] = defaultData.data.slice(0, 5).map(anime => ({
           anime,
           bannerImage: anime.images.webp.large_image_url
@@ -102,6 +130,10 @@ export default function HeroCarousel() {
   const goToPrev = () => {
     setIsAutoPlaying(false);
     setCurrent((prev) => (prev - 1 + items.length) % items.length);
+  };
+
+  const goToAnimePage = () => {
+    navigate(`/anime/${anime.mal_id}`);
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -134,10 +166,20 @@ export default function HeroCarousel() {
 
   return (
     <div
-      className="relative w-full h-[400px] md:h-[500px] overflow-hidden group"
+      className="relative w-full h-[400px] md:h-[500px] overflow-hidden group cursor-pointer"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onClick={goToAnimePage}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          goToAnimePage();
+        }
+      }}
+      role="link"
+      tabIndex={0}
+      aria-label={`افتح صفحة ${anime.title}`}
     >
       {/* Background image */}
       <div
@@ -149,14 +191,20 @@ export default function HeroCarousel() {
 
       {/* Navigation Arrows */}
       <button
-        onClick={goToPrev}
+        onClick={(e) => {
+          e.stopPropagation();
+          goToPrev();
+        }}
         className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
         aria-label="Previous slide"
       >
         <ChevronLeft className="h-6 w-6" />
       </button>
       <button
-        onClick={goToNext}
+        onClick={(e) => {
+          e.stopPropagation();
+          goToNext();
+        }}
         className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
         aria-label="Next slide"
       >
@@ -193,7 +241,10 @@ export default function HeroCarousel() {
 
           <div className="flex items-center gap-3">
             <Button asChild>
-              <Link to={`/anime/${anime.mal_id}`}>
+              <Link
+                to={`/anime/${anime.mal_id}`}
+                onClick={(e) => e.stopPropagation()}
+              >
                 <Play className="h-4 w-4 ml-1" />
                 شاهد الآن
               </Link>
@@ -212,7 +263,8 @@ export default function HeroCarousel() {
         {items.map((_, i) => (
           <button
             key={i}
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               setCurrent(i);
               setIsAutoPlaying(false);
             }}

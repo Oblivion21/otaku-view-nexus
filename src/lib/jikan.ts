@@ -57,20 +57,38 @@ interface JikanResponse<T> {
   pagination?: JikanPagination;
 }
 
+const BLOCKED_GENRE_NAMES = new Set(["Ecchi"]);
+
+type GenreLike = {
+  mal_id: number;
+  name: string;
+};
+
 async function fetchJikan<T>(endpoint: string): Promise<JikanResponse<T>> {
   const res = await fetch(`${BASE_URL}${endpoint}`);
   if (!res.ok) throw new Error(`Jikan API error: ${res.status}`);
   return res.json();
 }
 
+export function isBlockedAnime(anime: { genres?: GenreLike[] } | null | undefined): boolean {
+  if (!anime?.genres?.length) return false;
+  return anime.genres.some((genre) => BLOCKED_GENRE_NAMES.has(genre.name));
+}
+
+function filterAnimeList<T extends { genres?: GenreLike[] }>(animeList: T[]): T[] {
+  return animeList.filter((anime) => !isBlockedAnime(anime));
+}
+
 export async function getTopAnime(page = 1, filter?: string) {
   const params = new URLSearchParams({ page: String(page), limit: "24" });
   if (filter) params.set("filter", filter);
-  return fetchJikan<JikanAnime[]>(`/top/anime?${params}`);
+  const response = await fetchJikan<JikanAnime[]>(`/top/anime?${params}`);
+  return { ...response, data: filterAnimeList(response.data) };
 }
 
 export async function getSeasonNow(page = 1) {
-  return fetchJikan<JikanAnime[]>(`/seasons/now?page=${page}&limit=24`);
+  const response = await fetchJikan<JikanAnime[]>(`/seasons/now?page=${page}&limit=24`);
+  return { ...response, data: filterAnimeList(response.data) };
 }
 
 export async function getAnimeById(id: number) {
@@ -82,23 +100,34 @@ export async function getAnimeEpisodes(id: number, page = 1) {
 }
 
 export async function searchAnime(query: string, page = 1) {
-  return fetchJikan<JikanAnime[]>(`/anime?q=${encodeURIComponent(query)}&page=${page}&limit=24&sfw=true`);
+  const response = await fetchJikan<JikanAnime[]>(`/anime?q=${encodeURIComponent(query)}&page=${page}&limit=24&sfw=true`);
+  return { ...response, data: filterAnimeList(response.data) };
 }
 
 export async function getAnimeByGenre(genreId: number, page = 1) {
-  return fetchJikan<JikanAnime[]>(`/anime?genres=${genreId}&page=${page}&limit=24&order_by=score&sort=desc&sfw=true`);
+  const response = await fetchJikan<JikanAnime[]>(`/anime?genres=${genreId}&page=${page}&limit=24&order_by=score&sort=desc&sfw=true`);
+  return { ...response, data: filterAnimeList(response.data) };
 }
 
 export async function getTopMovies(page = 1) {
-  return fetchJikan<JikanAnime[]>(`/top/anime?type=movie&page=${page}&limit=24`);
+  const response = await fetchJikan<JikanAnime[]>(`/top/anime?type=movie&page=${page}&limit=24`);
+  return { ...response, data: filterAnimeList(response.data) };
 }
 
 export async function getAnimeRecommendations(id: number) {
-  return fetchJikan<{ entry: JikanAnime; votes: number }[]>(`/anime/${id}/recommendations`);
+  const response = await fetchJikan<{ entry: JikanAnime; votes: number }[]>(`/anime/${id}/recommendations`);
+  return {
+    ...response,
+    data: response.data.filter((item) => !isBlockedAnime(item.entry)),
+  };
 }
 
 export async function getGenres() {
-  return fetchJikan<{ mal_id: number; name: string; count: number }[]>("/genres/anime");
+  const response = await fetchJikan<{ mal_id: number; name: string; count: number }[]>("/genres/anime");
+  return {
+    ...response,
+    data: response.data.filter((genre) => !BLOCKED_GENRE_NAMES.has(genre.name)),
+  };
 }
 
 export interface JikanCharacterEntry {
