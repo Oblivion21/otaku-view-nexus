@@ -4,19 +4,19 @@ anime3rb Cloudflare Bypass Scraper — CLI entry point.
 
 Usage:
     python main.py <episode_url>
-    python main.py <episode_url> --methods curl_cffi,apify_bypasser
+    python main.py <episode_url>
     python main.py <episode_url> --method apify_bypasser
 
 Examples:
     python main.py "https://anime3rb.com/episode/some-anime/1"
-    python main.py "https://anime3rb.com/episode/some-anime/1" --methods curl_cffi,apify_scraper
+    python main.py "https://anime3rb.com/episode/some-anime/1" --method apify_bypasser
 """
 
 import argparse
 import asyncio
 import sys
 
-from scraper.chain import SUPPORTED_METHOD_NAMES, scrape_video_url, validate_requested_methods
+from scraper.chain import scrape_video_url
 
 
 def main():
@@ -31,13 +31,13 @@ def main():
         "--methods",
         type=str,
         default=None,
-        help="Comma-separated list of methods to try (e.g. curl_cffi,apify_bypasser)",
+        help="Deprecated. Only apify_bypasser is supported.",
     )
     parser.add_argument(
         "--method",
         type=str,
         default=None,
-        help="Single method to use (e.g. apify_bypasser)",
+        help="Single method to use. Only apify_bypasser is supported.",
     )
 
     args = parser.parse_args()
@@ -48,11 +48,6 @@ def main():
     elif args.methods:
         methods = [m.strip() for m in args.methods.split(",")]
 
-    try:
-        methods = validate_requested_methods(methods)
-    except ValueError as exc:
-        parser.error(f"{exc}. Supported methods: {', '.join(SUPPORTED_METHOD_NAMES)}")
-
     result = asyncio.run(scrape_video_url(args.url, methods=methods))
 
     if result:
@@ -62,8 +57,7 @@ def main():
         sys.exit(0)
     else:
         print(f"\nFailed to extract video URL from: {args.url}")
-        print("Try running with --methods to test specific methods,")
-        print("and set APIFY_TOKEN or optional proxy environment variables.")
+        print("Ensure APIFY_TOKEN and proxy settings are configured correctly.")
         sys.exit(1)
 
 

@@ -21,6 +21,17 @@ def is_cloudflare_challenge(html: str) -> bool:
     The CF challenge-platform script can appear on valid pages (passive bot
     detection), so we only flag the page when it looks like ONLY a challenge.
     """
+    real_page_markers = [
+        "video_sources",
+        "files.vid3rb.com",
+        "<video",
+        "plyr__",
+        "jwplayer",
+        "video-js",
+    ]
+    if any(marker in html for marker in real_page_markers):
+        return False
+
     # A real anime3rb page will have significant content — if it's short, it's
     # likely a bare challenge interstitial.
     if len(html) > 20_000:
@@ -32,6 +43,9 @@ def is_cloudflare_challenge(html: str) -> bool:
         "cf-browser-verification",
         "challenge-platform",
         "cf-turnstile",
+        "turnstile/v0/api.js",
+        "__cf_chl",
+        "/cdn-cgi/challenge-platform/",
     ]
     return any(marker in html for marker in challenge_markers)
 

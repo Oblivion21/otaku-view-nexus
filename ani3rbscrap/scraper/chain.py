@@ -1,42 +1,21 @@
 """
-Fallback chain orchestrator.
+Scraper orchestrator.
 
-Tries each scraping method in order (cheapest/fastest first).
-Stops and returns as soon as one method successfully extracts the video URL.
+Only the Apify bypasser method is supported.
 """
 
 import asyncio
 from typing import Optional, Callable, Awaitable
 
-from scraper.methods import curl_method
-from scraper.methods.api_methods import (
-    scrape_apify_bypasser,
-    scrape_apify_scraper,
-)
+from scraper.methods.api_methods import scrape_apify_bypasser
 from scraper.utils import SkipMethod
 import config
 
 
-# Ordered list of (name, async scrape function)
+# Ordered list of supported methods.
 METHODS: list[tuple[str, Callable[[str], Awaitable[Optional[str]]]]] = [
-    ("curl_cffi", curl_method.scrape),
-    ("apify_bypasser",  scrape_apify_bypasser),
-    ("apify_scraper",   scrape_apify_scraper),
+    ("apify_bypasser", scrape_apify_bypasser),
 ]
-
-SUPPORTED_METHOD_NAMES = tuple(name for name, _ in METHODS)
-
-
-def validate_requested_methods(methods: Optional[list[str]]) -> Optional[list[str]]:
-    """Normalize and validate requested method names."""
-    if methods is None:
-        return None
-
-    normalized = [method.strip() for method in methods if isinstance(method, str) and method.strip()]
-    invalid = [method for method in normalized if method not in SUPPORTED_METHOD_NAMES]
-    if invalid:
-        raise ValueError(f"Unsupported methods: {', '.join(invalid)}")
-    return normalized
 
 
 async def scrape_video_url(
@@ -50,10 +29,9 @@ async def scrape_video_url(
     - None return           → method tried but failed, move to next immediately
     - Other exception       → transient error, retry up to MAX_RETRIES times
     """
-    requested_methods = validate_requested_methods(methods)
     chain = METHODS
-    if requested_methods:
-        chain = [(name, fn) for name, fn in METHODS if name in requested_methods]
+    if methods and "apify_bypasser" not in methods:
+        print("Only 'apify_bypasser' is supported; ignoring requested methods.")
 
     print(f"Scraping video URL from: {episode_url}")
     print(f"Methods to try: {[name for name, _ in chain]}")

@@ -12,15 +12,16 @@ Usage:
     python server.py
 """
 
+import asyncio
 import os
 from typing import Optional
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from scraper.chain import scrape_video_url, validate_requested_methods
-from scraper.search import search_anime3rb, search_and_build_episode_url
+from scraper.chain import scrape_video_url
+from scraper.search import search_anime3rb, build_episode_url, search_and_build_episode_url
 
 app = FastAPI(
     title="Anime3rb Scraper API",
@@ -86,8 +87,7 @@ async def resolve_by_url(req: ResolveByUrlRequest):
     This is the original flow — provide the full episode URL.
     """
     try:
-        methods = validate_requested_methods(req.methods)
-        video_url = await scrape_video_url(req.url, methods=methods)
+        video_url = await scrape_video_url(req.url, methods=req.methods)
         if video_url:
             return ResolveResponse(
                 success=True,
@@ -114,11 +114,6 @@ async def resolve_by_name(req: ResolveByNameRequest):
     4. Scrapes the video URL using the fallback chain
     5. Returns the playable video URL
     """
-    try:
-        methods = validate_requested_methods(req.methods)
-    except ValueError as e:
-        return ResolveResponse(success=False, error=str(e))
-
     # Step 1: Search anime3rb for the anime slug
     episode_page_url = await search_and_build_episode_url(
         req.anime_name, req.episode_number
@@ -132,7 +127,7 @@ async def resolve_by_name(req: ResolveByNameRequest):
 
     # Step 2: Scrape the video URL from the episode page
     try:
-        video_url = await scrape_video_url(episode_page_url, methods=methods)
+        video_url = await scrape_video_url(episode_page_url, methods=req.methods)
         if video_url:
             return ResolveResponse(
                 success=True,
