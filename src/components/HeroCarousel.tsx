@@ -4,13 +4,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTopAnime } from "@/hooks/useAnime";
-import { GENRE_AR } from "@/lib/jikan";
+import { GENRE_AR, type JikanAnime } from "@/lib/jikan";
 import { getFeaturedAnimeIds } from "@/lib/supabase";
-import { fetchMultipleAniListByMAL, getBestBannerImage } from "@/lib/anilist";
+import { getMultipleAnimeTmdbArtwork } from "@/lib/tmdb";
 import { useState, useEffect, useRef } from "react";
 
 interface AnimeWithBanner {
-  anime: any
+  anime: JikanAnime
   bannerImage: string
 }
 
@@ -25,21 +25,75 @@ export default function HeroCarousel() {
   const touchEndX = useRef(0);
 
   useEffect(() => {
-    if (!items.length && defaultData?.data?.length) {
-      const fallbackItems: AnimeWithBanner[] = defaultData.data.slice(0, 5).map(anime => ({
-        anime,
-        bannerImage: anime.images.webp.large_image_url
-      }));
-      setItems(fallbackItems);
-      setIsLoading(false);
-    } else if (!defaultLoading && !items.length) {
-      setIsLoading(false);
-    }
-  }, [defaultData, defaultLoading, items.length]);
+    let isActive = true;
 
-  useEffect(() => {
-    loadFeaturedAnime();
-  }, []);
+    async function loadCarousel() {
+      setIsLoading(true);
+
+      try {
+        const featuredIds = await getFeaturedAnimeIds();
+        let selectedAnime: JikanAnime[] = [];
+
+        if (featuredIds.length > 0) {
+          const animePromises: Promise<JikanAnime | null>[] = featuredIds.slice(0, 5).map((id) =>
+            fetch(`https://api.jikan.moe/v4/anime/${id}`)
+              .then((res) => res.json())
+              .then((data: { data?: JikanAnime }) => data.data || null)
+              .catch(() => null),
+          );
+
+          const animeResults = await Promise.all(animePromises);
+          selectedAnime = animeResults.filter((anime): anime is JikanAnime => Boolean(anime));
+        }
+
+        if (!selectedAnime.length && defaultData?.data?.length) {
+          selectedAnime = defaultData.data.slice(0, 5);
+        }
+
+        if (!selectedAnime.length) {
+          if (!defaultLoading && isActive) {
+            setItems([]);
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        const itemsWithBanners = await buildCarouselItems(selectedAnime);
+
+        if (!isActive) {
+          return;
+        }
+
+        setItems(itemsWithBanners);
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Error loading featured anime:", error);
+
+        if (!defaultData?.data?.length) {
+          if (!defaultLoading && isActive) {
+            setItems([]);
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        const fallbackItems = await buildCarouselItems(defaultData.data.slice(0, 5));
+
+        if (!isActive) {
+          return;
+        }
+
+        setItems(fallbackItems);
+        setIsLoading(false);
+      }
+    }
+
+    void loadCarousel();
+
+    return () => {
+      isActive = false;
+    };
+  }, [defaultData, defaultLoading]);
 
   useEffect(() => {
     if (!items.length) return;
@@ -55,63 +109,21 @@ export default function HeroCarousel() {
     });
   }, [items, current]);
 
-  async function loadFeaturedAnime() {
-    try {
-      const featuredIds = await getFeaturedAnimeIds();
+  async function buildCarouselItems(animeList: JikanAnime[]): Promise<AnimeWithBanner[]> {
+    const artworkMap = await getMultipleAnimeTmdbArtwork(animeList);
 
-      if (featuredIds.length > 0) {
-        // Fetch featured anime from Jikan API
-        const animePromises = featuredIds.slice(0, 5).map(id =>
-          fetch(`https://api.jikan.moe/v4/anime/${id}`)
-            .then(res => res.json())
-            .then(data => data.data)
-            .catch(() => null)
-        );
+    return animeList.map((anime) => {
+      const artwork = artworkMap.get(anime.mal_id);
 
-        const animeResults = await Promise.all(animePromises);
-        const validAnime = animeResults.filter(Boolean);
-
-        if (validAnime.length > 0) {
-          // Fetch AniList banner images for these anime
-          const malIds = validAnime.map(a => a.mal_id);
-          const anilistData = await fetchMultipleAniListByMAL(malIds);
-
-          // Combine anime data with banner images
-          const itemsWithBanners: AnimeWithBanner[] = validAnime.map(anime => ({
-            anime,
-            bannerImage: getBestBannerImage(
-              anilistData.get(anime.mal_id) || null,
-              anime.images.webp.large_image_url
-            )
-          }));
-
-          setItems(itemsWithBanners);
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      // Fallback to default airing anime if no featured anime
-      if (!items.length && defaultData?.data) {
-        const fallbackItems: AnimeWithBanner[] = defaultData.data.slice(0, 5).map(anime => ({
-          anime,
-          bannerImage: anime.images.webp.large_image_url
-        }));
-        setItems(fallbackItems);
-      }
-    } catch (error) {
-      console.error('Error loading featured anime:', error);
-      // Fallback to default
-      if (!items.length && defaultData?.data) {
-        const fallbackItems: AnimeWithBanner[] = defaultData.data.slice(0, 5).map(anime => ({
-          anime,
-          bannerImage: anime.images.webp.large_image_url
-        }));
-        setItems(fallbackItems);
-      }
-    } finally {
-      setIsLoading(false);
-    }
+      return {
+        anime,
+        bannerImage:
+          artwork?.backdropUrl ||
+          artwork?.posterUrl ||
+          anime.images.webp.large_image_url ||
+          anime.images.jpg.large_image_url,
+      };
+    });
   }
 
   useEffect(() => {
@@ -221,7 +233,7 @@ export default function HeroCarousel() {
                 <span className="text-sm font-bold text-anime-gold">{anime.score}</span>
               </div>
             )}
-            {anime.genres.slice(0, 3).map((g: any) => (
+            {anime.genres.slice(0, 3).map((g) => (
               <Badge key={g.mal_id} variant="secondary" className="text-xs">
                 {GENRE_AR[g.name] || g.name}
               </Badge>

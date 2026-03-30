@@ -4,14 +4,13 @@ import Layout from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations } from "@/hooks/useAnime";
+import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations, useAnimeTmdbArtwork } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
 import { TrailerBanner } from "@/components/TrailerBanner";
-import type { JikanAnime } from "@/lib/jikan";
 import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, isBlockedAnime } from "@/lib/jikan";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
-import { getAnimeEpisodes as getSupabaseEpisodes } from "@/lib/supabase";
+import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
 import { useState, useEffect } from "react";
 
 export default function AnimeDetail() {
@@ -24,8 +23,10 @@ export default function AnimeDetail() {
   const { data: characters, isLoading: loadingChars } = useAnimeCharacters(animeId);
   const { data: themes, isLoading: loadingThemes } = useAnimeThemes(animeId);
   const { data: relations, isLoading: loadingRelations } = useAnimeRelations(animeId);
-  const [supabaseEpisodes, setSupabaseEpisodes] = useState<any[]>([]);
+  const [supabaseEpisodes, setSupabaseEpisodes] = useState<AnimeEpisode[]>([]);
   const isDetectiveConan = animeId === 235; // Detective Conan MAL ID
+  const anime = data?.data;
+  const { data: tmdbArtwork } = useAnimeTmdbArtwork(anime);
 
   // Fetch episodes from Supabase database
   useEffect(() => {
@@ -39,7 +40,7 @@ export default function AnimeDetail() {
   }, [animeId]);
 
   // Get episode styling based on category and tags (Detective Conan only)
-  function getEpisodeStyle(episode: any) {
+  function getEpisodeStyle(episode: Pick<AnimeEpisode, "category" | "tags">) {
     if (!isDetectiveConan) {
       return {
         background: 'bg-card',
@@ -79,7 +80,6 @@ export default function AnimeDetail() {
     );
   }
 
-  const anime = data?.data;
   if (!anime || isBlockedAnime(anime)) {
     return <Layout><div className="container py-16 text-center">لم يتم العثور على الأنمي</div></Layout>;
   }
@@ -96,6 +96,16 @@ export default function AnimeDetail() {
     anime.trailer?.youtube_id || null,
     anime.trailer?.embed_url || null
   );
+  const bannerImage =
+    tmdbArtwork?.backdropUrl ||
+    tmdbArtwork?.posterUrl ||
+    anime.images.webp.large_image_url ||
+    anime.images.jpg.large_image_url;
+  const posterImage =
+    tmdbArtwork?.posterUrl ||
+    tmdbArtwork?.backdropUrl ||
+    anime.images.webp.large_image_url ||
+    anime.images.jpg.large_image_url;
   const isSeriesType = anime.type === "TV" || anime.type === "OVA" || anime.type === "ONA" || anime.type === "Special";
   const hasSupabaseEpisodes = supabaseEpisodes.length > 0;
   const hasPublicEpisodes = Boolean(episodes?.data && episodes.data.length > 0);
@@ -111,14 +121,14 @@ export default function AnimeDetail() {
       {trailerYoutubeId ? (
         <TrailerBanner
           youtubeId={trailerYoutubeId}
-          posterUrl={anime.images.webp.large_image_url}
+          posterUrl={bannerImage}
           height="400px"
         />
       ) : (
         <div className="relative h-[300px] md:h-[400px] overflow-hidden">
           <div
             className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${anime.images.webp.large_image_url})` }}
+            style={{ backgroundImage: `url(${bannerImage})` }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/30" />
         </div>
@@ -128,7 +138,7 @@ export default function AnimeDetail() {
         <div className="flex flex-col md:flex-row gap-6">
           {/* Poster */}
           <img
-            src={anime.images.webp.large_image_url}
+            src={posterImage}
             alt={anime.title}
             className="w-48 aspect-[2/3] object-cover rounded-lg shadow-xl border border-border shrink-0"
           />

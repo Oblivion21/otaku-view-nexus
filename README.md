@@ -22,7 +22,15 @@ python server.py
 VITE_SCRAPER_API_URL=http://localhost:8000
 ```
 
-3. Run the frontend:
+3. Set the TMDB secret in Supabase Edge Functions:
+
+```sh
+supabase secrets set TMDB_READ_ACCESS_TOKEN=your_tmdb_read_access_token
+```
+
+You can also add `TMDB_READ_ACCESS_TOKEN` in the Supabase dashboard under Edge Function secrets.
+
+4. Run the frontend:
 
 ```sh
 npm run dev
