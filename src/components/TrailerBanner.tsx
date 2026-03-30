@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface TrailerBannerProps {
   youtubeId: string;
@@ -33,14 +33,34 @@ export function TrailerBanner({
     setIsMobile(isMobilePhone());
   }, []);
 
+  const restartVideoFromOffset = useCallback(() => {
+    if (!iframeRef.current?.contentWindow) {
+      return;
+    }
+
+    const seekTarget = Math.max(0, Math.floor(startSeconds));
+    const sendCommand = (func: string, args: unknown[] = []) => {
+      iframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({
+          event: "command",
+          func,
+          args,
+        }),
+        "https://www.youtube.com",
+      );
+    };
+
+    sendCommand("seekTo", [seekTarget, true]);
+    sendCommand("playVideo");
+  }, [startSeconds]);
+
   useEffect(() => {
     if (isMobile) return; // Skip video setup on mobile phones
 
     // Set up loop timer to restart video every 28 seconds (desktop/tablet only)
     loopTimerRef.current = window.setInterval(() => {
       if (iframeRef.current && isLoaded && !hasError) {
-        const currentSrc = iframeRef.current.src;
-        iframeRef.current.src = currentSrc;
+        restartVideoFromOffset();
       }
     }, 28000);
 
@@ -49,10 +69,27 @@ export function TrailerBanner({
         clearInterval(loopTimerRef.current);
       }
     };
-  }, [youtubeId, isLoaded, hasError, isMobile, startSeconds]);
+  }, [youtubeId, isLoaded, hasError, isMobile, startSeconds, restartVideoFromOffset]);
+
+  useEffect(() => {
+    if (!isLoaded || hasError || isMobile || startSeconds <= 0) {
+      return;
+    }
+
+    const attemptTimers = [
+      window.setTimeout(restartVideoFromOffset, 250),
+      window.setTimeout(restartVideoFromOffset, 1000),
+      window.setTimeout(restartVideoFromOffset, 2000),
+    ];
+
+    return () => {
+      attemptTimers.forEach((timer) => clearTimeout(timer));
+    };
+  }, [isLoaded, hasError, isMobile, startSeconds, youtubeId, restartVideoFromOffset]);
 
   // Enhanced URL parameters for better quality and control (desktop/tablet only)
-  const embedUrl = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&showinfo=0&modestbranding=1&rel=0&playsinline=1&disablekb=1&fs=0&iv_load_policy=3&loop=1&playlist=${youtubeId}&enablejsapi=0&start=${Math.max(0, Math.floor(startSeconds))}`;
+  const origin = typeof window !== "undefined" ? encodeURIComponent(window.location.origin) : "";
+  const embedUrl = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&showinfo=0&modestbranding=1&rel=0&playsinline=1&disablekb=1&fs=0&iv_load_policy=3&loop=1&playlist=${youtubeId}&enablejsapi=1&origin=${origin}&start=${Math.max(0, Math.floor(startSeconds))}`;
 
   const handleLoad = () => {
     setIsLoaded(true);
