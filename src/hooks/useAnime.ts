@@ -43,11 +43,14 @@ export function useAnimeById(id: number) {
   });
 }
 
-export function useAnimeTmdbArtwork(anime: JikanAnime | null | undefined) {
+export function useAnimeTmdbArtwork(
+  anime: JikanAnime | null | undefined,
+  enabled = true,
+) {
   return useQuery({
     queryKey: ["anime-tmdb-artwork", anime?.mal_id],
     queryFn: () => getAnimeTmdbArtwork(anime),
-    enabled: Boolean(anime?.mal_id),
+    enabled: enabled && Boolean(anime?.mal_id),
     staleTime: 24 * 60 * 60 * 1000,
   });
 }

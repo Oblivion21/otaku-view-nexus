@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useAnimeById } from "@/hooks/useAnime";
+import { useAnimeById, useAnimeTmdbArtwork } from "@/hooks/useAnime";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Star } from "lucide-react";
@@ -14,12 +14,19 @@ interface RelatedAnimeCardProps {
 export default function RelatedAnimeCard({ mal_id, name, relationLabel }: RelatedAnimeCardProps) {
   const { data, isLoading } = useAnimeById(mal_id);
   const anime = data?.data;
+  const { data: tmdbArtwork } = useAnimeTmdbArtwork(anime);
 
   if (anime && isBlockedAnime(anime)) {
     return null;
   }
 
-  const imageUrl = anime?.images?.webp?.large_image_url || anime?.images?.webp?.image_url;
+  const imageUrl =
+    tmdbArtwork?.posterUrl ||
+    tmdbArtwork?.backdropUrl ||
+    anime?.images?.webp?.large_image_url ||
+    anime?.images?.webp?.image_url ||
+    anime?.images?.jpg?.large_image_url ||
+    anime?.images?.jpg?.image_url;
 
   return (
     <Link

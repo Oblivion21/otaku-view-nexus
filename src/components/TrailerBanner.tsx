@@ -4,6 +4,7 @@ interface TrailerBannerProps {
   youtubeId: string;
   posterUrl: string;
   height?: string;
+  startSeconds?: number;
 }
 
 // Detect if user is on mobile device (phone only, not tablets)
@@ -15,7 +16,12 @@ const isMobilePhone = () => {
   return isMobile && !isTablet;
 };
 
-export function TrailerBanner({ youtubeId, posterUrl, height = '400px' }: TrailerBannerProps) {
+export function TrailerBanner({
+  youtubeId,
+  posterUrl,
+  height = '400px',
+  startSeconds = 0,
+}: TrailerBannerProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const loopTimerRef = useRef<number | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -43,10 +49,10 @@ export function TrailerBanner({ youtubeId, posterUrl, height = '400px' }: Traile
         clearInterval(loopTimerRef.current);
       }
     };
-  }, [youtubeId, isLoaded, hasError, isMobile]);
+  }, [youtubeId, isLoaded, hasError, isMobile, startSeconds]);
 
   // Enhanced URL parameters for better quality and control (desktop/tablet only)
-  const embedUrl = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&showinfo=0&modestbranding=1&rel=0&playsinline=1&disablekb=1&fs=0&iv_load_policy=3&loop=1&playlist=${youtubeId}&enablejsapi=0`;
+  const embedUrl = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&showinfo=0&modestbranding=1&rel=0&playsinline=1&disablekb=1&fs=0&iv_load_policy=3&loop=1&playlist=${youtubeId}&enablejsapi=0&start=${Math.max(0, Math.floor(startSeconds))}`;
 
   const handleLoad = () => {
     setIsLoaded(true);

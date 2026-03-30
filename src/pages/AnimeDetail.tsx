@@ -123,6 +123,7 @@ export default function AnimeDetail() {
           youtubeId={trailerYoutubeId}
           posterUrl={bannerImage}
           height="400px"
+          startSeconds={60}
         />
       ) : (
         <div className="relative h-[300px] md:h-[400px] overflow-hidden">
@@ -485,7 +486,7 @@ export default function AnimeDetail() {
                     <div className="absolute top-2 left-2 z-10 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shadow-lg ring-2 ring-background">
                       {index + 1}
                     </div>
-                    <AnimeCard anime={rec.entry as JikanAnime} />
+                    <AnimeCard anime={rec.entry as JikanAnime} preferTmdbArtwork />
                   </div>
                 ))}
             </div>
