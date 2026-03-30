@@ -5,6 +5,7 @@ interface TrailerBannerProps {
   posterUrl: string;
   height?: string;
   startSeconds?: number;
+  loopDurationSeconds?: number;
 }
 
 // Detect if user is on mobile device (phone only, not tablets)
@@ -21,6 +22,7 @@ export function TrailerBanner({
   posterUrl,
   height = '400px',
   startSeconds = 0,
+  loopDurationSeconds = 28,
 }: TrailerBannerProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const loopTimerRef = useRef<number | null>(null);
@@ -57,19 +59,19 @@ export function TrailerBanner({
   useEffect(() => {
     if (isMobile) return; // Skip video setup on mobile phones
 
-    // Set up loop timer to restart video every 28 seconds (desktop/tablet only)
+    // Restart the video from the requested offset after the configured loop duration.
     loopTimerRef.current = window.setInterval(() => {
       if (iframeRef.current && isLoaded && !hasError) {
         restartVideoFromOffset();
       }
-    }, 28000);
+    }, Math.max(1, Math.floor(loopDurationSeconds)) * 1000);
 
     return () => {
       if (loopTimerRef.current) {
         clearInterval(loopTimerRef.current);
       }
     };
-  }, [youtubeId, isLoaded, hasError, isMobile, startSeconds, restartVideoFromOffset]);
+  }, [youtubeId, isLoaded, hasError, isMobile, startSeconds, loopDurationSeconds, restartVideoFromOffset]);
 
   useEffect(() => {
     if (!isLoaded || hasError || isMobile || startSeconds <= 0) {

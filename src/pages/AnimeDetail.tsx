@@ -123,7 +123,8 @@ export default function AnimeDetail() {
           youtubeId={trailerYoutubeId}
           posterUrl={bannerImage}
           height="400px"
-          startSeconds={60}
+          startSeconds={12}
+          loopDurationSeconds={30}
         />
       ) : (
         <div className="relative h-[300px] md:h-[400px] overflow-hidden">
