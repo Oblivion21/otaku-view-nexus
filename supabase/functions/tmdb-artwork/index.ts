@@ -11,6 +11,7 @@ const DEFAULT_BACKDROP_SIZE = 'original'
 const DEFAULT_POSTER_SIZE = 'w780'
 
 type TmdbMediaType = 'movie' | 'tv'
+type TmdbMatchConfidence = 'high' | 'medium' | 'low'
 
 type AnimeArtworkLookup = {
   mal_id: number
@@ -30,6 +31,9 @@ type TmdbAnimeArtwork = {
   posterUrl: string | null
   backdropUrl: string | null
   matchedTitle: string | null
+  seasonNumber: number | null
+  seasonName: string | null
+  matchConfidence: TmdbMatchConfidence
 }
 
 type TmdbConfigurationResponse = {
@@ -56,6 +60,29 @@ type TmdbSearchResult = {
   release_date?: string
   original_language: string
   popularity: number
+}
+
+type TmdbTvSeason = {
+  season_number: number
+  name: string
+  air_date?: string | null
+  episode_count?: number | null
+}
+
+type TmdbTvDetailsResponse = {
+  seasons?: TmdbTvSeason[]
+}
+
+type TmdbMatchCandidate = {
+  mediaType: TmdbMediaType
+  result: TmdbSearchResult
+  score: number
+}
+
+type TmdbSeasonContext = {
+  seasonNumber: number | null
+  seasonName: string | null
+  matchConfidence: TmdbMatchConfidence
 }
 
 let configurationPromise: Promise<TmdbConfigurationResponse['images']> | null = null
@@ -144,6 +171,12 @@ function getAnimeYear(anime: AnimeArtworkLookup) {
   const yearValue = anime.aired?.from?.slice(0, 4)
   const parsedYear = yearValue ? Number(yearValue) : Number.NaN
   return Number.isFinite(parsedYear) ? parsedYear : null
+}
+
+function getTmdbMatchConfidence(score: number): TmdbMatchConfidence {
+  if (score >= 120) return 'high'
+  if (score >= 75) return 'medium'
+  return 'low'
 }
 
 function getSearchOrder(anime: AnimeArtworkLookup): TmdbMediaType[] {
@@ -259,7 +292,7 @@ async function findBestTmdbMatch(anime: AnimeArtworkLookup) {
   const candidateTitles = getAnimeCandidateTitles(anime)
   const animeYear = getAnimeYear(anime)
   const searchOrder = getSearchOrder(anime)
-  const candidates = new Map<string, { mediaType: TmdbMediaType; result: TmdbSearchResult; score: number }>()
+  const candidates = new Map<string, TmdbMatchCandidate>()
 
   for (const mediaType of searchOrder) {
     for (const title of candidateTitles) {
@@ -296,6 +329,194 @@ async function findBestTmdbMatch(anime: AnimeArtworkLookup) {
   return bestMatch && bestMatch.score >= 55 ? bestMatch : null
 }
 
+function extractYear(value?: string | null) {
+  if (!value || value.length < 4) return null
+  const parsedYear = Number(value.slice(0, 4))
+  return Number.isFinite(parsedYear) ? parsedYear : null
+}
+
+function romanToInt(value: string) {
+  const normalized = value.toUpperCase()
+  const numerals: Record<string, number> = {
+    I: 1,
+    V: 5,
+    X: 10,
+    L: 50,
+    C: 100,
+  }
+
+  let result = 0
+  let previous = 0
+  for (let index = normalized.length - 1; index >= 0; index -= 1) {
+    const current = numerals[normalized[index]]
+    if (!current) return null
+    if (current < previous) {
+      result -= current
+    } else {
+      result += current
+      previous = current
+    }
+  }
+  return result > 0 ? result : null
+}
+
+function extractSeasonHint(anime: AnimeArtworkLookup) {
+  const titles = getAnimeCandidateTitles(anime)
+
+  const patterns: RegExp[] = [
+    /\b(\d+)(?:st|nd|rd|th)?\s+season\b/i,
+    /\bseason\s+(\d+)\b/i,
+    /\bpart\s+(\d+)\b/i,
+    /\bcour\s+(\d+)\b/i,
+  ]
+
+  for (const title of titles) {
+    for (const pattern of patterns) {
+      const match = title.match(pattern)
+      if (match?.[1]) {
+        const parsed = Number(match[1])
+        if (Number.isFinite(parsed) && parsed > 0) {
+          return parsed
+        }
+      }
+    }
+
+    const romanMatch = title.match(/\bseason\s+(i{1,3}|iv|v|vi{0,3}|ix|x)\b/i)
+    if (romanMatch?.[1]) {
+      const parsedRoman = romanToInt(romanMatch[1])
+      if (parsedRoman) return parsedRoman
+    }
+  }
+
+  return null
+}
+
+function scoreSeasonCandidate(anime: AnimeArtworkLookup, season: TmdbTvSeason, seasonHint: number | null) {
+  let score = 0
+  const animeYear = getAnimeYear(anime)
+  const seasonYear = extractYear(season.air_date)
+  const seasonName = normalizeTitle(season.name || '')
+  const animeTitles = getAnimeCandidateTitles(anime).map(normalizeTitle)
+  const animeTokens = new Set(
+    animeTitles.flatMap((title) => title.split(' ').filter((token) => token.length > 2)),
+  )
+  const seasonTokens = new Set(seasonName.split(' ').filter((token) => token.length > 2))
+
+  if (season.season_number > 0) {
+    score += 10
+  }
+
+  if (anime.type === 'Special' && season.season_number === 0) {
+    score += 35
+  } else if (season.season_number === 0) {
+    score -= 35
+  }
+
+  if ((season.episode_count || 0) > 0) {
+    score += 6
+  }
+
+  if (seasonHint) {
+    if (season.season_number === seasonHint) {
+      score += 90
+    } else {
+      score -= Math.min(Math.abs(season.season_number - seasonHint) * 18, 54)
+    }
+  }
+
+  if (animeYear && seasonYear) {
+    const yearDiff = Math.abs(animeYear - seasonYear)
+    if (yearDiff === 0) {
+      score += 30
+    } else if (yearDiff === 1) {
+      score += 18
+    } else if (yearDiff === 2) {
+      score += 8
+    } else {
+      score -= Math.min(yearDiff * 4, 20)
+    }
+  }
+
+  if (animeTitles.some((title) => seasonName.includes(title) || title.includes(seasonName))) {
+    score += 26
+  }
+
+  const tokenOverlap = Array.from(animeTokens).reduce(
+    (count, token) => count + (seasonTokens.has(token) ? 1 : 0),
+    0,
+  )
+  score += Math.min(tokenOverlap * 7, 28)
+
+  if (!seasonHint && season.season_number === 1) {
+    score += 8
+  }
+
+  return score
+}
+
+async function resolveTvSeasonContext(anime: AnimeArtworkLookup, tmdbId: number): Promise<TmdbSeasonContext> {
+  try {
+    const details = await fetchTmdb<TmdbTvDetailsResponse>(`/tv/${tmdbId}`, {
+      language: 'en-US',
+    })
+    const seasons = Array.isArray(details.seasons) ? details.seasons : []
+    const seasonHint = extractSeasonHint(anime)
+
+    if (!seasons.length) {
+      return {
+        seasonNumber: 1,
+        seasonName: 'Season 1',
+        matchConfidence: 'low',
+      }
+    }
+
+    const rankedSeasons = seasons
+      .map((season) => ({
+        season,
+        score: scoreSeasonCandidate(anime, season, seasonHint),
+      }))
+      .sort((a, b) => b.score - a.score)
+
+    const bestMatch = rankedSeasons[0]
+    const fallbackSeason = seasons.find((season) => season.season_number === 1)
+
+    if (!bestMatch || bestMatch.score < 35) {
+      return {
+        seasonNumber: fallbackSeason?.season_number ?? 1,
+        seasonName: fallbackSeason?.name || 'Season 1',
+        matchConfidence: 'low',
+      }
+    }
+
+    const matchConfidence: TmdbMatchConfidence = bestMatch.score >= 95
+      ? 'high'
+      : bestMatch.score >= 60
+        ? 'medium'
+        : 'low'
+
+    if (matchConfidence === 'low') {
+      return {
+        seasonNumber: fallbackSeason?.season_number ?? 1,
+        seasonName: fallbackSeason?.name || 'Season 1',
+        matchConfidence,
+      }
+    }
+
+    return {
+      seasonNumber: bestMatch.season.season_number,
+      seasonName: bestMatch.season.name || `Season ${bestMatch.season.season_number}`,
+      matchConfidence,
+    }
+  } catch (error) {
+    console.error(`Failed to resolve TMDB season for anime ${anime.mal_id}:`, error)
+    return {
+      seasonNumber: 1,
+      seasonName: 'Season 1',
+      matchConfidence: 'low',
+    }
+  }
+}
+
 async function buildImageUrl(filePath: string | null, size: string) {
   if (!filePath) {
     return null
@@ -326,6 +547,14 @@ async function loadAnimeArtwork(anime: AnimeArtworkLookup): Promise<TmdbAnimeArt
       return null
     }
 
+    const seasonContext = match.mediaType === 'tv'
+      ? await resolveTvSeasonContext(anime, match.result.id)
+      : {
+          seasonNumber: null,
+          seasonName: null,
+          matchConfidence: getTmdbMatchConfidence(match.score),
+        }
+
     const [posterUrl, backdropUrl] = await Promise.all([
       buildImageUrl(match.result.poster_path, DEFAULT_POSTER_SIZE),
       buildImageUrl(match.result.backdrop_path, DEFAULT_BACKDROP_SIZE),
@@ -337,6 +566,9 @@ async function loadAnimeArtwork(anime: AnimeArtworkLookup): Promise<TmdbAnimeArt
       posterUrl,
       backdropUrl,
       matchedTitle: getResultTitles(match.result)[0] || null,
+      seasonNumber: seasonContext.seasonNumber,
+      seasonName: seasonContext.seasonName,
+      matchConfidence: seasonContext.matchConfidence,
     }
   } catch (error) {
     console.error(`Failed to load TMDB artwork for anime ${anime.mal_id}:`, error)

@@ -2,6 +2,7 @@ import type { JikanAnime } from "@/lib/jikan";
 import { supabase } from "@/lib/supabase";
 
 type TmdbMediaType = "movie" | "tv";
+export type TmdbMatchConfidence = "high" | "medium" | "low";
 
 export type AnimeArtworkLookup = {
   mal_id: JikanAnime["mal_id"];
@@ -21,6 +22,9 @@ export interface TmdbAnimeArtwork {
   posterUrl: string | null;
   backdropUrl: string | null;
   matchedTitle: string | null;
+  seasonNumber: number | null;
+  seasonName: string | null;
+  matchConfidence: TmdbMatchConfidence;
 }
 
 interface TmdbArtworkResponse {
