@@ -443,16 +443,6 @@ export default function EpisodeWatch() {
     if (vidfastStatus === "ready" && vidfastUrl) {
       return (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/20 bg-slate-950/70 px-4 py-3 text-sm">
-            <div className="text-slate-100">
-              Main Player is powered by VidFast.
-              {tmdbArtwork?.seasonName ? ` ${tmdbArtwork.seasonName}` : ""}
-            </div>
-            <div className="text-xs text-sky-300">
-              Theme: #00D0FF
-              {tmdbArtwork?.matchConfidence ? ` • Match: ${tmdbArtwork.matchConfidence}` : ""}
-            </div>
-          </div>
           <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-primary/20 bg-black shadow-[0_0_30px_rgba(0,208,255,0.08)]">
             <iframe
               src={vidfastUrl}
