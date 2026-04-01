@@ -8,6 +8,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { isMaintenanceMode } from "@/lib/supabase";
+import {
+  clearStoredSiteAccessToken,
+  getStoredSiteAccessToken,
+  storeSiteAccessToken,
+  unlockSite,
+  verifySiteAccess,
+} from "@/lib/site-auth";
 import Index from "./pages/Index";
 import Browse from "./pages/Browse";
 import AnimeDetail from "./pages/AnimeDetail";
@@ -20,8 +27,6 @@ import NotFound from "./pages/NotFound";
 import Maintenance from "./pages/Maintenance";
 
 const queryClient = new QueryClient();
-const SITE_PASSWORD = "0";
-const SITE_UNLOCK_STORAGE_KEY = "otaku-view-nexus-unlocked";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -39,12 +44,38 @@ const App = () => {
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [isMaintenance, setIsMaintenance] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loadingMaintenance, setLoadingMaintenance] = useState(false);
+  const [isSubmittingPassword, setIsSubmittingPassword] = useState(false);
 
   useEffect(() => {
-    const savedUnlockState = window.sessionStorage.getItem(SITE_UNLOCK_STORAGE_KEY) === "true";
-    setIsUnlocked(savedUnlockState);
-    setAuthChecked(true);
+    let isMounted = true;
+
+    async function checkAccess() {
+      const savedToken = getStoredSiteAccessToken();
+      if (!savedToken) {
+        if (isMounted) {
+          setIsUnlocked(false);
+          setAuthChecked(true);
+        }
+        return;
+      }
+
+      const isValid = await verifySiteAccess(savedToken);
+      if (!isValid) {
+        clearStoredSiteAccessToken();
+      }
+
+      if (isMounted) {
+        setIsUnlocked(isValid);
+        setAuthChecked(true);
+      }
+    }
+
+    void checkAccess();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -53,27 +84,31 @@ const App = () => {
   }, [authChecked, isUnlocked]);
 
   async function checkMaintenanceMode() {
-    setLoading(true);
+    setLoadingMaintenance(true);
     const maintenanceEnabled = await isMaintenanceMode();
     setIsMaintenance(maintenanceEnabled);
-    setLoading(false);
+    setLoadingMaintenance(false);
   }
 
-  function handleUnlock(event: React.FormEvent<HTMLFormElement>) {
+  async function handleUnlock(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setIsSubmittingPassword(true);
+    setPasswordError("");
 
-    if (password !== SITE_PASSWORD) {
-      setPasswordError("Incorrect password.");
+    const result = await unlockSite(password);
+    if (!result.ok || !result.token) {
+      setPasswordError(result.error || "Incorrect password.");
+      setIsSubmittingPassword(false);
       return;
     }
 
-    window.sessionStorage.setItem(SITE_UNLOCK_STORAGE_KEY, "true");
+    storeSiteAccessToken(result.token);
     setPassword("");
-    setPasswordError("");
     setIsUnlocked(true);
+    setIsSubmittingPassword(false);
   }
 
-  if (!authChecked || loading) {
+  if (!authChecked || loadingMaintenance) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
         <div className="text-white text-lg">Loading...</div>
@@ -98,19 +133,20 @@ const App = () => {
                   autoFocus
                   type="password"
                   inputMode="numeric"
-                  maxLength={1}
+                  maxLength={4}
                   value={password}
                   onChange={(event) => {
                     setPassword(event.target.value);
                     if (passwordError) setPasswordError("");
                   }}
+                  disabled={isSubmittingPassword}
                   placeholder="Enter password"
                   aria-label="Site password"
                   className="border-white/10 bg-slate-900/80 text-white placeholder:text-slate-500"
                 />
                 {passwordError ? <p className="text-sm text-red-400">{passwordError}</p> : null}
-                <Button type="submit" className="w-full">
-                  Enter Site
+                <Button type="submit" className="w-full" disabled={isSubmittingPassword}>
+                  {isSubmittingPassword ? "Checking..." : "Enter Site"}
                 </Button>
               </form>
             </CardContent>
