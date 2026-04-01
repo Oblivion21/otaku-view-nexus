@@ -154,13 +154,10 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText("Main Player is unavailable for this episode. Switched to Backup Player."),
-    ).toBeInTheDocument();
-
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");
     });
+    expect(document.querySelector("video")).toBeInTheDocument();
   });
 
   it("keeps trailer pages on the existing youtube player without player tabs", async () => {

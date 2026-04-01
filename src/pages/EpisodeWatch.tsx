@@ -650,31 +650,11 @@ export default function EpisodeWatch() {
             </div>
           ) : (
             <Tabs value={activePlayerTab} onValueChange={(value) => setActivePlayerTab(value as PlayerTab)}>
-              <div className="flex flex-col gap-3 rounded-xl border border-primary/10 bg-slate-950/30 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="text-lg font-bold">Choose Player</h2>
-                    <p className="text-sm text-muted-foreground">
-                      Main Player opens first, while Backup Player prepares in the background.
-                    </p>
-                  </div>
-                  <TabsList className="bg-slate-900/80 border border-primary/10">
-                    <TabsTrigger value="main">Main Player</TabsTrigger>
-                    <TabsTrigger value="backup">Backup Player</TabsTrigger>
-                  </TabsList>
-                </div>
-
-                {vidfastMessage && (
-                  <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                    {vidfastMessage}
-                  </div>
-                )}
-
-                {activePlayerTab === "main" && (loadingVideo || scraping) && (
-                  <div className="rounded-lg border border-primary/15 bg-primary/5 px-4 py-3 text-sm text-sky-200">
-                    Backup Player is preparing in the background.
-                  </div>
-                )}
+              <div className="space-y-3">
+                <TabsList className="bg-slate-900/80 border border-primary/10">
+                  <TabsTrigger value="main">Main Player</TabsTrigger>
+                  <TabsTrigger value="backup">Backup Player</TabsTrigger>
+                </TabsList>
 
                 <TabsContent value="main" className="mt-0">
                   {renderMainPlayer()}
