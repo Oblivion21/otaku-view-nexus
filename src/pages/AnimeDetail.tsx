@@ -247,6 +247,7 @@ export default function AnimeDetail() {
         </div>
 
         {/* Episode list */}
+        {canWatchSeries && (
         <div className="mt-10 space-y-4">
           <h2 className="text-xl font-bold border-r-4 border-primary pr-3">قائمة الحلقات</h2>
 
@@ -327,6 +328,7 @@ export default function AnimeDetail() {
             <p className="text-sm text-muted-foreground">لا توجد حلقات متاحة</p>
           )}
         </div>
+        )}
 
         {/* Characters & Voice Actors */}
         <div className="mt-10 space-y-4">

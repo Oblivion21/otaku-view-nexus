@@ -186,4 +186,64 @@ describe("AnimeDetail", () => {
     }));
     expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
   });
+
+  it("does not render the episode list section on movie pages", async () => {
+    const movieAnime: JikanAnime = {
+      ...anime,
+      mal_id: 32281,
+      title: "Kimi no Na wa.",
+      type: "Movie",
+      episodes: 1,
+    };
+
+    hookMocks.useAnimeById.mockReturnValue({
+      data: { data: movieAnime },
+      isLoading: false,
+    });
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: {
+        data: [
+          {
+            mal_id: 1,
+            title: "الحلقة 1",
+            title_japanese: null,
+            title_romanji: null,
+            aired: null,
+            filler: false,
+            recap: false,
+          },
+        ],
+      },
+      isLoading: false,
+    });
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+    });
+    supabaseMocks.getAnimeEpisodes.mockResolvedValue([
+      {
+        id: "ep-1",
+        mal_id: 32281,
+        episode_number: 1,
+        episode_page_url: null,
+        video_url: null,
+        video_sources: [],
+        is_active: true,
+        category: null,
+        tags: [],
+      },
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/anime/32281"]}>
+        <Routes>
+          <Route path="/anime/:id" element={<AnimeDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Kimi no Na wa.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "شاهد الفيلم" })).toBeInTheDocument();
+    expect(screen.queryByText("قائمة الحلقات")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "الحلقة 1" })).not.toBeInTheDocument();
+  });
 });
