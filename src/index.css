@@ -59,3 +59,21 @@
     direction: rtl;
   }
 }
+
+@layer utilities {
+  .episode-watch-player-shell,
+  .episode-watch-player-media,
+  .episode-watch-player-shell:focus,
+  .episode-watch-player-shell:focus-visible,
+  .episode-watch-player-media:focus,
+  .episode-watch-player-media:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  .episode-watch-player-shell *:focus,
+  .episode-watch-player-shell *:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+}

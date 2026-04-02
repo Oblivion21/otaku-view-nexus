@@ -419,7 +419,7 @@ export default function EpisodeWatch() {
       return (
         <video
           ref={videoRef}
-          className="w-full h-full rounded-lg bg-black"
+          className="episode-watch-player-media w-full h-full rounded-lg bg-black outline-none focus:outline-none focus-visible:outline-none"
           controls
           autoPlay={shouldAutoPlay}
           src={url}
@@ -434,7 +434,7 @@ export default function EpisodeWatch() {
       <iframe
         src={url}
         title={title}
-        className="absolute inset-0 w-full h-full"
+        className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
         allowFullScreen
         allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
       />
@@ -454,11 +454,11 @@ export default function EpisodeWatch() {
     if (mainPlayerStatus === "ready" && mainPlayerUrl) {
       return (
         <div className="space-y-3">
-          <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-primary/20 bg-black shadow-[0_0_30px_rgba(0,208,255,0.08)]">
+          <div className="episode-watch-player-shell relative w-full aspect-video rounded-xl overflow-hidden border border-primary/20 bg-black shadow-[0_0_30px_rgba(0,208,255,0.08)]">
             <iframe
               src={mainPlayerUrl}
               title={`${anime.title} - Main Player`}
-              className="absolute inset-0 w-full h-full"
+              className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
               allowFullScreen
               allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
               onLoad={() => setMainPlayerFrameLoaded(true)}
@@ -527,7 +527,7 @@ export default function EpisodeWatch() {
             </div>
           )}
 
-          <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
+          <div className="episode-watch-player-shell relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
             {(() => {
               const source = episodeData.video_sources![selectedServerIndex];
               const isProxy = source.type === "proxy";
@@ -597,7 +597,7 @@ export default function EpisodeWatch() {
 
     if (!isTrailer && episodeData && episodeData.video_url) {
       return (
-        <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
+        <div className="episode-watch-player-shell relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
           {renderVideoPlayer(episodeData.video_url, `${anime.title} - Episode ${epNum}`)}
         </div>
       );
@@ -633,11 +633,11 @@ export default function EpisodeWatch() {
 
         <div className="w-full max-w-4xl mx-auto space-y-4">
           {isTrailer && youtubeId ? (
-            <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
+            <div className="episode-watch-player-shell relative w-full aspect-video rounded-lg overflow-hidden bg-card border border-border">
               <iframe
                 src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&rel=0`}
                 title={`${anime.title} - Trailer`}
-                className="absolute inset-0 w-full h-full"
+                className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
                 allowFullScreen
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               />
