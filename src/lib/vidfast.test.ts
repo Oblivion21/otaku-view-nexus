@@ -14,9 +14,9 @@ const baseArtwork: TmdbAnimeArtwork = {
 };
 
 describe("vidfast helpers", () => {
-  it("builds a tv embed url with autoplay and theme", () => {
+  it("builds a tv embed url with autoplay, theme, and explicit next controls disabled", () => {
     expect(buildVidFastEmbedUrl(baseArtwork, 7)).toBe(
-      "https://vidfast.pro/tv/123/1/7?autoPlay=true&theme=%2300D0FF",
+      "https://vidfast.pro/tv/123/1/7?autoPlay=true&theme=%2300D0FF&nextButton=false&autoNext=false",
     );
   });
 

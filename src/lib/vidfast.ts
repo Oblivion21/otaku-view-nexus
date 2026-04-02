@@ -24,6 +24,9 @@ export function buildVidFastEmbedUrl(
     return null;
   }
 
+  params.set("nextButton", "false");
+  params.set("autoNext", "false");
+
   return `${VIDFAST_BASE_URL}/tv/${artwork.tmdbId}/${artwork.seasonNumber}/${episodeNumber}?${params.toString()}`;
 }
 

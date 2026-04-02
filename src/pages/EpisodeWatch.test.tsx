@@ -114,8 +114,8 @@ describe("EpisodeWatch", () => {
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://vidfast.pro/tv/321/1/1"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("theme=%2300D0FF"));
-    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("autoNext="));
-    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("nextButton="));
+    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("nextButton=false"));
+    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoNext=false"));
     expect(screen.getByRole("link", { name: /الحلقة السابقة/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /الحلقة التالية/ })).toBeInTheDocument();
 
@@ -160,8 +160,8 @@ describe("EpisodeWatch", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");
+      expect(document.querySelector("video")).toBeInTheDocument();
     });
-    expect(document.querySelector("video")).toBeInTheDocument();
   });
 
   it("keeps trailer pages on the existing youtube player without player tabs", async () => {
