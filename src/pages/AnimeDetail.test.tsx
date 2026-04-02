@@ -194,6 +194,8 @@ describe("AnimeDetail", () => {
       title: "Kimi no Na wa.",
       type: "Movie",
       episodes: 1,
+      status: "Finished Airing",
+      aired: { from: "2016-08-26", to: null, string: "2016" },
     };
 
     hookMocks.useAnimeById.mockReturnValue({
@@ -242,9 +244,105 @@ describe("AnimeDetail", () => {
     );
 
     expect(await screen.findByText("Kimi no Na wa.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "شاهد الفيلم" })).toBeInTheDocument();
+    expect(screen.queryByText("1 حلقة")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "غير متوفر حالياً" })).toBeDisabled();
+    });
+    expect(screen.queryByRole("link", { name: "شاهد الفيلم" })).not.toBeInTheDocument();
     expect(screen.queryByText("قائمة الحلقات")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "الحلقة 1" })).not.toBeInTheDocument();
+  });
+
+  it("renders the movie watch button when a released movie has playable stream data", async () => {
+    const movieAnime: JikanAnime = {
+      ...anime,
+      mal_id: 32281,
+      title: "Kimi no Na wa.",
+      type: "Movie",
+      episodes: 1,
+      status: "Finished Airing",
+      aired: { from: "2016-08-26", to: null, string: "2016" },
+    };
+
+    hookMocks.useAnimeById.mockReturnValue({
+      data: { data: movieAnime },
+      isLoading: false,
+    });
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+    });
+    supabaseMocks.getAnimeEpisodes.mockResolvedValue([
+      {
+        id: "movie-1",
+        mal_id: 32281,
+        episode_number: 1,
+        episode_page_url: null,
+        video_url: "https://cdn.example.com/movie.mp4",
+        video_sources: [],
+        is_active: true,
+        category: null,
+        tags: [],
+      },
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/anime/32281"]}>
+        <Routes>
+          <Route path="/anime/:id" element={<AnimeDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Kimi no Na wa.")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "شاهد الفيلم" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "غير متوفر حالياً" })).not.toBeInTheDocument();
+  });
+
+  it("shows unavailable for future movie releases", async () => {
+    const movieAnime: JikanAnime = {
+      ...anime,
+      mal_id: 62387,
+      title: "Meitantei Conan Movie 29: Highway no Datenshi",
+      type: "Movie",
+      episodes: 1,
+      status: "Not yet aired",
+      aired: { from: "2099-04-10", to: null, string: "Apr 10, 2099" },
+    };
+
+    hookMocks.useAnimeById.mockReturnValue({
+      data: { data: movieAnime },
+      isLoading: false,
+    });
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+    });
+    supabaseMocks.getAnimeEpisodes.mockResolvedValue([
+      {
+        id: "movie-shell",
+        mal_id: 62387,
+        episode_number: 1,
+        episode_page_url: null,
+        video_url: null,
+        video_sources: [],
+        is_active: true,
+        category: null,
+        tags: [],
+      },
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/anime/62387"]}>
+        <Routes>
+          <Route path="/anime/:id" element={<AnimeDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Meitantei Conan Movie 29: Highway no Datenshi")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "غير متوفر حالياً" })).toBeDisabled();
+    });
+    expect(screen.queryByRole("link", { name: "شاهد الفيلم" })).not.toBeInTheDocument();
   });
 
   it("does not render the episode watch button when a series has no actual episode data", async () => {

@@ -15,6 +15,31 @@ import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/li
 import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 import { useState, useEffect } from "react";
 
+function hasPlayableEpisodeData(episode: Pick<AnimeEpisode, "video_sources" | "video_url"> | null | undefined) {
+  return Boolean(
+    episode?.video_url ||
+    (Array.isArray(episode?.video_sources) && episode.video_sources.length > 0),
+  );
+}
+
+function hasAnimeAlreadyAired(anime: Pick<JikanAnime, "status" | "aired">) {
+  if (anime.status === "Not yet aired") {
+    return false;
+  }
+
+  const airedFrom = anime.aired?.from;
+  if (!airedFrom) {
+    return true;
+  }
+
+  const parsedAiredFrom = Date.parse(airedFrom);
+  if (Number.isNaN(parsedAiredFrom)) {
+    return true;
+  }
+
+  return parsedAiredFrom <= Date.now();
+}
+
 export default function AnimeDetail() {
   const { id } = useParams<{ id: string }>();
   const animeId = Number(id);
@@ -26,6 +51,7 @@ export default function AnimeDetail() {
   const { data: themes, isLoading: loadingThemes } = useAnimeThemes(animeId);
   const { data: relations, isLoading: loadingRelations } = useAnimeRelations(animeId);
   const [supabaseEpisodes, setSupabaseEpisodes] = useState<AnimeEpisode[]>([]);
+  const [loadedSupabaseEpisodes, setLoadedSupabaseEpisodes] = useState(false);
   const isDetectiveConan = animeId === 235; // Detective Conan MAL ID
   const anime = data?.data;
   const { data: tmdbArtwork } = useAnimeTmdbArtwork(anime);
@@ -40,8 +66,13 @@ export default function AnimeDetail() {
   // Fetch episodes from Supabase database
   useEffect(() => {
     async function fetchSupabaseEpisodes() {
-      const dbEpisodes = await getSupabaseEpisodes(animeId);
-      setSupabaseEpisodes(dbEpisodes);
+      setLoadedSupabaseEpisodes(false);
+      try {
+        const dbEpisodes = await getSupabaseEpisodes(animeId);
+        setSupabaseEpisodes(dbEpisodes);
+      } finally {
+        setLoadedSupabaseEpisodes(true);
+      }
     }
     if (animeId) {
       fetchSupabaseEpisodes();
@@ -108,12 +139,14 @@ export default function AnimeDetail() {
   const bannerImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "banner");
   const posterImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
   const isSeriesType = anime.type === "TV" || anime.type === "OVA" || anime.type === "ONA" || anime.type === "Special";
+  const isMovie = anime.type === "Movie";
   const hasSupabaseEpisodes = supabaseEpisodes.length > 0;
   const hasPublicEpisodes = Boolean(episodes?.data && episodes.data.length > 0);
   const supabaseEpisodeMap = new Map(
     supabaseEpisodes.map((ep) => [ep.episode_number, ep])
   );
-  const canWatchMovie = anime.type === "Movie";
+  const movieEpisode = supabaseEpisodeMap.get(1) ?? null;
+  const canWatchMovie = isMovie && loadedSupabaseEpisodes && hasAnimeAlreadyAired(anime) && hasPlayableEpisodeData(movieEpisode);
   const canWatchSeries = isSeriesType && (hasSupabaseEpisodes || hasPublicEpisodes);
 
   return (
@@ -179,7 +212,7 @@ export default function AnimeDetail() {
                 <Film className="h-4 w-4" />
                 {TYPE_MAP[anime.type || ""] || anime.type}
               </div>
-              {anime.episodes && (
+              {anime.episodes && !isMovie && (
                 <div className="flex items-center gap-1 text-muted-foreground">
                   <Clock className="h-4 w-4" />
                   {anime.episodes} حلقة
@@ -235,6 +268,11 @@ export default function AnimeDetail() {
               {canWatchMovie && (
                 <Button asChild>
                   <Link to={`/watch/${anime.mal_id}/1`}>شاهد الفيلم</Link>
+                </Button>
+              )}
+              {isMovie && loadedSupabaseEpisodes && !canWatchMovie && (
+                <Button disabled variant="secondary">
+                  غير متوفر حالياً
                 </Button>
               )}
               {canWatchSeries && (

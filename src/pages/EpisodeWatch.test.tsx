@@ -405,6 +405,104 @@ describe("EpisodeWatch", () => {
     });
   });
 
+  it("renders movie watch pages without episode framing", async () => {
+    hookMocks.useAnimeById.mockReturnValue({
+      data: {
+        data: {
+          ...anime,
+          type: "Movie",
+          title: "Kimi no Na wa.",
+        },
+      },
+      isLoading: false,
+    });
+
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: {
+        tmdbId: 299534,
+        mediaType: "movie",
+        posterUrl: null,
+        backdropUrl: null,
+        matchedTitle: "Kimi no Na wa.",
+        seasonNumber: null,
+        seasonName: null,
+        matchConfidence: "high",
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
+      data: {
+        id: 145139,
+        idMal: 1,
+        format: "MOVIE",
+        title: {
+          romaji: "Kimi no Na wa.",
+          english: "Your Name",
+          native: "君の名は。",
+        },
+        bannerImage: null,
+        coverImage: {
+          extraLarge: "",
+          large: "",
+          color: null,
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Kimi no Na wa." })).toBeInTheDocument();
+    expect(screen.queryByText(/— الحلقة 1/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /الحلقة السابقة/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /الحلقة التالية/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "الحلقات" })).not.toBeInTheDocument();
+  });
+
+  it("uses movie wording when no backup stream is available", async () => {
+    hookMocks.useAnimeById.mockReturnValue({
+      data: {
+        data: {
+          ...anime,
+          type: "Movie",
+          title: "Kimi no Na wa.",
+        },
+      },
+      isLoading: false,
+    });
+
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+
+    supabaseMocks.getEpisodeData.mockResolvedValue(null);
+    supabaseMocks.scrapeAnime3rbEpisode.mockResolvedValue({
+      video_sources: null,
+      cached: false,
+      episode_page_url: null,
+      error: "No video sources found",
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");
+      expect(screen.getByText("الفيلم غير متوفر حالياً")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/الحلقة 1 غير متوفرة حالياً/)).not.toBeInTheDocument();
+  });
+
   it("keeps trailer pages on the existing youtube player without player tabs", async () => {
     trailerFallbackMocks.getTrailerYoutubeId.mockReturnValue("abc123");
 

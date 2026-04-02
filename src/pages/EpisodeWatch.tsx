@@ -169,6 +169,16 @@ export default function EpisodeWatch() {
   const mainPlayerUrl = !isTrailer
     ? resolveVideasyMainPlayerUrl(tmdbArtwork ?? null, aniListMedia ?? null, anime?.type ?? null, epNum)
     : null;
+  const currentPlaybackLabel = isTrailer
+    ? "العرض الدعائي"
+    : isMovie
+      ? "الفيلم"
+      : `الحلقة ${epNum}`;
+  const pageHeading = isTrailer
+    ? `${anime?.title || ""} — العرض الدعائي`
+    : isMovie
+      ? anime?.title || ""
+      : `${anime?.title || ""} — الحلقة ${epNum}`;
 
   function fallbackToBackup(message: string) {
     setMainPlayerStatus("error");
@@ -608,7 +618,7 @@ export default function EpisodeWatch() {
         <div className="text-center space-y-2">
           <p className="text-muted-foreground">لا يوجد فيديو احتياطي متاح</p>
           <p className="text-xs text-muted-foreground">
-            {`الحلقة ${epNum} غير متوفرة حالياً`}
+            {isMovie ? "الفيلم غير متوفر حالياً" : `الحلقة ${epNum} غير متوفرة حالياً`}
           </p>
           {scrapeError && (
             <p className="text-xs text-red-400 mt-2">{scrapeError}</p>
@@ -627,7 +637,7 @@ export default function EpisodeWatch() {
           <Link to={`/anime/${animeId}`} className="hover:text-foreground">{anime.title}</Link>
           <ChevronLeft className="h-3 w-3" />
           <span className="text-foreground">
-            {isTrailer ? "العرض الدعائي" : `الحلقة ${epNum}`}
+            {currentPlaybackLabel}
           </span>
         </div>
 
@@ -670,11 +680,9 @@ export default function EpisodeWatch() {
         </div>
 
         <div className="max-w-4xl mx-auto space-y-4">
-          <h1 className="text-xl font-bold">
-            {anime.title} — {isTrailer ? "العرض الدعائي" : `الحلقة ${epNum}`}
-          </h1>
+          <h1 className="text-xl font-bold">{pageHeading}</h1>
 
-          {!isTrailer && (
+          {!isTrailer && !isMovie && (
             <div className="flex justify-between">
               <Button variant="outline" size="sm" asChild disabled={epNum <= 1}>
                 <Link to={`/watch/${animeId}/${epNum - 1}`}>
@@ -692,7 +700,7 @@ export default function EpisodeWatch() {
           )}
         </div>
 
-        {!isTrailer && (
+        {!isTrailer && !isMovie && (
           <div className="max-w-4xl mx-auto">
             <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
