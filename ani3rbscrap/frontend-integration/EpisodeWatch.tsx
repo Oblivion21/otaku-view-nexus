@@ -221,7 +221,7 @@ export default function EpisodeWatch() {
   }
 
   const youtubeId = getTrailerYoutubeId(
-    anime.mal_id,
+    null,
     anime.trailer?.youtube_id || null,
     anime.trailer?.embed_url || null
   );

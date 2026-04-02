@@ -46,6 +46,18 @@ export interface JikanEpisode {
   recap: boolean;
 }
 
+export interface JikanVideoEpisode {
+  mal_id: number;
+  title: string;
+  episode: string;
+  url: string;
+  images: {
+    jpg: {
+      image_url: string;
+    };
+  };
+}
+
 export interface JikanPagination {
   last_visible_page: number;
   has_next_page: boolean;
@@ -56,6 +68,10 @@ interface JikanResponse<T> {
   data: T;
   pagination?: JikanPagination;
 }
+
+type JikanVideoEpisodesPayload = {
+  episodes?: unknown;
+};
 
 const ALLOWED_GENRE_NAMES = new Set([
   "Action",
@@ -84,6 +100,33 @@ async function fetchJikan<T>(endpoint: string): Promise<JikanResponse<T>> {
   const res = await fetch(`${BASE_URL}${endpoint}`);
   if (!res.ok) throw new Error(`Jikan API error: ${res.status}`);
   return res.json();
+}
+
+function normalizeJikanVideoEpisode(value: unknown): JikanVideoEpisode | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const episode = value as Record<string, unknown>;
+  const malId = Number(episode.mal_id);
+  if (!Number.isInteger(malId) || malId <= 0) {
+    return null;
+  }
+
+  return {
+    mal_id: malId,
+    title: typeof episode.title === "string" ? episode.title : "",
+    episode: typeof episode.episode === "string" ? episode.episode : "",
+    url: typeof episode.url === "string" ? episode.url : "",
+    images: {
+      jpg: {
+        image_url: typeof episode.images === "object" && episode.images !== null
+          && typeof (episode.images as { jpg?: { image_url?: unknown } }).jpg?.image_url === "string"
+          ? (episode.images as { jpg: { image_url: string } }).jpg.image_url
+          : "",
+      },
+    },
+  };
 }
 
 export function isBlockedAnime(anime: { genres?: GenreLike[] } | null | undefined): boolean {
@@ -119,6 +162,14 @@ export async function getAnimeById(id: number) {
 
 export async function getAnimeEpisodes(id: number, page = 1) {
   return fetchJikan<JikanEpisode[]>(`/anime/${id}/episodes?page=${page}`);
+}
+
+export async function getAnimeVideoEpisodes(id: number) {
+  const response = await fetchJikan<JikanVideoEpisodesPayload>(`/anime/${id}/videos`);
+  const episodes = Array.isArray(response.data?.episodes) ? response.data.episodes : [];
+  return episodes
+    .map(normalizeJikanVideoEpisode)
+    .filter((episode): episode is JikanVideoEpisode => Boolean(episode));
 }
 
 export async function searchAnime(query: string, page = 1) {

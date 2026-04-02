@@ -505,6 +505,21 @@ describe("EpisodeWatch", () => {
 
   it("keeps trailer pages on the existing youtube player without player tabs", async () => {
     trailerFallbackMocks.getTrailerYoutubeId.mockReturnValue("abc123");
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: {
+        tmdbId: 1,
+        mediaType: "tv",
+        posterUrl: null,
+        backdropUrl: null,
+        trailerYoutubeId: "tmdb-trailer-1",
+        matchedTitle: "Naruto",
+        seasonNumber: 1,
+        seasonName: null,
+        matchConfidence: "high",
+      },
+      isLoading: false,
+      error: null,
+    });
 
     renderPage("/watch/1/trailer");
 
@@ -512,6 +527,11 @@ describe("EpisodeWatch", () => {
     expect(await screen.findByTitle("Naruto - Trailer")).toHaveAttribute(
       "src",
       expect.stringContaining("youtube.com/embed/abc123"),
+    );
+    expect(trailerFallbackMocks.getTrailerYoutubeId).toHaveBeenCalledWith(
+      "tmdb-trailer-1",
+      null,
+      null,
     );
   });
 });

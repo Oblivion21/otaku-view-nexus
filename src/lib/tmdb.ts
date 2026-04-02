@@ -1,4 +1,4 @@
-import type { JikanAnime } from "@/lib/jikan";
+import { getAnimeVideoEpisodes, type JikanAnime } from "@/lib/jikan";
 import { supabase } from "@/lib/supabase";
 
 type TmdbMediaType = "movie" | "tv";
@@ -6,6 +6,12 @@ export type TmdbMatchConfidence = "high" | "medium" | "low";
 export type EpisodePreviewArtwork = {
   episodeNumber: number;
   stillUrl: string | null;
+};
+
+export type EpisodePreviewImage = {
+  episodeNumber: number;
+  imageUrl: string | null;
+  source: "tmdb" | "jikan" | "none";
 };
 
 export type AnimeArtworkLookup = {
@@ -25,6 +31,7 @@ export interface TmdbAnimeArtwork {
   mediaType: TmdbMediaType;
   posterUrl: string | null;
   backdropUrl: string | null;
+  trailerYoutubeId: string | null;
   matchedTitle: string | null;
   seasonNumber: number | null;
   seasonName: string | null;
@@ -207,4 +214,72 @@ export async function getAnimeEpisodeStills(
     console.error("Failed to fetch TMDB episode stills via Supabase function:", error);
     return new Map<number, EpisodePreviewArtwork>();
   }
+}
+
+export async function getAnimeEpisodePreviewImages(
+  animeId: number,
+  artwork: TmdbAnimeArtwork | null | undefined,
+  episodeNumbers: number[],
+) {
+  const uniqueEpisodeNumbers = Array.from(
+    new Set(
+      episodeNumbers
+        .map((episodeNumber) => Number(episodeNumber))
+        .filter((episodeNumber) => Number.isInteger(episodeNumber) && episodeNumber > 0),
+    ),
+  );
+
+  if (uniqueEpisodeNumbers.length === 0) {
+    return new Map<number, EpisodePreviewImage>();
+  }
+
+  const stillMap = await getAnimeEpisodeStills(artwork, uniqueEpisodeNumbers);
+  const previewMap = new Map<number, EpisodePreviewImage>();
+
+  uniqueEpisodeNumbers.forEach((episodeNumber) => {
+    const stillUrl = stillMap.get(episodeNumber)?.stillUrl ?? null;
+    if (stillUrl) {
+      previewMap.set(episodeNumber, {
+        episodeNumber,
+        imageUrl: stillUrl,
+        source: "tmdb",
+      });
+    }
+  });
+
+  const unresolvedEpisodeNumbers = uniqueEpisodeNumbers.filter(
+    (episodeNumber) => !previewMap.has(episodeNumber),
+  );
+
+  if (unresolvedEpisodeNumbers.length > 0 && Number.isInteger(animeId) && animeId > 0) {
+    try {
+      const jikanVideoEpisodes = await getAnimeVideoEpisodes(animeId);
+      const jikanEpisodeMap = new Map(
+        jikanVideoEpisodes.map((episode) => [episode.mal_id, episode]),
+      );
+
+      unresolvedEpisodeNumbers.forEach((episodeNumber) => {
+        const imageUrl = jikanEpisodeMap.get(episodeNumber)?.images?.jpg?.image_url?.trim() || null;
+        previewMap.set(episodeNumber, {
+          episodeNumber,
+          imageUrl,
+          source: imageUrl ? "jikan" : "none",
+        });
+      });
+    } catch (error) {
+      console.error("Failed to fetch Jikan episode preview images:", error);
+    }
+  }
+
+  uniqueEpisodeNumbers.forEach((episodeNumber) => {
+    if (!previewMap.has(episodeNumber)) {
+      previewMap.set(episodeNumber, {
+        episodeNumber,
+        imageUrl: null,
+        source: "none",
+      });
+    }
+  });
+
+  return previewMap;
 }

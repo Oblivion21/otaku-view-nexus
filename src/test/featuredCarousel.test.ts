@@ -11,6 +11,17 @@ describe("featured carousel helpers", () => {
     expect(normalizeFeaturedAnimeIds([10, "20", 10, "bad", -1, 30])).toEqual([10, 20, 30]);
   });
 
+  it("normalizes featured ids from embedded Supabase anime payloads", () => {
+    expect(
+      normalizeFeaturedAnimeIds([
+        { mal_id: 7, title: "Bleach" },
+        { mal_id: "1", title: "Naruto" },
+        { mal_id: 7, title: "Bleach duplicate" },
+        { title: "Missing id" },
+      ]),
+    ).toEqual([7, 1]);
+  });
+
   it("picks the compact hero payload from a Jikan anime response", () => {
     expect(
       pickFeaturedCarouselAnime({

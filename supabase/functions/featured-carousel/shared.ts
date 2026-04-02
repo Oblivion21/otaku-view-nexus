@@ -40,6 +40,16 @@ function asNullableNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+function getFeaturedAnimeId(value: unknown): number | null {
+  if (value && typeof value === 'object') {
+    const malId = Number((value as Record<string, unknown>).mal_id)
+    return Number.isInteger(malId) && malId > 0 ? malId : null
+  }
+
+  const malId = Number(value)
+  return Number.isInteger(malId) && malId > 0 ? malId : null
+}
+
 export function normalizeFeaturedAnimeIds(value: unknown) {
   if (!Array.isArray(value)) {
     return []
@@ -48,8 +58,8 @@ export function normalizeFeaturedAnimeIds(value: unknown) {
   return Array.from(
     new Set(
       value
-        .map((entry) => Number(entry))
-        .filter((entry) => Number.isInteger(entry) && entry > 0),
+        .map(getFeaturedAnimeId)
+        .filter((entry): entry is number => entry !== null),
     ),
   ).slice(0, MAX_FEATURED_CAROUSEL_ITEMS)
 }

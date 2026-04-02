@@ -11,7 +11,7 @@ const hookMocks = vi.hoisted(() => ({
   useAnimeThemes: vi.fn(),
   useAnimeRelations: vi.fn(),
   useAnimeTmdbArtwork: vi.fn(),
-  useAnimeEpisodeStills: vi.fn(),
+  useAnimeEpisodePreviewImages: vi.fn(),
   useMultipleAnimeTmdbArtwork: vi.fn(),
 }));
 
@@ -157,7 +157,7 @@ describe("AnimeDetail", () => {
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
     });
-    hookMocks.useAnimeEpisodeStills.mockReturnValue({
+    hookMocks.useAnimeEpisodePreviewImages.mockReturnValue({
       data: new Map(),
     });
     hookMocks.useMultipleAnimeTmdbArtwork.mockReturnValue({
@@ -176,6 +176,7 @@ describe("AnimeDetail", () => {
         mediaType: "tv",
         posterUrl: "https://image.tmdb.org/t/p/w780/naruto-poster.jpg",
         backdropUrl: "https://image.tmdb.org/t/p/original/naruto-backdrop.jpg",
+        trailerYoutubeId: "tmdb-trailer-1",
         matchedTitle: "Naruto",
         seasonNumber: 1,
         seasonName: null,
@@ -198,15 +199,20 @@ describe("AnimeDetail", () => {
       },
       isLoading: false,
     });
-    hookMocks.useAnimeEpisodeStills.mockReturnValue({
+    hookMocks.useAnimeEpisodePreviewImages.mockReturnValue({
       data: new Map([
-        [1, { episodeNumber: 1, stillUrl: "https://image.tmdb.org/t/p/w780/naruto-ep-1.jpg" }],
+        [1, { episodeNumber: 1, imageUrl: "https://image.tmdb.org/t/p/w780/naruto-ep-1.jpg", source: "tmdb" }],
       ]),
     });
 
     const { container } = renderPage();
 
     expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+    expect(trailerFallbackMocks.getTrailerYoutubeId).toHaveBeenCalledWith(
+      "tmdb-trailer-1",
+      null,
+      null,
+    );
     expect(screen.getByAltText("Naruto")).toHaveAttribute(
       "src",
       expect.stringContaining("naruto-poster.jpg"),
@@ -220,6 +226,80 @@ describe("AnimeDetail", () => {
       "data-image-url",
       expect.stringContaining("naruto-ep-1.jpg"),
     );
+  });
+
+  it("falls back to Jikan episode thumbnails when TMDB stills are missing", async () => {
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: {
+        data: [
+          {
+            mal_id: 1,
+            title: "Episode 1",
+            title_japanese: null,
+            title_romanji: null,
+            aired: null,
+            filler: false,
+            recap: false,
+          },
+        ],
+      },
+      isLoading: false,
+    });
+    hookMocks.useAnimeEpisodePreviewImages.mockReturnValue({
+      data: new Map([
+        [1, { episodeNumber: 1, imageUrl: "https://cdn.jikan.moe/video-thumb-1.jpg", source: "jikan" }],
+      ]),
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+    expect(screen.getByTestId("episode-preview-1")).toHaveAttribute(
+      "data-image-url",
+      expect.stringContaining("video-thumb-1.jpg"),
+    );
+  });
+
+  it("does not reuse the series artwork when no episode-specific preview image exists", async () => {
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: {
+        data: [
+          {
+            mal_id: 1,
+            title: "Episode 1",
+            title_japanese: null,
+            title_romanji: null,
+            aired: null,
+            filler: false,
+            recap: false,
+          },
+        ],
+      },
+      isLoading: false,
+    });
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: {
+        tmdbId: 1,
+        mediaType: "tv",
+        posterUrl: "https://image.tmdb.org/t/p/w780/naruto-poster.jpg",
+        backdropUrl: "https://image.tmdb.org/t/p/original/naruto-backdrop.jpg",
+        trailerYoutubeId: null,
+        matchedTitle: "Naruto",
+        seasonNumber: 1,
+        seasonName: null,
+        matchConfidence: "high",
+      },
+    });
+    hookMocks.useAnimeEpisodePreviewImages.mockReturnValue({
+      data: new Map([
+        [1, { episodeNumber: 1, imageUrl: null, source: "none" }],
+      ]),
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+    expect(screen.getByTestId("episode-preview-1")).toHaveAttribute("data-image-url", "");
   });
 
   it("falls back to Jikan artwork when TMDB is missing", async () => {

@@ -30,6 +30,7 @@ type TmdbAnimeArtwork = {
   mediaType: TmdbMediaType
   posterUrl: string | null
   backdropUrl: string | null
+  trailerYoutubeId: string | null
   matchedTitle: string | null
   seasonNumber: number | null
   seasonName: string | null
@@ -73,6 +74,20 @@ type TmdbTvDetailsResponse = {
   seasons?: TmdbTvSeason[]
 }
 
+type TmdbVideoResult = {
+  site?: string | null
+  key?: string | null
+  type?: string | null
+  official?: boolean | null
+  published_at?: string | null
+  iso_639_1?: string | null
+  name?: string | null
+}
+
+type TmdbVideosResponse = {
+  results?: TmdbVideoResult[]
+}
+
 type TmdbMatchCandidate = {
   mediaType: TmdbMediaType
   result: TmdbSearchResult
@@ -83,6 +98,11 @@ type TmdbSeasonContext = {
   seasonNumber: number | null
   seasonName: string | null
   matchConfidence: TmdbMatchConfidence
+}
+
+type TrailerCandidate = {
+  youtubeId: string
+  score: number
 }
 
 let configurationPromise: Promise<TmdbConfigurationResponse['images']> | null = null
@@ -531,6 +551,103 @@ async function buildImageUrl(filePath: string | null, size: string) {
   }
 }
 
+function scoreVideoResult(video: TmdbVideoResult, sourcePriority: number) {
+  const key = video.key?.trim()
+  if (!key || video.site !== 'YouTube') {
+    return null
+  }
+
+  let score = sourcePriority
+  const type = (video.type || '').toLowerCase()
+  const name = (video.name || '').toLowerCase()
+  const language = (video.iso_639_1 || '').toLowerCase()
+
+  if (type === 'trailer') {
+    score += 100
+  } else if (type === 'teaser') {
+    score += 70
+  } else if (type === 'clip') {
+    score += 25
+  } else if (type === 'opening credits') {
+    score += 15
+  } else if (type === 'featurette') {
+    score += 10
+  }
+
+  if (video.official) {
+    score += 20
+  }
+
+  if (language === 'ja') {
+    score += 12
+  } else if (language === 'en') {
+    score += 8
+  }
+
+  if (name.includes('trailer')) {
+    score += 10
+  } else if (name.includes('teaser')) {
+    score += 5
+  }
+
+  const publishedAt = video.published_at ? Date.parse(video.published_at) : Number.NaN
+  if (!Number.isNaN(publishedAt)) {
+    score += Math.min(Math.floor(publishedAt / 1_000_000_000), 50)
+  }
+
+  return {
+    youtubeId: key,
+    score,
+  }
+}
+
+async function getPreferredTrailerYoutubeId(
+  mediaType: TmdbMediaType,
+  tmdbId: number,
+  seasonNumber: number | null,
+) {
+  const videoRequests: Array<Promise<TmdbVideosResponse>> = []
+  const priorities: number[] = []
+
+  if (mediaType === 'tv' && seasonNumber !== null) {
+    videoRequests.push(
+      fetchTmdb<TmdbVideosResponse>(`/tv/${tmdbId}/season/${seasonNumber}/videos`, {
+        language: 'en-US',
+      }),
+    )
+    priorities.push(40)
+  }
+
+  videoRequests.push(
+    fetchTmdb<TmdbVideosResponse>(`/${mediaType}/${tmdbId}/videos`, {
+      language: 'en-US',
+    }),
+  )
+  priorities.push(0)
+
+  const settled = await Promise.allSettled(videoRequests)
+  const candidates: TrailerCandidate[] = []
+
+  settled.forEach((result, index) => {
+    if (result.status !== 'fulfilled') {
+      return
+    }
+
+    const sourcePriority = priorities[index] ?? 0
+    const videos = Array.isArray(result.value.results) ? result.value.results : []
+
+    videos.forEach((video) => {
+      const candidate = scoreVideoResult(video, sourcePriority)
+      if (candidate) {
+        candidates.push(candidate)
+      }
+    })
+  })
+
+  candidates.sort((a, b) => b.score - a.score)
+  return candidates[0]?.youtubeId || null
+}
+
 async function loadAnimeArtwork(anime: AnimeArtworkLookup): Promise<TmdbAnimeArtwork | null> {
   const readAccessToken = getTmdbReadAccessToken()
   if (!readAccessToken) {
@@ -555,9 +672,13 @@ async function loadAnimeArtwork(anime: AnimeArtworkLookup): Promise<TmdbAnimeArt
           matchConfidence: getTmdbMatchConfidence(match.score),
         }
 
-    const [posterUrl, backdropUrl] = await Promise.all([
+    const [posterUrl, backdropUrl, trailerYoutubeId] = await Promise.all([
       buildImageUrl(match.result.poster_path, DEFAULT_POSTER_SIZE),
       buildImageUrl(match.result.backdrop_path, DEFAULT_BACKDROP_SIZE),
+      getPreferredTrailerYoutubeId(match.mediaType, match.result.id, seasonContext.seasonNumber).catch((error) => {
+        console.error(`Failed to load TMDB trailer for anime ${anime.mal_id}:`, error)
+        return null
+      }),
     ])
 
     return {
@@ -565,6 +686,7 @@ async function loadAnimeArtwork(anime: AnimeArtworkLookup): Promise<TmdbAnimeArt
       mediaType: match.mediaType,
       posterUrl,
       backdropUrl,
+      trailerYoutubeId,
       matchedTitle: getResultTitles(match.result)[0] || null,
       seasonNumber: seasonContext.seasonNumber,
       seasonName: seasonContext.seasonName,

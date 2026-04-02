@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JikanAnime } from "@/lib/jikan";
@@ -165,5 +165,33 @@ describe("HeroCarousel", () => {
       expect(screen.getByRole("heading", { name: "Naruto" })).toBeInTheDocument();
     });
     expect(screen.queryByRole("heading", { name: "No Art" })).not.toBeInTheDocument();
+  });
+
+  it("moves forward from the left button and backward from the right button", async () => {
+    const featuredAnime: JikanAnime = {
+      ...anime,
+      mal_id: 7,
+      title: "Bleach",
+      title_english: "Bleach",
+      title_japanese: "ブリーチ",
+      synopsis: "A soul reaper story.",
+    };
+
+    hookMocks.useFeaturedCarousel.mockReturnValue({
+      data: [anime, featuredAnime],
+      isLoading: false,
+      error: null,
+    });
+    tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
+
+    renderCarousel();
+
+    await screen.findByRole("heading", { name: "Naruto" });
+
+    fireEvent.click(screen.getByLabelText("Next slide"));
+    expect(await screen.findByRole("heading", { name: "Bleach" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Previous slide"));
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
   });
 });

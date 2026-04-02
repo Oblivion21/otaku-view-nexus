@@ -35,6 +35,7 @@ export default function ContentRail<T>({
 
       {loading ? (
         <Carousel
+          dir="rtl"
           opts={{ align: "start", dragFree: true }}
           className="px-10 sm:px-12"
         >
@@ -48,11 +49,12 @@ export default function ContentRail<T>({
               </CarouselItem>
             ))}
           </CarouselContent>
-          <CarouselPrevious className="left-0 h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
-          <CarouselNext className="right-0 h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
+          <CarouselPrevious className="h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
+          <CarouselNext className="h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
         </Carousel>
       ) : items.length > 0 ? (
         <Carousel
+          dir="rtl"
           opts={{ align: "start", dragFree: true }}
           className="px-10 sm:px-12"
         >
@@ -63,8 +65,8 @@ export default function ContentRail<T>({
               </CarouselItem>
             ))}
           </CarouselContent>
-          <CarouselPrevious className="left-0 h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
-          <CarouselNext className="right-0 h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
+          <CarouselPrevious className="h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
+          <CarouselNext className="h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
         </Carousel>
       ) : (
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>

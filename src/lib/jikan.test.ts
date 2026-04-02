@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getGenres, getTopAnime, getVisibleGenres, isBlockedAnime, type JikanAnime } from "@/lib/jikan";
+import {
+  getAnimeVideoEpisodes,
+  getGenres,
+  getTopAnime,
+  getVisibleGenres,
+  isBlockedAnime,
+  type JikanAnime,
+} from "@/lib/jikan";
 
 const baseAnime: JikanAnime = {
   mal_id: 1,
@@ -132,6 +139,50 @@ describe("jikan genre filtering", () => {
     expect(visibleGenres).toEqual([
       { mal_id: 1, name: "Action" },
       { mal_id: 3, name: "Mystery" },
+    ]);
+  });
+
+  it("normalizes video episode thumbnails from the Jikan videos endpoint", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          promo: [],
+          episodes: [
+            {
+              mal_id: 220,
+              title: "Departure",
+              episode: "Episode 220",
+              url: "https://myanimelist.net/anime/20/Naruto/episode/220",
+              images: {
+                jpg: {
+                  image_url: "https://img.example.com/episode-220.jpg",
+                },
+              },
+            },
+            {
+              mal_id: "bad",
+              title: "Invalid",
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const result = await getAnimeVideoEpisodes(20);
+
+    expect(result).toEqual([
+      {
+        mal_id: 220,
+        title: "Departure",
+        episode: "Episode 220",
+        url: "https://myanimelist.net/anime/20/Naruto/episode/220",
+        images: {
+          jpg: {
+            image_url: "https://img.example.com/episode-220.jpg",
+          },
+        },
+      },
     ]);
   });
 });

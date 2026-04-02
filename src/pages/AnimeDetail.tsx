@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import ContentRail from "@/components/ContentRail";
 import EpisodePreviewRail from "@/components/EpisodePreviewRail";
-import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations, useAnimeTmdbArtwork, useAnimeEpisodeStills, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations, useAnimeTmdbArtwork, useAnimeEpisodePreviewImages, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
 import { TrailerBanner } from "@/components/TrailerBanner";
@@ -14,7 +14,7 @@ import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, getVisibleGenres, isB
 import { dedupeAnimeList, dedupeJikanEpisodes, dedupeRelationEntries, dedupeSupabaseEpisodes } from "@/lib/listDeduping";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
-import { hasAnyTitleArtwork, resolveJikanTitleArtworkUrl, resolveTitleArtworkUrl, resolveTmdbTitleArtworkUrl } from "@/lib/titleArtwork";
+import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 import { useState, useEffect } from "react";
 
 function hasPlayableEpisodeData(episode: Pick<AnimeEpisode, "video_sources" | "video_url"> | null | undefined) {
@@ -169,11 +169,11 @@ export default function AnimeDetail() {
         .slice(0, 12)
     : [];
 
-  // Get trailer YouTube ID (from Jikan API or fallback database)
+  // TMDB is the primary trailer source; Jikan/MAL only fills gaps.
   const trailerYoutubeId = getTrailerYoutubeId(
-    anime.mal_id,
+    tmdbArtwork?.trailerYoutubeId,
     anime.trailer?.youtube_id || null,
-    anime.trailer?.embed_url || null
+    anime.trailer?.embed_url || null,
   );
   const bannerImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "banner");
   const posterImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
@@ -205,23 +205,19 @@ export default function AnimeDetail() {
         styleTarget: ep,
       }));
   const episodeNumbers = rawEpisodeRailItems.map((item) => item.episodeNumber);
-  const { data: episodeStillMap } = useAnimeEpisodeStills(
+  const { data: episodePreviewImageMap } = useAnimeEpisodePreviewImages(
+    animeId,
     tmdbArtwork,
     episodeNumbers,
     canWatchSeries && !isMovie,
   );
-  const seriesPreviewImage =
-    resolveTmdbTitleArtworkUrl(tmdbArtwork, "banner") ||
-    resolveTmdbTitleArtworkUrl(tmdbArtwork, "poster") ||
-    resolveJikanTitleArtworkUrl(anime, "banner") ||
-    resolveJikanTitleArtworkUrl(anime, "poster");
   const episodeRailItems = rawEpisodeRailItems.map((item) => {
     const style = getEpisodeStyle(item.styleTarget);
 
     return {
       ...item,
       href: `/watch/${animeId}/${item.episodeNumber}`,
-      imageUrl: episodeStillMap?.get(item.episodeNumber)?.stillUrl || seriesPreviewImage,
+      imageUrl: episodePreviewImageMap?.get(item.episodeNumber)?.imageUrl || null,
       badges: getEpisodeBadges(item.styleTarget),
       styleClassName: `${style.background} ${style.border}`,
     };
