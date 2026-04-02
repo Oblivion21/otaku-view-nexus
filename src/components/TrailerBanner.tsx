@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 
 interface TrailerBannerProps {
   youtubeId: string;
@@ -54,10 +53,9 @@ export function TrailerBanner({
             style={{ backgroundImage: `url(${posterUrl})` }}
           />
         ) : (
-          <TitleArtworkPlaceholder
-            title={title}
-            variant="banner"
-            className="absolute inset-0"
+          <div
+            aria-label={`${title} banner unavailable`}
+            className="absolute inset-0 bg-slate-950"
           />
         )
       )}

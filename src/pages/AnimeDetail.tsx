@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import ContentRail from "@/components/ContentRail";
-import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations, useAnimeTmdbArtwork, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
@@ -14,7 +13,7 @@ import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, getVisibleGenres, isB
 import { dedupeAnimeList, dedupeJikanEpisodes, dedupeRelationEntries, dedupeSupabaseEpisodes } from "@/lib/listDeduping";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
-import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 import { useState, useEffect } from "react";
 
 function hasPlayableEpisodeData(episode: Pick<AnimeEpisode, "video_sources" | "video_url"> | null | undefined) {
@@ -74,6 +73,9 @@ export default function AnimeDetail() {
   })();
   const recommendationAnime = dedupeAnimeList(recommendationItems.map((rec) => rec.entry as JikanAnime));
   const { data: recommendationArtworkMap } = useMultipleAnimeTmdbArtwork(recommendationAnime);
+  const visibleRecommendationItems = recommendationItems.filter((rec) =>
+    hasAnyTitleArtwork(rec.entry as JikanAnime, recommendationArtworkMap?.get(rec.entry.mal_id)),
+  );
 
   // Fetch episodes from Supabase database
   useEffect(() => {
@@ -205,13 +207,7 @@ export default function AnimeDetail() {
               className="absolute inset-0 bg-cover bg-center"
               style={{ backgroundImage: `url(${bannerImage})` }}
             />
-          ) : (
-            <TitleArtworkPlaceholder
-              title={anime.title}
-              variant="banner"
-              className="absolute inset-0"
-            />
-          )}
+          ) : null}
           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/30" />
         </div>
       )}
@@ -225,13 +221,7 @@ export default function AnimeDetail() {
               alt={anime.title}
               className="w-48 aspect-[2/3] object-cover rounded-lg shadow-xl border border-border shrink-0"
             />
-          ) : (
-            <TitleArtworkPlaceholder
-              title={anime.title}
-              variant="poster"
-              className="w-48 aspect-[2/3] rounded-lg shadow-xl border border-border shrink-0"
-            />
-          )}
+          ) : null}
 
           {/* Info */}
           <div className="space-y-3 flex-1">
@@ -525,7 +515,7 @@ export default function AnimeDetail() {
           <ContentRail
             title="أنمي مشابه"
             loading={loadingRec}
-            items={recommendationItems}
+            items={visibleRecommendationItems}
             emptyMessage="لا توجد توصيات متاحة"
             renderItem={(rec, index) => (
               <div key={rec.entry.mal_id} className="relative">

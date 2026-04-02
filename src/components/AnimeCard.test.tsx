@@ -65,17 +65,17 @@ describe("AnimeCard", () => {
     expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
   });
 
-  it("renders a fallback artwork url when the parent resolves one", () => {
-    renderCard("https://image.tmdb.org/t/p/w780/naruto-poster.jpg");
+  it("falls back to Jikan artwork when no parent artwork url is provided", () => {
+    renderCard(null);
 
     expect(screen.getByAltText("Naruto")).toHaveAttribute(
       "src",
-      expect.stringContaining("image.tmdb.org/t/p/w780/naruto-poster.jpg"),
+      expect.stringContaining("jikan.example.com/naruto-large.webp"),
     );
     expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
   });
 
-  it("renders a placeholder when no artwork url is available", () => {
+  it("renders nothing when no artwork url is available from TMDB or Jikan", () => {
     const animeWithoutArtwork: JikanAnime = {
       ...anime,
       images: {
@@ -96,15 +96,8 @@ describe("AnimeCard", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByLabelText("Naruto artwork placeholder")).toBeInTheDocument();
     expect(screen.queryByAltText("Naruto")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(container.querySelector("img")).toBeNull();
-  });
-
-  it("renders a placeholder when no TMDB artwork url is provided", () => {
-    renderCard(null);
-
-    expect(screen.getByLabelText("Naruto artwork placeholder")).toBeInTheDocument();
-    expect(screen.queryByAltText("Naruto")).not.toBeInTheDocument();
   });
 });

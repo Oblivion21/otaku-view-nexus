@@ -2,10 +2,9 @@ import { Link } from "react-router-dom";
 import { useAnimeById, useAnimeTmdbArtwork } from "@/hooks/useAnime";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 import { Star } from "lucide-react";
 import { TYPE_MAP, isBlockedAnime } from "@/lib/jikan";
-import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 interface RelatedAnimeCardProps {
   mal_id: number;
@@ -23,6 +22,11 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
   }
 
   const imageUrl = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
+  const shouldHide = Boolean(anime && !isLoading && !hasAnyTitleArtwork(anime, tmdbArtwork));
+
+  if (shouldHide) {
+    return null;
+  }
 
   return (
     <Link
@@ -39,13 +43,7 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
           />
-        ) : (
-          <TitleArtworkPlaceholder
-            title={name}
-            variant="poster"
-            className="h-full w-full"
-          />
-        )}
+        ) : null}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
 
         {anime?.score && (

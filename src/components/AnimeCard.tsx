@@ -3,7 +3,6 @@ import { Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { JikanAnime } from "@/lib/jikan";
 import { GENRE_AR, TYPE_MAP, getVisibleGenres } from "@/lib/jikan";
-import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 interface AnimeCardProps {
@@ -14,26 +13,22 @@ interface AnimeCardProps {
 export default function AnimeCard({ anime, artworkUrl = null }: AnimeCardProps) {
   const resolvedArtworkUrl = artworkUrl || resolveTitleArtworkUrl(null, anime, "poster");
 
+  if (!resolvedArtworkUrl) {
+    return null;
+  }
+
   return (
     <Link
       to={`/anime/${anime.mal_id}`}
       className="group block rounded-lg overflow-hidden bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5"
     >
       <div className="relative aspect-[3/4] overflow-hidden">
-        {resolvedArtworkUrl ? (
-          <img
-            src={resolvedArtworkUrl}
-            alt={anime.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            loading="lazy"
-          />
-        ) : (
-          <TitleArtworkPlaceholder
-            title={anime.title}
-            variant="poster"
-            className="h-full w-full"
-          />
-        )}
+        <img
+          src={resolvedArtworkUrl}
+          alt={anime.title}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          loading="lazy"
+        />
         {/* Overlay gradient */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
 

@@ -90,14 +90,14 @@ describe("HeroCarousel", () => {
     expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
   });
 
-  it("falls back to the placeholder when TMDB artwork is missing", async () => {
+  it("falls back to Jikan artwork when TMDB artwork is missing", async () => {
     tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
 
     const { container } = renderCarousel();
 
     await screen.findByRole("heading", { name: "Naruto" });
-    expect(screen.getByLabelText("Naruto artwork placeholder")).toBeInTheDocument();
-    expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
+    expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
+    expect(container.querySelector('[style*="jikan.example.com/naruto-large.webp"]')).not.toBeNull();
   });
 
   it("renders fallback hero data while featured payload is still pending", async () => {
@@ -139,5 +139,31 @@ describe("HeroCarousel", () => {
     await waitFor(() => {
       expect(tmdbMocks.getMultipleAnimeTmdbArtwork).toHaveBeenCalledWith([featuredAnime]);
     });
+  });
+
+  it("skips hero entries that have no TMDB or Jikan artwork", async () => {
+    const noArtAnime: JikanAnime = {
+      ...anime,
+      mal_id: 99,
+      title: "No Art",
+      images: {
+        jpg: { image_url: "", large_image_url: "" },
+        webp: { image_url: "", large_image_url: "" },
+      },
+    };
+
+    hookMocks.useFeaturedCarousel.mockReturnValue({
+      data: [noArtAnime],
+      isLoading: false,
+      error: null,
+    });
+    tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
+
+    renderCarousel();
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("heading", { name: "No Art" })).not.toBeInTheDocument();
   });
 });

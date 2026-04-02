@@ -9,7 +9,7 @@ import { GENRE_AR, getVisibleGenres } from "@/lib/jikan";
 import { dedupeAnimeList } from "@/lib/listDeduping";
 import type { FeaturedCarouselAnime } from "@/lib/featuredCarousel";
 import { getMultipleAnimeTmdbArtwork, type TmdbAnimeArtwork } from "@/lib/tmdb";
-import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 import { useState, useEffect, useRef } from "react";
 
 interface AnimeWithBanner {
@@ -38,20 +38,33 @@ export default function HeroCarousel() {
     animeList: FeaturedCarouselAnime[],
     artworkMap = new Map<number, TmdbAnimeArtwork>(),
   ): AnimeWithBanner[] {
-    return animeList.map((anime) => {
-      const artwork = artworkMap.get(anime.mal_id);
+    return animeList
+      .filter((anime) => hasAnyTitleArtwork(anime, artworkMap.get(anime.mal_id)))
+      .map((anime) => {
+        const artwork = artworkMap.get(anime.mal_id);
 
-      return {
-        anime,
-        bannerImage: resolveTitleArtworkUrl(artwork, anime, "banner"),
-      };
-    });
+        return {
+          anime,
+          bannerImage: resolveTitleArtworkUrl(artwork, anime, "banner"),
+        };
+      });
   }
 
   function showCarouselItems(animeList: FeaturedCarouselAnime[], source: "default" | "featured") {
+    const nextItems = buildCarouselItems(animeList);
+    if (nextItems.length === 0) {
+      if (source === "default" || activeSourceRef.current === "none") {
+        activeSourceRef.current = source;
+        activeItemsKeyRef.current = `${source}:${getAnimeIdsKey(animeList)}`;
+        setItems([]);
+        setIsLoading(false);
+      }
+      return;
+    }
+
     activeSourceRef.current = source;
     activeItemsKeyRef.current = `${source}:${getAnimeIdsKey(animeList)}`;
-    setItems(buildCarouselItems(animeList));
+    setItems(nextItems);
     setIsLoading(false);
   }
 

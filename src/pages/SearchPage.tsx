@@ -1,9 +1,11 @@
 import { useSearchParams } from "react-router-dom";
 import Layout from "@/components/Layout";
 import AnimeGrid from "@/components/AnimeGrid";
-import { useSearchAnime } from "@/hooks/useAnime";
+import { useMultipleAnimeTmdbArtwork, useSearchAnime } from "@/hooks/useAnime";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
+import { dedupeAnimeList } from "@/lib/listDeduping";
+import { hasAnyTitleArtwork } from "@/lib/titleArtwork";
 
 export default function SearchPage() {
   const [searchParams] = useSearchParams();
@@ -13,6 +15,9 @@ export default function SearchPage() {
   useEffect(() => { setPage(1); }, [query]);
 
   const { data, isLoading } = useSearchAnime(query, page);
+  const dedupedAnime = dedupeAnimeList(data?.data);
+  const { data: artworkMap } = useMultipleAnimeTmdbArtwork(dedupedAnime);
+  const visibleAnime = dedupedAnime.filter((anime) => hasAnyTitleArtwork(anime, artworkMap?.get(anime.mal_id)));
 
   return (
     <Layout>
@@ -26,9 +31,10 @@ export default function SearchPage() {
         ) : (
           <>
             <AnimeGrid
-              title={`${data?.pagination?.last_visible_page ? `${data.data?.length || 0} نتيجة` : "جارٍ البحث..."}`}
-              anime={data?.data}
+              title={isLoading ? "جارٍ البحث..." : `${visibleAnime.length} نتيجة`}
+              anime={visibleAnime}
               isLoading={isLoading}
+              artworkMap={artworkMap}
             />
             <div className="flex justify-center gap-3">
               <Button variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>

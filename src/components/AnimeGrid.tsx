@@ -3,17 +3,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import type { JikanAnime } from "@/lib/jikan";
 import { dedupeAnimeList } from "@/lib/listDeduping";
-import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import type { TmdbAnimeArtwork } from "@/lib/tmdb";
 
 interface AnimeGridProps {
   title: string;
   anime: JikanAnime[] | undefined;
   isLoading: boolean;
+  artworkMap?: Map<number, TmdbAnimeArtwork>;
 }
 
-export default function AnimeGrid({ title, anime, isLoading }: AnimeGridProps) {
+export default function AnimeGrid({ title, anime, isLoading, artworkMap: artworkMapOverride }: AnimeGridProps) {
   const dedupedAnime = dedupeAnimeList(anime);
-  const { data: artworkMap } = useMultipleAnimeTmdbArtwork(dedupedAnime);
+  const { data: fetchedArtworkMap } = useMultipleAnimeTmdbArtwork(dedupedAnime, !artworkMapOverride);
+  const artworkMap = artworkMapOverride ?? fetchedArtworkMap;
+  const visibleAnime = dedupedAnime.filter((entry) => hasAnyTitleArtwork(entry, artworkMap?.get(entry.mal_id)));
 
   return (
     <section className="space-y-4">
@@ -29,7 +33,7 @@ export default function AnimeGrid({ title, anime, isLoading }: AnimeGridProps) {
         </div>
         ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {dedupedAnime.map((a) => (
+          {visibleAnime.map((a) => (
             <AnimeCard
               key={a.mal_id}
               anime={a}

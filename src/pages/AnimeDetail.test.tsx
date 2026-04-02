@@ -173,7 +173,7 @@ describe("AnimeDetail", () => {
     expect(container.querySelector('[src*="jikan.example.com"]')).toBeNull();
   });
 
-  it("falls back to placeholders when TMDB is missing", async () => {
+  it("falls back to Jikan artwork when TMDB is missing", async () => {
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
     });
@@ -183,13 +183,43 @@ describe("AnimeDetail", () => {
 
     const { container } = renderPage();
 
-    await waitFor(() => {
-      expect(screen.getAllByLabelText("Naruto artwork placeholder")).toHaveLength(2);
-    });
-    expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+    expect(screen.getByAltText("Naruto")).toHaveAttribute(
+      "src",
+      expect.stringContaining("jikan.example.com/naruto-large.webp"),
+    );
+    expect(container.querySelector('[style*="jikan.example.com/naruto-large.webp"]')).not.toBeNull();
     expect(animeCardSpy.mock.calls[0][0]).toEqual(expect.objectContaining({
-      artworkUrl: null,
+      artworkUrl: "https://jikan.example.com/naruto-large.webp",
     }));
+  });
+
+  it("keeps the direct anime page accessible without placeholders when no artwork exists", async () => {
+    const animeWithoutArtwork: JikanAnime = {
+      ...anime,
+      images: {
+        jpg: { image_url: "", large_image_url: "" },
+        webp: { image_url: "", large_image_url: "" },
+      },
+    };
+
+    hookMocks.useAnimeById.mockReturnValue({
+      data: { data: animeWithoutArtwork },
+      isLoading: false,
+    });
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+    });
+    hookMocks.useMultipleAnimeTmdbArtwork.mockReturnValue({
+      data: new Map(),
+    });
+
+    const { container } = renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
+    expect(screen.queryByAltText("Naruto")).not.toBeInTheDocument();
+    expect(container.querySelector("img[src*='jikan.example.com']")).toBeNull();
   });
 
   it("does not render the episode list section on movie pages", async () => {

@@ -3,6 +3,10 @@ import { supabase } from "@/lib/supabase";
 
 type TmdbMediaType = "movie" | "tv";
 export type TmdbMatchConfidence = "high" | "medium" | "low";
+export type EpisodePreviewArtwork = {
+  episodeNumber: number;
+  stillUrl: string | null;
+};
 
 export type AnimeArtworkLookup = {
   mal_id: JikanAnime["mal_id"];
@@ -29,6 +33,11 @@ export interface TmdbAnimeArtwork {
 
 interface TmdbArtworkResponse {
   results?: Record<string, TmdbAnimeArtwork | null>;
+  error?: string;
+}
+
+interface TmdbEpisodeStillResponse {
+  results?: Record<string, { stillUrl: string | null } | null>;
   error?: string;
 }
 
@@ -136,4 +145,66 @@ export async function getAnimeTmdbArtwork(anime: AnimeArtworkLookup | null | und
 
   const artwork = await getMultipleAnimeTmdbArtwork([anime]);
   return artwork.get(anime.mal_id) ?? null;
+}
+
+export async function getAnimeEpisodeStills(
+  artwork: TmdbAnimeArtwork | null | undefined,
+  episodeNumbers: number[],
+) {
+  if (
+    !supabase ||
+    !artwork?.tmdbId ||
+    artwork.mediaType !== "tv" ||
+    !artwork.seasonNumber
+  ) {
+    return new Map<number, EpisodePreviewArtwork>();
+  }
+
+  const uniqueEpisodeNumbers = Array.from(
+    new Set(
+      episodeNumbers
+        .map((episodeNumber) => Number(episodeNumber))
+        .filter((episodeNumber) => Number.isInteger(episodeNumber) && episodeNumber > 0),
+    ),
+  );
+
+  if (uniqueEpisodeNumbers.length === 0) {
+    return new Map<number, EpisodePreviewArtwork>();
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke("tmdb-episode-stills", {
+      body: {
+        tmdbId: artwork.tmdbId,
+        mediaType: artwork.mediaType,
+        seasonNumber: artwork.seasonNumber,
+        episodeNumbers: uniqueEpisodeNumbers,
+      },
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const payload = data as TmdbEpisodeStillResponse | null;
+    if (!payload?.results) {
+      if (payload?.error) {
+        throw new Error(payload.error);
+      }
+      return new Map<number, EpisodePreviewArtwork>();
+    }
+
+    return new Map(
+      Object.entries(payload.results).map(([episodeNumber, result]) => [
+        Number(episodeNumber),
+        {
+          episodeNumber: Number(episodeNumber),
+          stillUrl: result?.stillUrl ?? null,
+        },
+      ]),
+    );
+  } catch (error) {
+    console.error("Failed to fetch TMDB episode stills via Supabase function:", error);
+    return new Map<number, EpisodePreviewArtwork>();
+  }
 }

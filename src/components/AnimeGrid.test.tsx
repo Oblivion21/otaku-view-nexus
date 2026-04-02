@@ -100,6 +100,33 @@ const animeList: JikanAnime[] = [
     studios: [],
     genres: [],
   },
+  {
+    mal_id: 3,
+    title: "No Art",
+    title_english: "No Art",
+    title_japanese: "ノーアート",
+    images: {
+      jpg: { image_url: "", large_image_url: "" },
+      webp: { image_url: "", large_image_url: "" },
+    },
+    trailer: { youtube_id: null, url: null, embed_url: null },
+    synopsis: null,
+    score: null,
+    scored_by: null,
+    rank: null,
+    popularity: null,
+    episodes: 12,
+    status: "Finished Airing",
+    rating: null,
+    type: "TV",
+    source: null,
+    duration: null,
+    aired: { from: null, to: null, string: "" },
+    season: null,
+    year: 2005,
+    studios: [],
+    genres: [],
+  },
 ];
 
 describe("AnimeGrid", () => {
@@ -108,17 +135,24 @@ describe("AnimeGrid", () => {
     hookMocks.useMultipleAnimeTmdbArtwork.mockReturnValue({
       data: new Map([
         [1, { posterUrl: "https://image.tmdb.org/t/p/w780/naruto-poster.jpg", backdropUrl: null }],
-        [2, null],
       ]),
     });
   });
 
-  it("uses one batched TMDB lookup and falls back to placeholders when TMDB is missing", () => {
+  it("uses one batched TMDB lookup, restores Jikan fallback, and hides no-art entries", () => {
     render(<AnimeGrid title="Popular" anime={animeList} isLoading={false} />);
 
-    expect(hookMocks.useMultipleAnimeTmdbArtwork).toHaveBeenCalledWith(animeList.slice(0, 2));
+    expect(hookMocks.useMultipleAnimeTmdbArtwork).toHaveBeenCalledWith(
+      [
+        animeList[0],
+        animeList[1],
+        animeList[3],
+      ],
+      true,
+    );
     expect(screen.getByTestId("card-1")).toBeInTheDocument();
     expect(screen.getByTestId("card-2")).toBeInTheDocument();
+    expect(screen.queryByTestId("card-3")).not.toBeInTheDocument();
     expect(screen.queryAllByTestId("card-2")).toHaveLength(1);
     expect(animeCardSpy.mock.calls[0][0]).toEqual(expect.objectContaining({
       anime: animeList[0],
@@ -126,7 +160,7 @@ describe("AnimeGrid", () => {
     }));
     expect(animeCardSpy.mock.calls[1][0]).toEqual(expect.objectContaining({
       anime: animeList[1],
-      artworkUrl: null,
+      artworkUrl: "https://jikan.example.com/bleach-large.webp",
     }));
   });
 });

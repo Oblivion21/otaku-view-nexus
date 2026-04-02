@@ -7,7 +7,7 @@ import { Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import { dedupeAnimeList } from "@/lib/listDeduping";
-import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 async function fetchUpcoming(page: number) {
   const response = await fetch(`https://api.jikan.moe/v4/seasons/upcoming?page=${page}`);
@@ -25,6 +25,7 @@ export default function Upcoming() {
   });
   const upcomingAnime = dedupeAnimeList(data?.data);
   const { data: artworkMap } = useMultipleAnimeTmdbArtwork(upcomingAnime);
+  const visibleUpcomingAnime = upcomingAnime.filter((anime: any) => hasAnyTitleArtwork(anime, artworkMap?.get(anime.mal_id)));
 
   const hasNextPage = data?.pagination?.has_next_page;
   const totalPages = data?.pagination?.last_visible_page || 1;
@@ -50,13 +51,13 @@ export default function Upcoming() {
               <Skeleton key={i} className="aspect-[2/3] rounded-lg" />
             ))}
           </div>
-        ) : upcomingAnime.length > 0 ? (
+        ) : visibleUpcomingAnime.length > 0 ? (
           <>
             <div className="mb-4 text-sm text-muted-foreground">
-              {data.pagination.items.total} أنمي قادم
+              {visibleUpcomingAnime.length} أنمي قادم في هذه الصفحة
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-              {upcomingAnime.map((anime: any) => (
+              {visibleUpcomingAnime.map((anime: any) => (
                 <div key={anime.mal_id} className="relative">
                   <AnimeCard
                     anime={anime}

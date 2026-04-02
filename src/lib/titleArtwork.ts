@@ -20,8 +20,45 @@ export function resolveTmdbTitleArtworkUrl(
 
 export function resolveTitleArtworkUrl(
   artwork: TmdbAnimeArtwork | null | undefined,
-  _anime: Pick<JikanAnime, "images"> | null | undefined,
+  anime: Pick<JikanAnime, "images"> | null | undefined,
   variant: TitleArtworkVariant,
 ): string | null {
-  return resolveTmdbTitleArtworkUrl(artwork, variant);
+  return resolveTmdbTitleArtworkUrl(artwork, variant) || resolveJikanTitleArtworkUrl(anime, variant);
+}
+
+export function resolveJikanTitleArtworkUrl(
+  anime: Pick<JikanAnime, "images"> | null | undefined,
+  variant: TitleArtworkVariant,
+): string | null {
+  const preferredUrls = variant === "banner"
+    ? [
+        anime?.images?.webp?.large_image_url,
+        anime?.images?.jpg?.large_image_url,
+        anime?.images?.webp?.image_url,
+        anime?.images?.jpg?.image_url,
+      ]
+    : [
+        anime?.images?.webp?.large_image_url,
+        anime?.images?.jpg?.large_image_url,
+        anime?.images?.webp?.image_url,
+        anime?.images?.jpg?.image_url,
+      ];
+
+  for (const url of preferredUrls) {
+    if (typeof url === "string" && url.trim()) {
+      return url;
+    }
+  }
+
+  return null;
+}
+
+export function hasAnyTitleArtwork(
+  anime: Pick<JikanAnime, "images"> | null | undefined,
+  artwork: TmdbAnimeArtwork | null | undefined,
+): boolean {
+  return Boolean(
+    resolveTitleArtworkUrl(artwork, anime, "poster") ||
+    resolveTitleArtworkUrl(artwork, anime, "banner"),
+  );
 }

@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "lucide-react";
 import { useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import { dedupeAnimeList } from "@/lib/listDeduping";
-import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 const DAYS = [
   { name: "الإثنين", value: "monday", en: "Monday" },
@@ -34,6 +34,7 @@ export default function Schedule() {
   });
   const scheduledAnime = dedupeAnimeList(data?.data);
   const { data: artworkMap } = useMultipleAnimeTmdbArtwork(scheduledAnime);
+  const visibleScheduledAnime = scheduledAnime.filter((anime: any) => hasAnyTitleArtwork(anime, artworkMap?.get(anime.mal_id)));
 
   return (
     <Layout>
@@ -73,13 +74,13 @@ export default function Schedule() {
               <Skeleton key={i} className="aspect-[2/3] rounded-lg" />
             ))}
           </div>
-        ) : scheduledAnime.length > 0 ? (
+        ) : visibleScheduledAnime.length > 0 ? (
           <>
             <div className="mb-4 text-sm text-muted-foreground">
-              {scheduledAnime.length} أنمي يُعرض يوم {selectedDay.name}
+              {visibleScheduledAnime.length} أنمي يُعرض يوم {selectedDay.name}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-              {scheduledAnime.map((anime: any) => (
+              {visibleScheduledAnime.map((anime: any) => (
                 <AnimeCard
                   key={anime.mal_id}
                   anime={anime}
