@@ -5,7 +5,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 const hookMocks = vi.hoisted(() => ({
   useAnimeById: vi.fn(),
   useAnimeEpisodes: vi.fn(),
-  useAnimeTmdbArtwork: vi.fn(),
+  useAnimeAniListMedia: vi.fn(),
 }));
 
 const supabaseMocks = vi.hoisted(() => ({
@@ -77,16 +77,22 @@ describe("EpisodeWatch", () => {
     hookMocks.useAnimeEpisodes.mockReturnValue({
       data: { data: [{ mal_id: 1, title: "Episode 1" }] },
     });
-    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
       data: {
-        tmdbId: 321,
-        mediaType: "tv",
-        posterUrl: null,
-        backdropUrl: null,
-        matchedTitle: "Naruto",
-        seasonNumber: 1,
-        seasonName: "Season 1",
-        matchConfidence: "high",
+        id: 21,
+        idMal: 1,
+        format: "TV",
+        title: {
+          romaji: "Naruto",
+          english: "Naruto",
+          native: "ナルト",
+        },
+        bannerImage: null,
+        coverImage: {
+          extraLarge: "",
+          large: "",
+          color: null,
+        },
       },
       isLoading: false,
       error: null,
@@ -112,10 +118,12 @@ describe("EpisodeWatch", () => {
     expect(mainTab).toHaveAttribute("data-state", "active");
 
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
-    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://vidfast.pro/tv/321/1/1"));
-    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("theme=%2300D0FF"));
-    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("nextButton=false"));
-    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoNext=false"));
+    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/21/1"));
+    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("color=00D0FF"));
+    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("nextEpisode="));
+    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("episodeSelector="));
+    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("autoplayNextEpisode="));
+    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("overlay="));
     expect(screen.getByRole("link", { name: /الحلقة السابقة/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /الحلقة التالية/ })).toBeInTheDocument();
 
@@ -125,8 +133,8 @@ describe("EpisodeWatch", () => {
     });
   });
 
-  it("auto-switches to Backup Player when VidFast metadata is unavailable", async () => {
-    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+  it("auto-switches to Backup Player when AniList metadata is unavailable", async () => {
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
       data: null,
       isLoading: false,
       error: null,
@@ -162,6 +170,45 @@ describe("EpisodeWatch", () => {
       expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");
       expect(document.querySelector("video")).toBeInTheDocument();
     });
+  });
+
+  it("uses the movie-style Videasy url for anime movies", async () => {
+    hookMocks.useAnimeById.mockReturnValue({
+      data: {
+        data: {
+          ...anime,
+          type: "Movie",
+        },
+      },
+      isLoading: false,
+    });
+
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
+      data: {
+        id: 145139,
+        idMal: 1,
+        format: "MOVIE",
+        title: {
+          romaji: "The First Slam Dunk",
+          english: "The First Slam Dunk",
+          native: "THE FIRST SLAM DUNK",
+        },
+        bannerImage: null,
+        coverImage: {
+          extraLarge: "",
+          large: "",
+          color: null,
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderPage();
+
+    const mainIframe = await screen.findByTitle("Naruto - Main Player");
+    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/145139?color=00D0FF"));
+    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/1?color="));
   });
 
   it("keeps trailer pages on the existing youtube player without player tabs", async () => {

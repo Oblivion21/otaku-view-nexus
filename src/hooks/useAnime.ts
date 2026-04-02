@@ -16,6 +16,7 @@ import {
   getPersonVoices,
   type JikanAnime,
 } from "@/lib/jikan";
+import { getAnimeAniListMedia } from "@/lib/anilist";
 import { getAnimeTmdbArtwork } from "@/lib/tmdb";
 
 export function useTopAnime(page = 1, filter?: string) {
@@ -50,6 +51,18 @@ export function useAnimeTmdbArtwork(
   return useQuery({
     queryKey: ["anime-tmdb-artwork", anime?.mal_id],
     queryFn: () => getAnimeTmdbArtwork(anime),
+    enabled: enabled && Boolean(anime?.mal_id),
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+}
+
+export function useAnimeAniListMedia(
+  anime: JikanAnime | null | undefined,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["anime-anilist-media", anime?.mal_id],
+    queryFn: () => getAnimeAniListMedia(anime?.mal_id),
     enabled: enabled && Boolean(anime?.mal_id),
     staleTime: 24 * 60 * 60 * 1000,
   });

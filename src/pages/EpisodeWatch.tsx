@@ -7,10 +7,10 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAnimeById, useAnimeEpisodes, useAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { useAnimeAniListMedia, useAnimeById, useAnimeEpisodes } from "@/hooks/useAnime";
 import { isBlockedAnime } from "@/lib/jikan";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
-import { buildVidFastEmbedUrl, getVidFastUnavailableReason } from "@/lib/vidfast";
+import { buildVideasyAnimeEmbedUrl, getVideasyUnavailableReason } from "@/lib/videasy";
 import {
   getEpisodeData,
   getAnimeEpisodes,
@@ -82,7 +82,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 type PlayerTab = "main" | "backup";
-type VidFastStatus = "idle" | "loading" | "ready" | "unavailable" | "error";
+type MainPlayerStatus = "idle" | "loading" | "ready" | "unavailable" | "error";
 
 export default function EpisodeWatch() {
   const { id, episode } = useParams<{ id: string; episode: string }>();
@@ -94,15 +94,15 @@ export default function EpisodeWatch() {
   const anime = animeData?.data;
   const { data: episodes } = useAnimeEpisodes(animeId);
   const {
-    data: tmdbArtwork,
-    isLoading: loadingTmdbArtwork,
-    error: tmdbArtworkError,
-  } = useAnimeTmdbArtwork(anime, !isTrailer);
+    data: aniListMedia,
+    isLoading: loadingAniListMedia,
+    error: aniListMediaError,
+  } = useAnimeAniListMedia(anime, !isTrailer);
 
   const [activePlayerTab, setActivePlayerTab] = useState<PlayerTab>("main");
-  const [vidfastStatus, setVidfastStatus] = useState<VidFastStatus>("idle");
-  const [vidfastMessage, setVidfastMessage] = useState<string | null>(null);
-  const [vidfastFrameLoaded, setVidfastFrameLoaded] = useState(false);
+  const [mainPlayerStatus, setMainPlayerStatus] = useState<MainPlayerStatus>("idle");
+  const [mainPlayerMessage, setMainPlayerMessage] = useState<string | null>(null);
+  const [mainPlayerFrameLoaded, setMainPlayerFrameLoaded] = useState(false);
   const [episodeData, setEpisodeData] = useState<AnimeEpisode | null>(null);
   const [selectedServerIndex, setSelectedServerIndex] = useState(0);
   const [availableEpisodes, setAvailableEpisodes] = useState<any[]>([]);
@@ -159,11 +159,13 @@ export default function EpisodeWatch() {
       ? episodeData.video_url
       : "";
   const isActiveDirectVideo = Boolean(activeVideoUrl && isDirectPlayableUrl(activeVideoUrl));
-  const vidfastUrl = !isTrailer ? buildVidFastEmbedUrl(tmdbArtwork ?? null, epNum) : null;
+  const mainPlayerUrl = !isTrailer
+    ? buildVideasyAnimeEmbedUrl(aniListMedia ?? null, anime?.type ?? null, epNum)
+    : null;
 
   function fallbackToBackup(message: string) {
-    setVidfastStatus("error");
-    setVidfastMessage(message);
+    setMainPlayerStatus("error");
+    setMainPlayerMessage(message);
     setActivePlayerTab("backup");
   }
 
@@ -171,45 +173,45 @@ export default function EpisodeWatch() {
     if (isTrailer) return;
 
     setActivePlayerTab("main");
-    setVidfastStatus("idle");
-    setVidfastMessage(null);
-    setVidfastFrameLoaded(false);
+    setMainPlayerStatus("idle");
+    setMainPlayerMessage(null);
+    setMainPlayerFrameLoaded(false);
   }, [animeId, epNum, isTrailer]);
 
   useEffect(() => {
     if (isTrailer) {
-      setVidfastStatus("idle");
-      setVidfastMessage(null);
+      setMainPlayerStatus("idle");
+      setMainPlayerMessage(null);
       return;
     }
 
-    if (!anime || loadingTmdbArtwork) {
-      setVidfastStatus("loading");
-      setVidfastMessage(null);
+    if (!anime || loadingAniListMedia) {
+      setMainPlayerStatus("loading");
+      setMainPlayerMessage(null);
       return;
     }
 
-    if (tmdbArtworkError) {
+    if (aniListMediaError) {
       fallbackToBackup("Main Player could not resolve this title. Switched to Backup Player.");
       return;
     }
 
-    if (!vidfastUrl) {
-      setVidfastStatus("unavailable");
-      setVidfastMessage(getVidFastUnavailableReason(tmdbArtwork ?? null, epNum));
+    if (!mainPlayerUrl) {
+      setMainPlayerStatus("unavailable");
+      setMainPlayerMessage(getVideasyUnavailableReason(aniListMedia ?? null, anime.type ?? null, epNum));
       setActivePlayerTab("backup");
       return;
     }
 
-    setVidfastStatus("ready");
-    setVidfastMessage(null);
+    setMainPlayerStatus("ready");
+    setMainPlayerMessage(null);
   }, [
     isTrailer,
     anime,
-    loadingTmdbArtwork,
-    tmdbArtworkError,
-    tmdbArtwork,
-    vidfastUrl,
+    loadingAniListMedia,
+    aniListMediaError,
+    aniListMedia,
+    mainPlayerUrl,
     epNum,
   ]);
 
@@ -217,9 +219,9 @@ export default function EpisodeWatch() {
     if (
       isTrailer ||
       activePlayerTab !== "main" ||
-      vidfastStatus !== "ready" ||
-      !vidfastUrl ||
-      vidfastFrameLoaded
+      mainPlayerStatus !== "ready" ||
+      !mainPlayerUrl ||
+      mainPlayerFrameLoaded
     ) {
       return;
     }
@@ -229,7 +231,7 @@ export default function EpisodeWatch() {
     }, 12000);
 
     return () => window.clearTimeout(timeout);
-  }, [isTrailer, activePlayerTab, vidfastStatus, vidfastUrl, vidfastFrameLoaded]);
+  }, [isTrailer, activePlayerTab, mainPlayerStatus, mainPlayerUrl, mainPlayerFrameLoaded]);
 
   useEffect(() => {
     async function fetchEpisodeVideo() {
@@ -431,7 +433,7 @@ export default function EpisodeWatch() {
   };
 
   const renderMainPlayer = () => {
-    if (vidfastStatus === "loading" || vidfastStatus === "idle") {
+    if (mainPlayerStatus === "loading" || mainPlayerStatus === "idle") {
       return (
         <div className="w-full aspect-video rounded-xl border border-primary/20 bg-[radial-gradient(circle_at_top,_rgba(0,208,255,0.12),_transparent_55%),linear-gradient(180deg,_rgba(15,23,42,0.96),_rgba(2,6,23,0.96))] flex flex-col items-center justify-center gap-3">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -440,17 +442,17 @@ export default function EpisodeWatch() {
       );
     }
 
-    if (vidfastStatus === "ready" && vidfastUrl) {
+    if (mainPlayerStatus === "ready" && mainPlayerUrl) {
       return (
         <div className="space-y-3">
           <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-primary/20 bg-black shadow-[0_0_30px_rgba(0,208,255,0.08)]">
             <iframe
-              src={vidfastUrl}
+              src={mainPlayerUrl}
               title={`${anime.title} - Main Player`}
               className="absolute inset-0 w-full h-full"
               allowFullScreen
               allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-              onLoad={() => setVidfastFrameLoaded(true)}
+              onLoad={() => setMainPlayerFrameLoaded(true)}
               onError={() => {
                 fallbackToBackup("Main Player failed to load. Switched to Backup Player.");
               }}
@@ -465,7 +467,7 @@ export default function EpisodeWatch() {
         <div className="text-center space-y-2 px-6">
           <p className="text-amber-300 font-medium">Main Player unavailable</p>
           <p className="text-sm text-muted-foreground">
-            {vidfastMessage || "Switched to Backup Player for this episode."}
+            {mainPlayerMessage || "Switched to Backup Player for this episode."}
           </p>
         </div>
       </div>

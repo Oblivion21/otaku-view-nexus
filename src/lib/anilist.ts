@@ -1,10 +1,11 @@
-// AniList GraphQL API client for fetching high-quality banner images
+// AniList GraphQL API client for fetching anime metadata and artwork
 
 const ANILIST_API = 'https://graphql.anilist.co'
 
-interface AniListMedia {
+export interface AniListMedia {
   id: number
   idMal: number
+  format: string | null
   title: {
     romaji: string
     english: string | null
@@ -18,6 +19,12 @@ interface AniListMedia {
   }
 }
 
+const mediaCache = new Map<number, Promise<AniListMedia | null>>()
+
+function normalizeMalIds(malIds: number[]): number[] {
+  return [...new Set(malIds.filter((malId) => Number.isInteger(malId) && malId > 0))]
+}
+
 // Fetch media data from AniList by MAL ID
 export async function fetchAniListByMAL(malId: number): Promise<AniListMedia | null> {
   const query = `
@@ -25,6 +32,7 @@ export async function fetchAniListByMAL(malId: number): Promise<AniListMedia | n
       Media(idMal: $malId, type: ANIME) {
         id
         idMal
+        format
         title {
           romaji
           english
@@ -67,10 +75,10 @@ export async function fetchAniListByMAL(malId: number): Promise<AniListMedia | n
   }
 }
 
-// Fetch multiple anime by MAL IDs with rate limiting
+// Fetch multiple anime by MAL IDs
 export async function fetchMultipleAniListByMAL(malIds: number[]): Promise<Map<number, AniListMedia>> {
   const results = new Map<number, AniListMedia>()
-  const uniqueMalIds = [...new Set(malIds)].filter(Boolean)
+  const uniqueMalIds = normalizeMalIds(malIds)
   const mediaResults = await Promise.allSettled(
     uniqueMalIds.map((malId) => fetchAniListByMAL(malId))
   )
@@ -84,6 +92,54 @@ export async function fetchMultipleAniListByMAL(malIds: number[]): Promise<Map<n
   }
 
   return results
+}
+
+export async function getMultipleAnimeAniListMedia(malIds: number[]): Promise<Map<number, AniListMedia>> {
+  const uniqueMalIds = normalizeMalIds(malIds)
+  const uncachedMalIds = uniqueMalIds.filter((malId) => !mediaCache.has(malId))
+
+  if (uncachedMalIds.length > 0) {
+    const batchRequest = fetchMultipleAniListByMAL(uncachedMalIds)
+      .then((results) => {
+        uncachedMalIds.forEach((malId) => {
+          const media = results.get(malId) ?? null
+          mediaCache.set(malId, Promise.resolve(media))
+        })
+        return results
+      })
+      .catch((error) => {
+        console.error('Failed to fetch AniList media:', error)
+        uncachedMalIds.forEach((malId) => {
+          mediaCache.set(malId, Promise.resolve(null))
+        })
+        return new Map<number, AniListMedia>()
+      })
+
+    uncachedMalIds.forEach((malId) => {
+      const pendingMedia = batchRequest.then((results) => results.get(malId) ?? null)
+      mediaCache.set(malId, pendingMedia)
+    })
+  }
+
+  const resolvedEntries = await Promise.all(
+    uniqueMalIds.map(async (malId) => {
+      const media = await mediaCache.get(malId)
+      return [malId, media ?? null] as const
+    }),
+  )
+
+  return new Map(
+    resolvedEntries.filter((entry): entry is readonly [number, AniListMedia] => Boolean(entry[1])),
+  )
+}
+
+export async function getAnimeAniListMedia(malId: number | null | undefined): Promise<AniListMedia | null> {
+  if (!malId) {
+    return null
+  }
+
+  const mediaMap = await getMultipleAnimeAniListMedia([malId])
+  return mediaMap.get(malId) ?? null
 }
 
 // Get the best image for carousel banner
