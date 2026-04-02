@@ -113,6 +113,7 @@ describe("EpisodeWatch", () => {
     supabaseMocks.scrapeAnime3rbEpisode.mockResolvedValue({
       video_sources: null,
       cached: false,
+      episode_page_url: null,
       error: "No video sources found",
     });
   });

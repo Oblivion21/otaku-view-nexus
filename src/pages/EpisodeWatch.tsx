@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAnimeAniListMedia, useAnimeById, useAnimeEpisodes, useAnimeTmdbArtwork } from "@/hooks/useAnime";
 import { isBlockedAnime } from "@/lib/jikan";
+import { buildEpisodeDataFromScrape } from "@/lib/episodePlayback";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getVideasyUnavailableReason, resolveVideasyMainPlayerUrl } from "@/lib/videasy";
 import {
@@ -291,22 +292,13 @@ export default function EpisodeWatch() {
       setScraping(false);
 
       if (result.video_sources && result.video_sources.length > 0) {
-        setEpisodeData({
-          id: data?.id || "",
-          mal_id: animeId,
-          episode_number: epNum,
-          episode_page_url: data?.episode_page_url || null,
-          video_url: result.video_sources[0].url,
-          quality: result.video_sources[0].quality,
-          video_sources: result.video_sources,
-          subtitle_language: data?.subtitle_language || "ar",
-          is_active: data?.is_active ?? true,
-          category: data?.category ?? null,
-          tags: data?.tags || [],
-          scraped_at: new Date().toISOString(),
-          created_at: data?.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
+        setEpisodeData(buildEpisodeDataFromScrape({
+          existingEpisode: data,
+          animeId,
+          episodeNumber: epNum,
+          videoSources: result.video_sources,
+          episodePageUrl: result.episode_page_url ?? null,
+        }));
         setSelectedServerIndex(0);
       } else {
         setScrapeError(result.error || "لم يتم العثور على مصدر الفيديو");

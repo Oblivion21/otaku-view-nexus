@@ -11,6 +11,11 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import {
+  buildEpisodeCacheUpsertPayload,
+  buildEpisodeRefreshFailureUpdate,
+  resolveCanonicalEpisodePageUrl,
+} from './cachePersistence.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -55,7 +60,7 @@ type ResolveEpisodeSuccess = {
   cached: boolean
   videoSources: VideoSource[]
   usedEpisodeUrl: string | null
-  savedEpisodePageUrl: string | null
+  resolvedEpisodePageUrl: string | null
   resolutionStepUsed: ResolveStep
   debug: Record<string, unknown>
 }
@@ -138,7 +143,7 @@ async function callRemoteResolveByUrl(
     return {
       result: {
         videoUrl: payload.video_url,
-        episodePageUrl: payload.episode_page_url || episodeUrl,
+        episodePageUrl: payload.episode_page_url || null,
       },
       error: null,
     }
@@ -801,7 +806,7 @@ async function resolveAndCacheEpisode({
   let dbEpisodePageUrl: string | null = null
   const providedEpisodeUrl = directEpisodeUrl ? String(directEpisodeUrl) : null
   let resolutionStepUsed: ResolveStep = null
-  let savedEpisodePageUrl: string | null = null
+  let existingEpisode: { id?: string | null; episode_page_url?: string | null } | null = null
 
   if (!forceRefresh && supabase && malId) {
     const { data: cached } = await supabase
@@ -812,6 +817,8 @@ async function resolveAndCacheEpisode({
       .eq('is_active', true)
       .single()
 
+    existingEpisode = cached ?? null
+
     if (cached?.video_sources && cached.video_sources.length > 0) {
       const cachedScrapedAt = typeof cached?.scraped_at === 'string'
         ? String(cached.scraped_at)
@@ -820,6 +827,9 @@ async function resolveAndCacheEpisode({
 
       if (isFreshCache && hasUsableCachedVideoSources(cached.video_sources)) {
         console.log(`[Cache] Found cached episode: mal_id=${malId}, ep=${episodeNumber}`)
+        const resolvedEpisodePageUrl = typeof cached?.episode_page_url === 'string'
+          ? String(cached.episode_page_url)
+          : null
         return {
           ok: true,
           cached: true,
@@ -827,7 +837,7 @@ async function resolveAndCacheEpisode({
           usedEpisodeUrl: typeof cached?.episode_page_url === 'string'
             ? String(cached.episode_page_url)
             : providedEpisodeUrl,
-          savedEpisodePageUrl: null,
+          resolvedEpisodePageUrl,
           resolutionStepUsed: null,
           debug: {
             method: 'cache',
@@ -837,7 +847,7 @@ async function resolveAndCacheEpisode({
             db_episode_page_url: typeof cached?.episode_page_url === 'string'
               ? String(cached.episode_page_url)
               : null,
-            saved_episode_page_url: null,
+            persisted_episode_page_url: resolvedEpisodePageUrl,
             raw_episode_number: rawEpisodeNumber ?? null,
             normalized_episode_number: episodeNumber,
             episode_candidates: [],
@@ -849,22 +859,24 @@ async function resolveAndCacheEpisode({
     }
   }
 
-  if (!directUrlOnly && supabase && malId) {
+  if (supabase && malId && !existingEpisode) {
     try {
       const { data: dbEpisode } = await supabase
         .from('anime_episodes')
-        .select('episode_page_url')
+        .select('id, episode_page_url')
         .eq('mal_id', malId)
         .eq('episode_number', episodeNumber)
         .eq('is_active', true)
         .maybeSingle()
 
-      if (dbEpisode && typeof dbEpisode?.episode_page_url === 'string') {
-        dbEpisodePageUrl = String(dbEpisode.episode_page_url)
-      }
+      existingEpisode = dbEpisode ?? null
     } catch {
       // Keep DB link optional.
     }
+  }
+
+  if (existingEpisode && typeof existingEpisode.episode_page_url === 'string') {
+    dbEpisodePageUrl = String(existingEpisode.episode_page_url)
   }
 
   let episodeCandidates: string[] = []
@@ -877,6 +889,8 @@ async function resolveAndCacheEpisode({
 
   let videoSources: VideoSource[] = []
   let usedEpisodeUrl: string | null = null
+  let remoteEpisodePageUrl: string | null = null
+  let matchedCandidateEpisodeUrl: string | null = null
   let lastEpisodeError: string | undefined
   let selectedCandidateCount = 0
   let selectedTopQuality: string | null = null
@@ -909,7 +923,9 @@ async function resolveAndCacheEpisode({
           quality: isSignedVid3rbVideo(resolvedChosenUrl) ? '1080p' : chosenQuality,
         },
       ]
-      usedEpisodeUrl = remoteResponse.result.episodePageUrl || episodeUrl
+      remoteEpisodePageUrl = remoteResponse.result.episodePageUrl
+      usedEpisodeUrl = remoteEpisodePageUrl || episodeUrl
+      matchedCandidateEpisodeUrl = episodeUrl
       selectedCandidateCount = 1
       selectedTopQuality = videoSources[0].quality
       selectedTopHost = hostFromUrl(videoSources[0]?.url || '')
@@ -934,8 +950,8 @@ async function resolveAndCacheEpisode({
       animeSlug = slugMatch[1].replace(/-episode-\d+$/, '')
     }
     resolved = await tryResolveFromCandidates(episodeCandidates)
-    if (resolved && usedEpisodeUrl) {
-      resolutionStepUsed = providedCandidates.includes(usedEpisodeUrl) ? 'provided_link' : 'db_link'
+    if (resolved && matchedCandidateEpisodeUrl) {
+      resolutionStepUsed = providedCandidates.includes(matchedCandidateEpisodeUrl) ? 'provided_link' : 'db_link'
     }
   }
 
@@ -998,7 +1014,8 @@ async function resolveAndCacheEpisode({
             quality: isSignedVid3rbVideo(resolvedChosenUrl) ? '1080p' : qualityFromUrl(resolvedChosenUrl),
           },
         ]
-        usedEpisodeUrl = remoteByName.result.episodePageUrl
+        remoteEpisodePageUrl = remoteByName.result.episodePageUrl
+        usedEpisodeUrl = remoteEpisodePageUrl
         animeSlug = remoteByName.result.episodePageUrl?.match(/anime3rb\.com\/episode\/([^/?#]+)/)?.[1]?.replace(/-episode-\d+$/, '') || null
         selectedCandidateCount = 1
         selectedTopQuality = videoSources[0].quality
@@ -1021,6 +1038,28 @@ async function resolveAndCacheEpisode({
   }
 
   if (!resolved || videoSources.length === 0) {
+    const failedRefreshUpdate = buildEpisodeRefreshFailureUpdate({
+      hasExistingEpisode: Boolean(existingEpisode),
+      timestamp: new Date().toISOString(),
+    })
+    let clearedCachedPlayback = false
+
+    if (failedRefreshUpdate && supabase && malId) {
+      const { error: clearError } = await supabase
+        .from('anime_episodes')
+        .update(failedRefreshUpdate)
+        .eq('mal_id', malId)
+        .eq('episode_number', episodeNumber)
+        .eq('is_active', true)
+
+      if (clearError) {
+        console.error('[Cache] Failed to clear stale playback cache:', clearError.message)
+      } else {
+        clearedCachedPlayback = true
+        console.log(`[Cache] Cleared stale playback cache: mal_id=${malId}, ep=${episodeNumber}`)
+      }
+    }
+
     return {
       ok: false,
       error: 'No direct video URLs found on candidate episode pages',
@@ -1029,7 +1068,9 @@ async function resolveAndCacheEpisode({
         resolution_step_used: resolutionStepUsed,
         provided_episode_url: providedEpisodeUrl,
         db_episode_page_url: dbEpisodePageUrl,
-        saved_episode_page_url: savedEpisodePageUrl,
+        used_episode_url: usedEpisodeUrl,
+        persisted_episode_page_url: dbEpisodePageUrl,
+        cleared_cached_playback: clearedCachedPlayback,
         animeSlug,
         search_fallback_used: searchFallbackUsed,
         search_skipped_after_direct_candidate: searchSkippedAfterDirectCandidate,
@@ -1051,25 +1092,22 @@ async function resolveAndCacheEpisode({
 
   console.log(`[Step 3] Found ${videoSources.length} video source(s)`)
 
-  if (usedEpisodeUrl && resolutionStepUsed === 'search') {
-    savedEpisodePageUrl = usedEpisodeUrl
-  }
+  const resolvedEpisodePageUrl = resolveCanonicalEpisodePageUrl({
+    remoteEpisodePageUrl,
+    usedEpisodeUrl,
+    existingEpisodePageUrl: dbEpisodePageUrl,
+  })
+  let persistedEpisodePageUrl = dbEpisodePageUrl
 
   if (supabase && malId) {
-    const upsertPayload: Record<string, unknown> = {
-      mal_id: malId,
-      episode_number: episodeNumber,
-      video_url: videoSources[0].url,
-      video_sources: videoSources,
-      quality: videoSources[0].quality,
-      subtitle_language: 'ar',
-      is_active: true,
-      scraped_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-    if (savedEpisodePageUrl) {
-      upsertPayload.episode_page_url = savedEpisodePageUrl
-    }
+    const cacheTimestamp = new Date().toISOString()
+    const upsertPayload = buildEpisodeCacheUpsertPayload({
+      malId,
+      episodeNumber,
+      videoSources,
+      resolvedEpisodePageUrl,
+      timestamp: cacheTimestamp,
+    })
 
     const { error: upsertError } = await supabase
       .from('anime_episodes')
@@ -1081,6 +1119,7 @@ async function resolveAndCacheEpisode({
     if (upsertError) {
       console.error('[Cache] Failed to cache episode:', upsertError.message)
     } else {
+      persistedEpisodePageUrl = resolvedEpisodePageUrl
       console.log(`[Cache] Cached episode: mal_id=${malId}, ep=${episodeNumber}`)
     }
   }
@@ -1090,14 +1129,14 @@ async function resolveAndCacheEpisode({
     cached: false,
     videoSources,
     usedEpisodeUrl,
-    savedEpisodePageUrl,
+    resolvedEpisodePageUrl,
     resolutionStepUsed,
     debug: {
       method: 'remote',
       resolution_step_used: resolutionStepUsed,
       provided_episode_url: providedEpisodeUrl,
       db_episode_page_url: dbEpisodePageUrl,
-      saved_episode_page_url: savedEpisodePageUrl,
+      persisted_episode_page_url: persistedEpisodePageUrl,
       search_fallback_used: searchFallbackUsed,
       search_skipped_after_direct_candidate: searchSkippedAfterDirectCandidate,
       remote_scraper_url: remoteScraperUrl,
@@ -1258,6 +1297,7 @@ serve(async (req: Request) => {
     return jsonResponse({
       video_sources: result.videoSources,
       cached: result.cached,
+      episode_page_url: result.resolvedEpisodePageUrl,
       debug: {
         ...result.debug,
         prefetch_scheduled: canPrefetch,

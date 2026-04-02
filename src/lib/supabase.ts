@@ -125,26 +125,27 @@ export async function scrapeAnime3rbEpisode(
   episodeNumber: number,
   malId: number,
   forceRefresh = true,
-): Promise<{ video_sources: VideoSource[] | null; cached: boolean; error?: string }> {
-  if (!supabase) return { video_sources: null, cached: false, error: 'Supabase not configured' }
+): Promise<{ video_sources: VideoSource[] | null; cached: boolean; episode_page_url?: string | null; error?: string }> {
+  if (!supabase) return { video_sources: null, cached: false, episode_page_url: null, error: 'Supabase not configured' }
 
   try {
     const { data, error } = await supabase.functions.invoke('scrape-anime3rb', {
       body: { animeTitle, animeTitleEnglish, episodeNumber, malId, forceRefresh },
     })
 
-    if (error) return { video_sources: null, cached: false, error: error.message }
-    if (data?.error) return { video_sources: null, cached: false, error: data.error }
+    if (error) return { video_sources: null, cached: false, episode_page_url: null, error: error.message }
+    if (data?.error) return { video_sources: null, cached: false, episode_page_url: null, error: data.error }
     if (!data?.video_sources || data.video_sources.length === 0) {
-      return { video_sources: null, cached: false, error: 'No video sources found' }
+      return { video_sources: null, cached: false, episode_page_url: null, error: 'No video sources found' }
     }
 
     return {
       video_sources: data.video_sources,
       cached: data.cached || false,
+      episode_page_url: typeof data?.episode_page_url === 'string' ? data.episode_page_url : null,
     }
   } catch (err: any) {
-    return { video_sources: null, cached: false, error: err.message || 'Failed to scrape episode' }
+    return { video_sources: null, cached: false, episode_page_url: null, error: err.message || 'Failed to scrape episode' }
   }
 }
 
