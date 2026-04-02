@@ -4,6 +4,8 @@ import AnimeCard from "@/components/AnimeCard";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "lucide-react";
+import { useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 const DAYS = [
   { name: "الإثنين", value: "monday", en: "Monday" },
@@ -29,6 +31,7 @@ export default function Schedule() {
     queryFn: () => fetchSchedule(selectedDay.value),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
+  const { data: artworkMap } = useMultipleAnimeTmdbArtwork(data?.data);
 
   return (
     <Layout>
@@ -75,7 +78,11 @@ export default function Schedule() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {data.data.map((anime: any) => (
-                <AnimeCard key={anime.mal_id} anime={anime} />
+                <AnimeCard
+                  key={anime.mal_id}
+                  anime={anime}
+                  artworkUrl={resolveTitleArtworkUrl(artworkMap?.get(anime.mal_id), anime, "poster")}
+                />
               ))}
             </div>
           </>

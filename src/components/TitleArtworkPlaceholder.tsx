@@ -29,18 +29,12 @@ export default function TitleArtworkPlaceholder({
         <div className="rounded-full border border-white/20 bg-white/10 p-3">
           <Film className={cn("text-white/85", variant === "banner" ? "h-8 w-8" : "h-6 w-6")} />
         </div>
-        <div className="space-y-1">
+        <div>
           <p className={cn(
             "mx-auto line-clamp-2 font-semibold text-white/95",
             variant === "banner" ? "max-w-2xl text-lg md:text-2xl" : "text-sm",
           )}>
             {title}
-          </p>
-          <p className={cn(
-            "text-white/65",
-            variant === "banner" ? "text-sm" : "text-xs",
-          )}>
-            لا تتوفر صورة من TMDB حالياً
           </p>
         </div>
       </div>

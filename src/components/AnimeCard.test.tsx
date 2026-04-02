@@ -76,10 +76,38 @@ describe("AnimeCard", () => {
   });
 
   it("renders a placeholder when no artwork url is available", () => {
-    const { container } = renderCard(null);
+    const animeWithoutArtwork: JikanAnime = {
+      ...anime,
+      images: {
+        jpg: {
+          image_url: "",
+          large_image_url: "",
+        },
+        webp: {
+          image_url: "",
+          large_image_url: "",
+        },
+      },
+    };
+
+    const { container } = render(
+      <MemoryRouter>
+        <AnimeCard anime={animeWithoutArtwork} artworkUrl={null} />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByLabelText("Naruto artwork placeholder")).toBeInTheDocument();
     expect(screen.queryByAltText("Naruto")).not.toBeInTheDocument();
     expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("falls back to Jikan artwork when no parent artwork url is provided", () => {
+    renderCard(null);
+
+    expect(screen.getByAltText("Naruto")).toHaveAttribute(
+      "src",
+      expect.stringContaining("jikan.example.com/naruto-large.webp"),
+    );
+    expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
   });
 });

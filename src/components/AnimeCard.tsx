@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import type { JikanAnime } from "@/lib/jikan";
 import { GENRE_AR, TYPE_MAP, getVisibleGenres } from "@/lib/jikan";
 import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
+import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 interface AnimeCardProps {
   anime: JikanAnime;
@@ -11,15 +12,17 @@ interface AnimeCardProps {
 }
 
 export default function AnimeCard({ anime, artworkUrl = null }: AnimeCardProps) {
+  const resolvedArtworkUrl = artworkUrl || resolveTitleArtworkUrl(null, anime, "poster");
+
   return (
     <Link
       to={`/anime/${anime.mal_id}`}
       className="group block rounded-lg overflow-hidden bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5"
     >
       <div className="relative aspect-[3/4] overflow-hidden">
-        {artworkUrl ? (
+        {resolvedArtworkUrl ? (
           <img
-            src={artworkUrl}
+            src={resolvedArtworkUrl}
             alt={anime.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             loading="lazy"

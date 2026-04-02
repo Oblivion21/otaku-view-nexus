@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 async function fetchUpcoming(page: number) {
   const response = await fetch(`https://api.jikan.moe/v4/seasons/upcoming?page=${page}`);
@@ -20,6 +22,7 @@ export default function Upcoming() {
     queryFn: () => fetchUpcoming(page),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
+  const { data: artworkMap } = useMultipleAnimeTmdbArtwork(data?.data);
 
   const hasNextPage = data?.pagination?.has_next_page;
   const totalPages = data?.pagination?.last_visible_page || 1;
@@ -53,7 +56,10 @@ export default function Upcoming() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {data.data.map((anime: any) => (
                 <div key={anime.mal_id} className="relative">
-                  <AnimeCard anime={anime} />
+                  <AnimeCard
+                    anime={anime}
+                    artworkUrl={resolveTitleArtworkUrl(artworkMap?.get(anime.mal_id), anime, "poster")}
+                  />
                   {anime.aired?.from && (
                     <div className="absolute top-2 left-2 bg-primary text-primary-foreground px-2 py-1 rounded text-xs font-bold shadow-lg">
                       {new Date(anime.aired.from).toLocaleDateString('ar-EG', {
