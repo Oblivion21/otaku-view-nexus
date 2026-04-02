@@ -114,6 +114,10 @@ describe("EpisodeWatch", () => {
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://vidfast.pro/tv/321/1/1"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("theme=%2300D0FF"));
+    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("autoNext="));
+    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("nextButton="));
+    expect(screen.getByRole("link", { name: /الحلقة السابقة/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /الحلقة التالية/ })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(supabaseMocks.getEpisodeData).toHaveBeenCalledWith(1, 1);
