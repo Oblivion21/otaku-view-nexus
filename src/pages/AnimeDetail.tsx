@@ -56,6 +56,42 @@ export default function AnimeDetail() {
   const isDetectiveConan = animeId === 235; // Detective Conan MAL ID
   const anime = data?.data;
   const { data: tmdbArtwork } = useAnimeTmdbArtwork(anime);
+  const isSeriesType = anime?.type === "TV" || anime?.type === "OVA" || anime?.type === "ONA" || anime?.type === "Special";
+  const isMovie = anime?.type === "Movie";
+  const dedupedSupabaseEpisodes = dedupeSupabaseEpisodes(supabaseEpisodes)
+    .sort((a, b) => a.episode_number - b.episode_number);
+  const dedupedPublicEpisodes = dedupeJikanEpisodes(episodes?.data);
+  const hasSupabaseEpisodes = dedupedSupabaseEpisodes.length > 0;
+  const hasPublicEpisodes = dedupedPublicEpisodes.length > 0;
+  const supabaseEpisodeMap = new Map(
+    dedupedSupabaseEpisodes.map((ep) => [ep.episode_number, ep])
+  );
+  const movieEpisode = supabaseEpisodeMap.get(1) ?? null;
+  const canWatchMovie = Boolean(
+    anime && isMovie && loadedSupabaseEpisodes && hasAnimeAlreadyAired(anime) && hasPlayableEpisodeData(movieEpisode),
+  );
+  const canWatchSeries = Boolean(anime && isSeriesType && (hasSupabaseEpisodes || hasPublicEpisodes));
+  const rawEpisodeRailItems = hasPublicEpisodes
+    ? dedupedPublicEpisodes.slice(0, 24).map((ep) => {
+        const dbEpisode = supabaseEpisodeMap.get(ep.mal_id);
+        return {
+          episodeNumber: ep.mal_id,
+          title: ep.title || `الحلقة ${ep.mal_id}`,
+          styleTarget: dbEpisode || { category: null, tags: [] },
+        };
+      })
+    : dedupedSupabaseEpisodes.slice(0, 24).map((ep) => ({
+        episodeNumber: ep.episode_number,
+        title: `الحلقة ${ep.episode_number}`,
+        styleTarget: ep,
+      }));
+  const episodeNumbers = rawEpisodeRailItems.map((item) => item.episodeNumber);
+  const { data: episodePreviewImageMap } = useAnimeEpisodePreviewImages(
+    animeId,
+    tmdbArtwork,
+    episodeNumbers,
+    canWatchSeries && !isMovie,
+  );
   const recommendationItems = (() => {
     if (!recommendations?.data) return [];
 
@@ -177,40 +213,6 @@ export default function AnimeDetail() {
   );
   const bannerImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "banner");
   const posterImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
-  const isSeriesType = anime.type === "TV" || anime.type === "OVA" || anime.type === "ONA" || anime.type === "Special";
-  const isMovie = anime.type === "Movie";
-  const dedupedSupabaseEpisodes = dedupeSupabaseEpisodes(supabaseEpisodes)
-    .sort((a, b) => a.episode_number - b.episode_number);
-  const dedupedPublicEpisodes = dedupeJikanEpisodes(episodes?.data);
-  const hasSupabaseEpisodes = dedupedSupabaseEpisodes.length > 0;
-  const hasPublicEpisodes = dedupedPublicEpisodes.length > 0;
-  const supabaseEpisodeMap = new Map(
-    dedupedSupabaseEpisodes.map((ep) => [ep.episode_number, ep])
-  );
-  const movieEpisode = supabaseEpisodeMap.get(1) ?? null;
-  const canWatchMovie = isMovie && loadedSupabaseEpisodes && hasAnimeAlreadyAired(anime) && hasPlayableEpisodeData(movieEpisode);
-  const canWatchSeries = isSeriesType && (hasSupabaseEpisodes || hasPublicEpisodes);
-  const rawEpisodeRailItems = hasPublicEpisodes
-    ? dedupedPublicEpisodes.slice(0, 24).map((ep) => {
-        const dbEpisode = supabaseEpisodeMap.get(ep.mal_id);
-        return {
-          episodeNumber: ep.mal_id,
-          title: ep.title || `الحلقة ${ep.mal_id}`,
-          styleTarget: dbEpisode || { category: null, tags: [] },
-        };
-      })
-    : dedupedSupabaseEpisodes.slice(0, 24).map((ep) => ({
-        episodeNumber: ep.episode_number,
-        title: `الحلقة ${ep.episode_number}`,
-        styleTarget: ep,
-      }));
-  const episodeNumbers = rawEpisodeRailItems.map((item) => item.episodeNumber);
-  const { data: episodePreviewImageMap } = useAnimeEpisodePreviewImages(
-    animeId,
-    tmdbArtwork,
-    episodeNumbers,
-    canWatchSeries && !isMovie,
-  );
   const episodeRailItems = rawEpisodeRailItems.map((item) => {
     const style = getEpisodeStyle(item.styleTarget);
 

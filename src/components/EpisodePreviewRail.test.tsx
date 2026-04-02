@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,8 +9,14 @@ const carouselMocks = vi.hoisted(() => ({
   nextSpy: vi.fn(),
 }));
 
+type MockCarouselProps = {
+  children?: ReactNode;
+  dir?: string;
+  className?: string;
+};
+
 vi.mock("@/components/ui/carousel", () => ({
-  Carousel: ({ children, ...props }: any) => {
+  Carousel: ({ children, ...props }: MockCarouselProps) => {
     carouselMocks.carouselSpy(props);
     return (
       <div data-testid="episode-carousel" dir={props.dir} className={props.className}>
@@ -17,13 +24,13 @@ vi.mock("@/components/ui/carousel", () => ({
       </div>
     );
   },
-  CarouselContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  CarouselItem: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  CarouselPrevious: (props: any) => {
+  CarouselContent: ({ children, ...props }: MockCarouselProps) => <div {...props}>{children}</div>,
+  CarouselItem: ({ children, ...props }: MockCarouselProps) => <div {...props}>{children}</div>,
+  CarouselPrevious: (props: MockCarouselProps) => {
     carouselMocks.previousSpy(props);
     return <button type="button">Previous</button>;
   },
-  CarouselNext: (props: any) => {
+  CarouselNext: (props: MockCarouselProps) => {
     carouselMocks.nextSpy(props);
     return <button type="button">Next</button>;
   },

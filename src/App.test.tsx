@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { BrowserRouter, Link, Route, Routes, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const siteAuthMocks = vi.hoisted(() => ({
@@ -13,8 +14,14 @@ const supabaseMocks = vi.hoisted(() => ({
   isMaintenanceMode: vi.fn(),
 }));
 
+const navigationMocks = vi.hoisted(() => ({
+  hardNavigate: vi.fn(),
+  hardReload: vi.fn(),
+}));
+
 vi.mock("@/lib/site-auth", () => siteAuthMocks);
 vi.mock("@/lib/supabase", () => supabaseMocks);
+vi.mock("@/lib/documentNavigation", () => navigationMocks);
 
 vi.mock("./pages/Index", () => ({ default: () => <div>Index Page</div> }));
 vi.mock("./pages/Browse", () => ({ default: () => <div>Browse Page</div> }));
@@ -27,7 +34,35 @@ vi.mock("./pages/Upcoming", () => ({ default: () => <div>Upcoming Page</div> }))
 vi.mock("./pages/NotFound", () => ({ default: () => <div>Not Found</div> }));
 vi.mock("./pages/Maintenance", () => ({ default: () => <div>Maintenance Page</div> }));
 
-import App from "./App";
+import App, { ForceDocumentNavigation } from "./App";
+
+function NavigationHome() {
+  const navigate = useNavigate();
+
+  return (
+    <div>
+      <div>Home Page</div>
+      <Link to="/">Home Link</Link>
+      <Link to="/browse">Browse Link</Link>
+      <button type="button" onClick={() => navigate("/search?q=naruto")}>
+        Programmatic Search
+      </button>
+    </div>
+  );
+}
+
+function NavigationHarness() {
+  return (
+    <BrowserRouter>
+      <ForceDocumentNavigation />
+      <Routes>
+        <Route path="/" element={<NavigationHome />} />
+        <Route path="/browse" element={<div>Browse Page</div>} />
+        <Route path="/search" element={<div>Search Page</div>} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
 
 describe("App site gate", () => {
   beforeEach(() => {
@@ -87,5 +122,64 @@ describe("App site gate", () => {
     });
     expect(siteAuthMocks.clearStoredSiteAccessToken).toHaveBeenCalled();
     expect(await screen.findByText("Private Access")).toBeInTheDocument();
+  });
+});
+
+describe("ForceDocumentNavigation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.history.pushState({}, "", "/");
+  });
+
+  it("forces same-origin link clicks through hard navigation", () => {
+    render(<NavigationHarness />);
+
+    fireEvent.click(screen.getByRole("link", { name: "Browse Link" }));
+
+    expect(navigationMocks.hardNavigate).toHaveBeenCalledWith("/browse");
+    expect(navigationMocks.hardReload).not.toHaveBeenCalled();
+  });
+
+  it("reloads when the current-page link is clicked", () => {
+    render(<NavigationHarness />);
+
+    fireEvent.click(screen.getByRole("link", { name: "Home Link" }));
+
+    expect(navigationMocks.hardReload).toHaveBeenCalledTimes(1);
+    expect(navigationMocks.hardNavigate).not.toHaveBeenCalled();
+  });
+
+  it("forces a hard navigation after programmatic route changes", async () => {
+    render(<NavigationHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Programmatic Search" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Search Page")).toBeInTheDocument();
+    });
+    expect(navigationMocks.hardNavigate).toHaveBeenCalledWith("/search?q=naruto");
+  });
+
+  it("reloads once on browser back navigation", async () => {
+    render(<NavigationHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Programmatic Search" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Search Page")).toBeInTheDocument();
+    });
+
+    navigationMocks.hardNavigate.mockClear();
+    navigationMocks.hardReload.mockClear();
+
+    await act(async () => {
+      window.history.back();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Home Page")).toBeInTheDocument();
+    });
+    expect(navigationMocks.hardReload).toHaveBeenCalledTimes(1);
+    expect(navigationMocks.hardNavigate).not.toHaveBeenCalled();
   });
 });

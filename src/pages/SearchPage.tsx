@@ -3,16 +3,30 @@ import Layout from "@/components/Layout";
 import AnimeGrid from "@/components/AnimeGrid";
 import { useMultipleAnimeTmdbArtwork, useSearchAnime } from "@/hooks/useAnime";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
 import { dedupeAnimeList } from "@/lib/listDeduping";
 import { hasAnyTitleArtwork } from "@/lib/titleArtwork";
 
-export default function SearchPage() {
-  const [searchParams] = useSearchParams();
-  const query = searchParams.get("q") || "";
-  const [page, setPage] = useState(1);
+function parsePageParam(value: string | null) {
+  const page = Number(value);
+  return Number.isInteger(page) && page > 0 ? page : 1;
+}
 
-  useEffect(() => { setPage(1); }, [query]);
+export default function SearchPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const query = searchParams.get("q") || "";
+  const page = parsePageParam(searchParams.get("page"));
+
+  function updatePage(nextPage: number) {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (nextPage <= 1) {
+      nextParams.delete("page");
+    } else {
+      nextParams.set("page", String(nextPage));
+    }
+
+    setSearchParams(nextParams);
+  }
 
   const { data, isLoading } = useSearchAnime(query, page);
   const dedupedAnime = dedupeAnimeList(data?.data);
@@ -37,11 +51,11 @@ export default function SearchPage() {
               artworkMap={artworkMap}
             />
             <div className="flex justify-center gap-3">
-              <Button variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+              <Button variant="outline" disabled={page <= 1} onClick={() => updatePage(page - 1)}>
                 السابق
               </Button>
               <span className="flex items-center text-sm text-muted-foreground">صفحة {page}</span>
-              <Button variant="outline" disabled={!data?.pagination?.has_next_page} onClick={() => setPage((p) => p + 1)}>
+              <Button variant="outline" disabled={!data?.pagination?.has_next_page} onClick={() => updatePage(page + 1)}>
                 التالي
               </Button>
             </div>

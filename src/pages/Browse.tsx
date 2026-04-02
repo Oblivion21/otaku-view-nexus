@@ -6,10 +6,15 @@ import { Button } from "@/components/ui/button";
 import { useTopAnime, useSeasonNow, useAnimeByGenre, useGenres, useTopMovies } from "@/hooks/useAnime";
 import { GENRE_AR } from "@/lib/jikan";
 
+function parsePageParam(value: string | null) {
+  const page = Number(value);
+  return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
 export default function Browse() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get("filter");
-  const [page, setPage] = useState(1);
+  const page = parsePageParam(searchParams.get("page"));
   const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
 
   const { data: genres } = useGenres();
@@ -51,6 +56,18 @@ export default function Browse() {
     ? "الأكثر شعبية"
     : "قائمة الأنمي";
 
+  function updatePage(nextPage: number) {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (nextPage <= 1) {
+      nextParams.delete("page");
+    } else {
+      nextParams.set("page", String(nextPage));
+    }
+
+    setSearchParams(nextParams);
+  }
+
   return (
     <Layout>
       <div className="container py-8 space-y-6">
@@ -59,7 +76,10 @@ export default function Browse() {
           <Button
             size="sm"
             variant={selectedGenre === null ? "default" : "secondary"}
-            onClick={() => { setSelectedGenre(null); setPage(1); }}
+            onClick={() => {
+              setSelectedGenre(null);
+              updatePage(1);
+            }}
           >
             الكل
           </Button>
@@ -68,7 +88,10 @@ export default function Browse() {
               key={g.mal_id}
               size="sm"
               variant={selectedGenre === g.mal_id ? "default" : "secondary"}
-              onClick={() => { setSelectedGenre(g.mal_id); setPage(1); }}
+              onClick={() => {
+                setSelectedGenre(g.mal_id);
+                updatePage(1);
+              }}
             >
               {GENRE_AR[g.name] || g.name}
             </Button>
@@ -82,7 +105,7 @@ export default function Browse() {
           <Button
             variant="outline"
             disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
+            onClick={() => updatePage(page - 1)}
           >
             السابق
           </Button>
@@ -92,7 +115,7 @@ export default function Browse() {
           <Button
             variant="outline"
             disabled={!activeData?.pagination?.has_next_page}
-            onClick={() => setPage((p) => p + 1)}
+            onClick={() => updatePage(page + 1)}
           >
             التالي
           </Button>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Layout from "@/components/Layout";
 import AnimeCard from "@/components/AnimeCard";
 import { useQuery } from "@tanstack/react-query";
@@ -15,8 +15,26 @@ async function fetchUpcoming(page: number) {
   return response.json();
 }
 
+function parsePageParam(value: string | null) {
+  const page = Number(value);
+  return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
 export default function Upcoming() {
-  const [page, setPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = parsePageParam(searchParams.get("page"));
+
+  function updatePage(nextPage: number) {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (nextPage <= 1) {
+      nextParams.delete("page");
+    } else {
+      nextParams.set("page", String(nextPage));
+    }
+
+    setSearchParams(nextParams);
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ["upcoming", page],
@@ -79,7 +97,7 @@ export default function Upcoming() {
             <div className="mt-8 flex justify-center items-center gap-4">
               <Button
                 variant="outline"
-                onClick={() => setPage(p => Math.max(1, p - 1))}
+                onClick={() => updatePage(Math.max(1, page - 1))}
                 disabled={page === 1}
               >
                 <ChevronRight className="h-4 w-4 ml-1" />
@@ -92,7 +110,7 @@ export default function Upcoming() {
 
               <Button
                 variant="outline"
-                onClick={() => setPage(p => p + 1)}
+                onClick={() => updatePage(page + 1)}
                 disabled={!hasNextPage}
               >
                 التالي

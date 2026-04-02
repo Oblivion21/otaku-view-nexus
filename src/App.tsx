@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, useLocation, useNavigationType } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
 import { isMaintenanceMode } from "@/lib/supabase";
+import { hardNavigate, hardReload } from "@/lib/documentNavigation";
 import {
   clearStoredSiteAccessToken,
   getStoredSiteAccessToken,
@@ -38,7 +39,12 @@ function ScrollToTop() {
   return null;
 }
 
-function ForceDocumentNavigation() {
+export function ForceDocumentNavigation() {
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const hasMountedRef = useRef(false);
+  const skipNextLocationEffectRef = useRef(false);
+
   useEffect(() => {
     function handleClick(event: MouseEvent) {
       if (
@@ -91,18 +97,40 @@ function ForceDocumentNavigation() {
       const currentPath = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
 
       event.preventDefault();
+      skipNextLocationEffectRef.current = true;
 
       if (nextPath === currentPath) {
-        window.location.reload();
+        hardReload();
         return;
       }
 
-      window.location.assign(nextPath);
+      hardNavigate(nextPath);
     }
 
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
+    document.addEventListener("click", handleClick, true);
+    return () => document.removeEventListener("click", handleClick, true);
   }, []);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+
+    if (skipNextLocationEffectRef.current) {
+      skipNextLocationEffectRef.current = false;
+      return;
+    }
+
+    const currentPath = `${location.pathname}${location.search}${location.hash}`;
+
+    if (navigationType === "POP") {
+      hardReload();
+      return;
+    }
+
+    hardNavigate(currentPath);
+  }, [location.pathname, location.search, location.hash, navigationType]);
 
   return null;
 }

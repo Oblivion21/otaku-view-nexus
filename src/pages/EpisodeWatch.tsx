@@ -477,6 +477,9 @@ export default function EpisodeWatch() {
               }}
             />
           </div>
+          <p className="text-sm text-muted-foreground">
+            If playback does not start automatically, press play in the embedded player.
+          </p>
         </div>
       );
     }

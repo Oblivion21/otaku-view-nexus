@@ -1,7 +1,9 @@
+import type { ReactNode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JikanAnime } from "@/lib/jikan";
+import type { EpisodePreviewRailItem } from "@/components/EpisodePreviewRail";
 
 const hookMocks = vi.hoisted(() => ({
   useAnimeById: vi.fn(),
@@ -25,24 +27,49 @@ const trailerFallbackMocks = vi.hoisted(() => ({
 
 const animeCardSpy = vi.hoisted(() => vi.fn());
 
+type LayoutProps = {
+  children: ReactNode;
+};
+
+type MockContentRailProps = {
+  title: string;
+  items?: unknown[];
+  emptyMessage: string;
+  renderItem: (item: unknown, index: number) => ReactNode;
+  headerAction?: ReactNode;
+};
+
+type MockEpisodePreviewRailProps = {
+  title: string;
+  items: EpisodePreviewRailItem[];
+  emptyMessage: string;
+  headerActionHref: string;
+  headerActionLabel: string;
+};
+
+type MockAnimeCardProps = {
+  anime: { mal_id: number; title: string };
+  artworkUrl?: string | null;
+};
+
 vi.mock("@/components/Layout", () => ({
-  default: ({ children }: { children: any }) => <div>{children}</div>,
+  default: ({ children }: LayoutProps) => <div>{children}</div>,
 }));
 vi.mock("@/components/ContentRail", () => ({
-  default: ({ title, items, emptyMessage, renderItem, headerAction }: any) => (
+  default: ({ title, items, emptyMessage, renderItem, headerAction }: MockContentRailProps) => (
     <section>
       <div>{title}</div>
       {headerAction}
-      {items?.length ? items.map((item: any, index: number) => <div key={index}>{renderItem(item, index)}</div>) : <p>{emptyMessage}</p>}
+      {items?.length ? items.map((item, index) => <div key={index}>{renderItem(item, index)}</div>) : <p>{emptyMessage}</p>}
     </section>
   ),
 }));
 vi.mock("@/components/EpisodePreviewRail", () => ({
-  default: ({ title, items, emptyMessage, headerActionHref, headerActionLabel }: any) => (
+  default: ({ title, items, emptyMessage, headerActionHref, headerActionLabel }: MockEpisodePreviewRailProps) => (
     <section data-testid="episode-preview-rail">
       <div>{title}</div>
       <a href={headerActionHref}>{headerActionLabel}</a>
-      {items?.length ? items.map((item: any) => (
+      {items?.length ? items.map((item) => (
         <div
           key={item.episodeNumber}
           data-testid={`episode-preview-${item.episodeNumber}`}
@@ -55,7 +82,7 @@ vi.mock("@/components/EpisodePreviewRail", () => ({
   ),
 }));
 vi.mock("@/components/AnimeCard", () => ({
-  default: (props: any) => {
+  default: (props: MockAnimeCardProps) => {
     animeCardSpy(props);
     return (
       <div data-testid={`recommendation-${props.anime.mal_id}`} data-artwork-url={props.artworkUrl || ""}>

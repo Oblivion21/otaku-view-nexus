@@ -132,6 +132,9 @@ describe("EpisodeWatch", () => {
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("episodeSelector="));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("autoplayNextEpisode="));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("overlay="));
+    expect(
+      screen.getByText("If playback does not start automatically, press play in the embedded player."),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /الحلقة السابقة/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /الحلقة التالية/ })).toBeInTheDocument();
 
