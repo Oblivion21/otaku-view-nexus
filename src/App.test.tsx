@@ -14,14 +14,8 @@ const supabaseMocks = vi.hoisted(() => ({
   isMaintenanceMode: vi.fn(),
 }));
 
-const navigationMocks = vi.hoisted(() => ({
-  hardNavigate: vi.fn(),
-  hardReload: vi.fn(),
-}));
-
 vi.mock("@/lib/site-auth", () => siteAuthMocks);
 vi.mock("@/lib/supabase", () => supabaseMocks);
-vi.mock("@/lib/documentNavigation", () => navigationMocks);
 
 vi.mock("./pages/Index", () => ({ default: () => <div>Index Page</div> }));
 vi.mock("./pages/Browse", () => ({ default: () => <div>Browse Page</div> }));
@@ -34,7 +28,7 @@ vi.mock("./pages/Upcoming", () => ({ default: () => <div>Upcoming Page</div> }))
 vi.mock("./pages/NotFound", () => ({ default: () => <div>Not Found</div> }));
 vi.mock("./pages/Maintenance", () => ({ default: () => <div>Maintenance Page</div> }));
 
-import App, { ForceDocumentNavigation } from "./App";
+import App from "./App";
 
 function NavigationHome() {
   const navigate = useNavigate();
@@ -54,7 +48,6 @@ function NavigationHome() {
 function NavigationHarness() {
   return (
     <BrowserRouter>
-      <ForceDocumentNavigation />
       <Routes>
         <Route path="/" element={<NavigationHome />} />
         <Route path="/browse" element={<div>Browse Page</div>} />
@@ -125,31 +118,23 @@ describe("App site gate", () => {
   });
 });
 
-describe("ForceDocumentNavigation", () => {
+describe("App navigation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.history.pushState({}, "", "/");
   });
 
-  it("forces same-origin link clicks through hard navigation", () => {
+  it("navigates to same-origin links without a document reload", async () => {
     render(<NavigationHarness />);
 
     fireEvent.click(screen.getByRole("link", { name: "Browse Link" }));
 
-    expect(navigationMocks.hardNavigate).toHaveBeenCalledWith("/browse");
-    expect(navigationMocks.hardReload).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByText("Browse Page")).toBeInTheDocument();
+    });
   });
 
-  it("reloads when the current-page link is clicked", () => {
-    render(<NavigationHarness />);
-
-    fireEvent.click(screen.getByRole("link", { name: "Home Link" }));
-
-    expect(navigationMocks.hardReload).toHaveBeenCalledTimes(1);
-    expect(navigationMocks.hardNavigate).not.toHaveBeenCalled();
-  });
-
-  it("forces a hard navigation after programmatic route changes", async () => {
+  it("keeps programmatic route changes inside the SPA", async () => {
     render(<NavigationHarness />);
 
     fireEvent.click(screen.getByRole("button", { name: "Programmatic Search" }));
@@ -157,10 +142,9 @@ describe("ForceDocumentNavigation", () => {
     await waitFor(() => {
       expect(screen.getByText("Search Page")).toBeInTheDocument();
     });
-    expect(navigationMocks.hardNavigate).toHaveBeenCalledWith("/search?q=naruto");
   });
 
-  it("reloads once on browser back navigation", async () => {
+  it("supports browser back navigation without forcing a reload", async () => {
     render(<NavigationHarness />);
 
     fireEvent.click(screen.getByRole("button", { name: "Programmatic Search" }));
@@ -168,9 +152,6 @@ describe("ForceDocumentNavigation", () => {
     await waitFor(() => {
       expect(screen.getByText("Search Page")).toBeInTheDocument();
     });
-
-    navigationMocks.hardNavigate.mockClear();
-    navigationMocks.hardReload.mockClear();
 
     await act(async () => {
       window.history.back();
@@ -179,7 +160,5 @@ describe("ForceDocumentNavigation", () => {
     await waitFor(() => {
       expect(screen.getByText("Home Page")).toBeInTheDocument();
     });
-    expect(navigationMocks.hardReload).toHaveBeenCalledTimes(1);
-    expect(navigationMocks.hardNavigate).not.toHaveBeenCalled();
   });
 });

@@ -5,10 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation, useNavigationType } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { isMaintenanceMode } from "@/lib/supabase";
-import { hardNavigate, hardReload } from "@/lib/documentNavigation";
 import {
   clearStoredSiteAccessToken,
   getStoredSiteAccessToken,
@@ -35,102 +34,6 @@ function ScrollToTop() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [pathname]);
-
-  return null;
-}
-
-export function ForceDocumentNavigation() {
-  const location = useLocation();
-  const navigationType = useNavigationType();
-  const hasMountedRef = useRef(false);
-  const skipNextLocationEffectRef = useRef(false);
-
-  useEffect(() => {
-    function handleClick(event: MouseEvent) {
-      if (
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey
-      ) {
-        return;
-      }
-
-      const target = event.target;
-      if (!(target instanceof Element)) {
-        return;
-      }
-
-      const anchor = target.closest("a[href]");
-      if (!(anchor instanceof HTMLAnchorElement)) {
-        return;
-      }
-
-      if (
-        anchor.target === "_blank" ||
-        anchor.hasAttribute("download") ||
-        anchor.getAttribute("rel")?.includes("external")
-      ) {
-        return;
-      }
-
-      const rawHref = anchor.getAttribute("href");
-      if (
-        !rawHref ||
-        rawHref.startsWith("#") ||
-        rawHref.startsWith("mailto:") ||
-        rawHref.startsWith("tel:")
-      ) {
-        return;
-      }
-
-      const nextUrl = new URL(anchor.href, window.location.href);
-      const currentUrl = new URL(window.location.href);
-
-      if (nextUrl.origin !== currentUrl.origin) {
-        return;
-      }
-
-      const nextPath = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
-      const currentPath = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
-
-      event.preventDefault();
-      skipNextLocationEffectRef.current = true;
-
-      if (nextPath === currentPath) {
-        hardReload();
-        return;
-      }
-
-      hardNavigate(nextPath);
-    }
-
-    document.addEventListener("click", handleClick, true);
-    return () => document.removeEventListener("click", handleClick, true);
-  }, []);
-
-  useEffect(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
-      return;
-    }
-
-    if (skipNextLocationEffectRef.current) {
-      skipNextLocationEffectRef.current = false;
-      return;
-    }
-
-    const currentPath = `${location.pathname}${location.search}${location.hash}`;
-
-    if (navigationType === "POP") {
-      hardReload();
-      return;
-    }
-
-    hardNavigate(currentPath);
-  }, [location.pathname, location.search, location.hash, navigationType]);
 
   return null;
 }
@@ -263,7 +166,6 @@ const App = () => {
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <ForceDocumentNavigation />
           <ScrollToTop />
           <Routes>
             <Route path="/" element={<Index />} />
