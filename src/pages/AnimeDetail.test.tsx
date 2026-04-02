@@ -255,6 +255,46 @@ describe("AnimeDetail", () => {
     );
   });
 
+  it("falls back to the Jikan trailer for the background banner when TMDB has no trailer", async () => {
+    hookMocks.useAnimeById.mockReturnValue({
+      data: {
+        data: {
+          ...anime,
+          trailer: {
+            youtube_id: "jikan-trailer-7",
+            url: "https://www.youtube.com/watch?v=jikan-trailer-7",
+            embed_url: "https://www.youtube.com/embed/jikan-trailer-7",
+          },
+        },
+      },
+      isLoading: false,
+    });
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: {
+        tmdbId: 1,
+        mediaType: "tv",
+        posterUrl: "https://image.tmdb.org/t/p/w780/naruto-poster.jpg",
+        backdropUrl: "https://image.tmdb.org/t/p/original/naruto-backdrop.jpg",
+        trailerYoutubeId: null,
+        matchedTitle: "Naruto",
+        seasonNumber: 1,
+        seasonName: null,
+        matchConfidence: "high",
+      },
+    });
+    trailerFallbackMocks.getTrailerYoutubeId.mockImplementation((tmdbId, jikanId) => tmdbId || jikanId || null);
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+    expect(trailerFallbackMocks.getTrailerYoutubeId).toHaveBeenCalledWith(
+      null,
+      "jikan-trailer-7",
+      "https://www.youtube.com/embed/jikan-trailer-7",
+    );
+    expect(screen.getByTitle("Trailer jikan-trailer-7")).toBeInTheDocument();
+  });
+
   it("falls back to Jikan episode thumbnails when TMDB stills are missing", async () => {
     hookMocks.useAnimeEpisodes.mockReturnValue({
       data: {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getAnimeVideoEpisodes,
+  getAnimeRecommendations,
   getGenres,
   getTopAnime,
   getVisibleGenres,
@@ -182,6 +183,48 @@ describe("jikan genre filtering", () => {
             image_url: "https://img.example.com/episode-220.jpg",
           },
         },
+      },
+    ]);
+  });
+
+  it("keeps recommendation entries that omit genres in the Jikan payload", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            entry: {
+              ...baseAnime,
+              mal_id: 2,
+              title: "Partial Recommendation",
+              genres: [],
+            },
+            votes: 42,
+          },
+          {
+            entry: {
+              ...baseAnime,
+              mal_id: 3,
+              title: "Blocked Recommendation",
+              genres: [{ mal_id: 2, name: "School" }],
+            },
+            votes: 8,
+          },
+        ],
+      }),
+    } as Response);
+
+    const result = await getAnimeRecommendations(1);
+
+    expect(result.data).toEqual([
+      {
+        entry: {
+          ...baseAnime,
+          mal_id: 2,
+          title: "Partial Recommendation",
+          genres: [],
+        },
+        votes: 42,
       },
     ]);
   });

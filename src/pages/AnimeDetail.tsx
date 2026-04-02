@@ -1,12 +1,12 @@
 import { useParams, Link } from "react-router-dom";
-import { Star, Calendar, Film, Clock, Building2, Music } from "lucide-react";
+import { Star, Calendar, Film, Clock, Building2 } from "lucide-react";
 import Layout from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import ContentRail from "@/components/ContentRail";
 import EpisodePreviewRail from "@/components/EpisodePreviewRail";
-import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations, useAnimeTmdbArtwork, useAnimeEpisodePreviewImages, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeRelations, useAnimeTmdbArtwork, useAnimeEpisodePreviewImages, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
 import { TrailerBanner } from "@/components/TrailerBanner";
@@ -49,7 +49,6 @@ export default function AnimeDetail() {
   const { data: episodes, isLoading: loadingEp } = useAnimeEpisodes(animeId, 1);
   const { data: recommendations, isLoading: loadingRec } = useAnimeRecommendations(animeId);
   const { data: characters, isLoading: loadingChars } = useAnimeCharacters(animeId);
-  const { data: themes, isLoading: loadingThemes } = useAnimeThemes(animeId);
   const { data: relations, isLoading: loadingRelations } = useAnimeRelations(animeId);
   const [supabaseEpisodes, setSupabaseEpisodes] = useState<AnimeEpisode[]>([]);
   const [loadedSupabaseEpisodes, setLoadedSupabaseEpisodes] = useState(false);
@@ -442,55 +441,6 @@ export default function AnimeDetail() {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">لا توجد بيانات شخصيات متاحة</p>
-          )}
-        </div>
-
-        {/* Theme Songs */}
-        <div className="mt-10 space-y-6">
-          {loadingThemes ? (
-            <div className="space-y-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 rounded-lg" />
-              ))}
-            </div>
-          ) : themes?.data && (themes.data.openings?.length > 0 || themes.data.endings?.length > 0) ? (
-            <>
-              {themes.data.openings?.length > 0 && (
-                <div className="space-y-3">
-                  <h2 className="text-xl font-bold border-r-4 border-primary pr-3 flex items-center gap-2">
-                    <Music className="h-5 w-5 text-primary" />
-                    أغاني الافتتاح
-                  </h2>
-                  <div className="space-y-1.5">
-                    {themes.data.openings.map((op, i) => (
-                      <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-card border border-border">
-                        <span className="text-primary font-bold text-sm w-6 text-center shrink-0">{i + 1}</span>
-                        <span className="text-sm line-clamp-1">{op}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {themes.data.endings?.length > 0 && (
-                <div className="space-y-3">
-                  <h2 className="text-xl font-bold border-r-4 border-primary pr-3 flex items-center gap-2">
-                    <Music className="h-5 w-5 text-primary" />
-                    أغاني الختام
-                  </h2>
-                  <div className="space-y-1.5">
-                    {themes.data.endings.map((ed, i) => (
-                      <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-card border border-border">
-                        <span className="text-primary font-bold text-sm w-6 text-center shrink-0">{i + 1}</span>
-                        <span className="text-sm line-clamp-1">{ed}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">لا توجد أغاني متاحة</p>
           )}
         </div>
 

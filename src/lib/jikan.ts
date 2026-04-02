@@ -191,7 +191,13 @@ export async function getAnimeRecommendations(id: number) {
   const response = await fetchJikan<{ entry: JikanAnime; votes: number }[]>(`/anime/${id}/recommendations`);
   return {
     ...response,
-    data: response.data.filter((item) => !isBlockedAnime(item.entry)),
+    data: response.data.filter((item) => {
+      const genres = item.entry?.genres;
+      if (!Array.isArray(genres) || genres.length === 0) {
+        return true;
+      }
+      return !isBlockedAnime(item.entry);
+    }),
   };
 }
 
