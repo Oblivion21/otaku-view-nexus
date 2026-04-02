@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { dedupeAnimeList } from "@/lib/listDeduping";
 import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 async function fetchUpcoming(page: number) {
@@ -22,7 +23,8 @@ export default function Upcoming() {
     queryFn: () => fetchUpcoming(page),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
-  const { data: artworkMap } = useMultipleAnimeTmdbArtwork(data?.data);
+  const upcomingAnime = dedupeAnimeList(data?.data);
+  const { data: artworkMap } = useMultipleAnimeTmdbArtwork(upcomingAnime);
 
   const hasNextPage = data?.pagination?.has_next_page;
   const totalPages = data?.pagination?.last_visible_page || 1;
@@ -48,13 +50,13 @@ export default function Upcoming() {
               <Skeleton key={i} className="aspect-[2/3] rounded-lg" />
             ))}
           </div>
-        ) : data?.data && data.data.length > 0 ? (
+        ) : upcomingAnime.length > 0 ? (
           <>
             <div className="mb-4 text-sm text-muted-foreground">
               {data.pagination.items.total} أنمي قادم
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-              {data.data.map((anime: any) => (
+              {upcomingAnime.map((anime: any) => (
                 <div key={anime.mal_id} className="relative">
                   <AnimeCard
                     anime={anime}

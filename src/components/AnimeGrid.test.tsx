@@ -73,6 +73,33 @@ const animeList: JikanAnime[] = [
     studios: [],
     genres: [],
   },
+  {
+    mal_id: 2,
+    title: "Bleach Duplicate",
+    title_english: "Bleach Duplicate",
+    title_japanese: "ブリーチ",
+    images: {
+      jpg: { image_url: "https://jikan.example.com/bleach-duplicate.jpg", large_image_url: "https://jikan.example.com/bleach-duplicate-large.jpg" },
+      webp: { image_url: "https://jikan.example.com/bleach-duplicate.webp", large_image_url: "https://jikan.example.com/bleach-duplicate-large.webp" },
+    },
+    trailer: { youtube_id: null, url: null, embed_url: null },
+    synopsis: null,
+    score: null,
+    scored_by: null,
+    rank: null,
+    popularity: null,
+    episodes: 366,
+    status: "Finished Airing",
+    rating: null,
+    type: "TV",
+    source: null,
+    duration: null,
+    aired: { from: null, to: null, string: "" },
+    season: null,
+    year: 2004,
+    studios: [],
+    genres: [],
+  },
 ];
 
 describe("AnimeGrid", () => {
@@ -86,19 +113,20 @@ describe("AnimeGrid", () => {
     });
   });
 
-  it("uses one batched TMDB lookup and falls back to Jikan artwork when TMDB is missing", () => {
+  it("uses one batched TMDB lookup and falls back to placeholders when TMDB is missing", () => {
     render(<AnimeGrid title="Popular" anime={animeList} isLoading={false} />);
 
-    expect(hookMocks.useMultipleAnimeTmdbArtwork).toHaveBeenCalledWith(animeList);
+    expect(hookMocks.useMultipleAnimeTmdbArtwork).toHaveBeenCalledWith(animeList.slice(0, 2));
     expect(screen.getByTestId("card-1")).toBeInTheDocument();
     expect(screen.getByTestId("card-2")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("card-2")).toHaveLength(1);
     expect(animeCardSpy.mock.calls[0][0]).toEqual(expect.objectContaining({
       anime: animeList[0],
       artworkUrl: "https://image.tmdb.org/t/p/w780/naruto-poster.jpg",
     }));
     expect(animeCardSpy.mock.calls[1][0]).toEqual(expect.objectContaining({
       anime: animeList[1],
-      artworkUrl: "https://jikan.example.com/bleach-large.webp",
+      artworkUrl: null,
     }));
   });
 });

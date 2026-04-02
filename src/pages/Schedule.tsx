@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "lucide-react";
 import { useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { dedupeAnimeList } from "@/lib/listDeduping";
 import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 const DAYS = [
@@ -31,7 +32,8 @@ export default function Schedule() {
     queryFn: () => fetchSchedule(selectedDay.value),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
-  const { data: artworkMap } = useMultipleAnimeTmdbArtwork(data?.data);
+  const scheduledAnime = dedupeAnimeList(data?.data);
+  const { data: artworkMap } = useMultipleAnimeTmdbArtwork(scheduledAnime);
 
   return (
     <Layout>
@@ -71,13 +73,13 @@ export default function Schedule() {
               <Skeleton key={i} className="aspect-[2/3] rounded-lg" />
             ))}
           </div>
-        ) : data?.data && data.data.length > 0 ? (
+        ) : scheduledAnime.length > 0 ? (
           <>
             <div className="mb-4 text-sm text-muted-foreground">
-              {data.data.length} أنمي يُعرض يوم {selectedDay.name}
+              {scheduledAnime.length} أنمي يُعرض يوم {selectedDay.name}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-              {data.data.map((anime: any) => (
+              {scheduledAnime.map((anime: any) => (
                 <AnimeCard
                   key={anime.mal_id}
                   anime={anime}

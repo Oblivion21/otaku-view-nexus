@@ -66,11 +66,11 @@ describe("AnimeCard", () => {
   });
 
   it("renders a fallback artwork url when the parent resolves one", () => {
-    renderCard("https://jikan.example.com/naruto-large.webp");
+    renderCard("https://image.tmdb.org/t/p/w780/naruto-poster.jpg");
 
     expect(screen.getByAltText("Naruto")).toHaveAttribute(
       "src",
-      expect.stringContaining("jikan.example.com/naruto-large.webp"),
+      expect.stringContaining("image.tmdb.org/t/p/w780/naruto-poster.jpg"),
     );
     expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
   });
@@ -101,13 +101,10 @@ describe("AnimeCard", () => {
     expect(container.querySelector("img")).toBeNull();
   });
 
-  it("falls back to Jikan artwork when no parent artwork url is provided", () => {
+  it("renders a placeholder when no TMDB artwork url is provided", () => {
     renderCard(null);
 
-    expect(screen.getByAltText("Naruto")).toHaveAttribute(
-      "src",
-      expect.stringContaining("jikan.example.com/naruto-large.webp"),
-    );
-    expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Naruto artwork placeholder")).toBeInTheDocument();
+    expect(screen.queryByAltText("Naruto")).not.toBeInTheDocument();
   });
 });

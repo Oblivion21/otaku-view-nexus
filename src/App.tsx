@@ -38,6 +38,75 @@ function ScrollToTop() {
   return null;
 }
 
+function ForceDocumentNavigation() {
+  useEffect(() => {
+    function handleClick(event: MouseEvent) {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      const anchor = target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) {
+        return;
+      }
+
+      if (
+        anchor.target === "_blank" ||
+        anchor.hasAttribute("download") ||
+        anchor.getAttribute("rel")?.includes("external")
+      ) {
+        return;
+      }
+
+      const rawHref = anchor.getAttribute("href");
+      if (
+        !rawHref ||
+        rawHref.startsWith("#") ||
+        rawHref.startsWith("mailto:") ||
+        rawHref.startsWith("tel:")
+      ) {
+        return;
+      }
+
+      const nextUrl = new URL(anchor.href, window.location.href);
+      const currentUrl = new URL(window.location.href);
+
+      if (nextUrl.origin !== currentUrl.origin) {
+        return;
+      }
+
+      const nextPath = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+      const currentPath = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+
+      event.preventDefault();
+
+      if (nextPath === currentPath) {
+        window.location.reload();
+        return;
+      }
+
+      window.location.assign(nextPath);
+    }
+
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, []);
+
+  return null;
+}
+
 const App = () => {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
@@ -166,6 +235,7 @@ const App = () => {
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <ForceDocumentNavigation />
           <ScrollToTop />
           <Routes>
             <Route path="/" element={<Index />} />

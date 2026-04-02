@@ -90,14 +90,14 @@ describe("HeroCarousel", () => {
     expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
   });
 
-  it("falls back to Jikan artwork when TMDB artwork is missing", async () => {
+  it("falls back to the placeholder when TMDB artwork is missing", async () => {
     tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
 
     const { container } = renderCarousel();
 
     await screen.findByText("Naruto");
-    expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
-    expect(container.querySelector('[style*="jikan.example.com/naruto-large.webp"]')).not.toBeNull();
+    expect(screen.getByLabelText("Naruto artwork placeholder")).toBeInTheDocument();
+    expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
   });
 
   it("renders fallback hero data while featured payload is still pending", async () => {

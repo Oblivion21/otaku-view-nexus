@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 import { useFeaturedCarousel, useTopAnime } from "@/hooks/useAnime";
 import { GENRE_AR, getVisibleGenres } from "@/lib/jikan";
+import { dedupeAnimeList } from "@/lib/listDeduping";
 import type { FeaturedCarouselAnime } from "@/lib/featuredCarousel";
 import { getMultipleAnimeTmdbArtwork, type TmdbAnimeArtwork } from "@/lib/tmdb";
 import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
@@ -74,7 +75,7 @@ export default function HeroCarousel() {
   }
 
   useEffect(() => {
-    const fallbackAnime = defaultData?.data?.slice(0, 5) ?? [];
+    const fallbackAnime = dedupeAnimeList(defaultData?.data?.slice(0, 5) ?? []);
 
     if (fallbackAnime.length > 0 && activeSourceRef.current !== "featured") {
       showCarouselItems(fallbackAnime, "default");
@@ -89,12 +90,14 @@ export default function HeroCarousel() {
   }, [defaultData, defaultLoading]);
 
   useEffect(() => {
-    if (!featuredCarouselItems?.length) {
+    const dedupedFeaturedItems = dedupeAnimeList(featuredCarouselItems);
+
+    if (!dedupedFeaturedItems.length) {
       return;
     }
 
-    showCarouselItems(featuredCarouselItems, "featured");
-    void hydrateCarouselItems(featuredCarouselItems, "featured");
+    showCarouselItems(dedupedFeaturedItems, "featured");
+    void hydrateCarouselItems(dedupedFeaturedItems, "featured");
   }, [featuredCarouselItems]);
 
   useEffect(() => {

@@ -4,12 +4,14 @@ import Layout from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import ContentRail from "@/components/ContentRail";
 import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations, useAnimeTmdbArtwork, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
 import { TrailerBanner } from "@/components/TrailerBanner";
 import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, getVisibleGenres, isBlockedAnime, type JikanAnime } from "@/lib/jikan";
+import { dedupeAnimeList, dedupeJikanEpisodes, dedupeRelationEntries, dedupeSupabaseEpisodes } from "@/lib/listDeduping";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
 import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
@@ -44,8 +46,7 @@ export default function AnimeDetail() {
   const { id } = useParams<{ id: string }>();
   const animeId = Number(id);
   const { data, isLoading } = useAnimeById(animeId);
-  const [epPage, setEpPage] = useState(1);
-  const { data: episodes, isLoading: loadingEp } = useAnimeEpisodes(animeId, epPage);
+  const { data: episodes, isLoading: loadingEp } = useAnimeEpisodes(animeId, 1);
   const { data: recommendations, isLoading: loadingRec } = useAnimeRecommendations(animeId);
   const { data: characters, isLoading: loadingChars } = useAnimeCharacters(animeId);
   const { data: themes, isLoading: loadingThemes } = useAnimeThemes(animeId);
@@ -55,12 +56,23 @@ export default function AnimeDetail() {
   const isDetectiveConan = animeId === 235; // Detective Conan MAL ID
   const anime = data?.data;
   const { data: tmdbArtwork } = useAnimeTmdbArtwork(anime);
-  const recommendationItems = recommendations?.data
-    ? [...recommendations.data]
-        .sort((a, b) => b.votes - a.votes)
-        .slice(0, 12)
-    : [];
-  const recommendationAnime = recommendationItems.map((rec) => rec.entry as JikanAnime);
+  const recommendationItems = (() => {
+    if (!recommendations?.data) return [];
+
+    const seen = new Set<number>();
+    return [...recommendations.data]
+      .sort((a, b) => b.votes - a.votes)
+      .filter((rec) => {
+        const malId = rec.entry.mal_id;
+        if (seen.has(malId)) {
+          return false;
+        }
+        seen.add(malId);
+        return true;
+      })
+      .slice(0, 12);
+  })();
+  const recommendationAnime = dedupeAnimeList(recommendationItems.map((rec) => rec.entry as JikanAnime));
   const { data: recommendationArtworkMap } = useMultipleAnimeTmdbArtwork(recommendationAnime);
 
   // Fetch episodes from Supabase database
@@ -140,14 +152,41 @@ export default function AnimeDetail() {
   const posterImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
   const isSeriesType = anime.type === "TV" || anime.type === "OVA" || anime.type === "ONA" || anime.type === "Special";
   const isMovie = anime.type === "Movie";
-  const hasSupabaseEpisodes = supabaseEpisodes.length > 0;
-  const hasPublicEpisodes = Boolean(episodes?.data && episodes.data.length > 0);
+  const dedupedSupabaseEpisodes = dedupeSupabaseEpisodes(supabaseEpisodes)
+    .sort((a, b) => a.episode_number - b.episode_number);
+  const dedupedPublicEpisodes = dedupeJikanEpisodes(episodes?.data);
+  const hasSupabaseEpisodes = dedupedSupabaseEpisodes.length > 0;
+  const hasPublicEpisodes = dedupedPublicEpisodes.length > 0;
   const supabaseEpisodeMap = new Map(
-    supabaseEpisodes.map((ep) => [ep.episode_number, ep])
+    dedupedSupabaseEpisodes.map((ep) => [ep.episode_number, ep])
   );
   const movieEpisode = supabaseEpisodeMap.get(1) ?? null;
   const canWatchMovie = isMovie && loadedSupabaseEpisodes && hasAnimeAlreadyAired(anime) && hasPlayableEpisodeData(movieEpisode);
   const canWatchSeries = isSeriesType && (hasSupabaseEpisodes || hasPublicEpisodes);
+  const episodeRailItems = hasPublicEpisodes
+    ? dedupedPublicEpisodes.slice(0, 24).map((ep) => {
+        const dbEpisode = supabaseEpisodeMap.get(ep.mal_id);
+        return {
+          episodeNumber: ep.mal_id,
+          title: ep.title || `الحلقة ${ep.mal_id}`,
+          styleTarget: dbEpisode || { category: null, tags: [] },
+        };
+      })
+    : dedupedSupabaseEpisodes.slice(0, 24).map((ep) => ({
+        episodeNumber: ep.episode_number,
+        title: `الحلقة ${ep.episode_number}`,
+        styleTarget: ep,
+      }));
+  const relatedGroups = (relations?.data || [])
+    .map((group) => {
+      const animeEntries = dedupeRelationEntries(group.entry.filter((entry) => entry.type === "anime"));
+      return {
+        relation: group.relation,
+        label: RELATION_TYPE_AR[group.relation] || group.relation,
+        entries: animeEntries,
+      };
+    })
+    .filter((group) => group.entries.length > 0);
 
   return (
     <Layout>
@@ -287,7 +326,6 @@ export default function AnimeDetail() {
         {/* Episode list */}
         {canWatchSeries && (
         <div className="mt-10 space-y-4">
-          <h2 className="text-xl font-bold border-r-4 border-primary pr-3">قائمة الحلقات</h2>
 
           {/* Show color legend for Detective Conan */}
           {isDetectiveConan && hasSupabaseEpisodes && (
@@ -300,71 +338,36 @@ export default function AnimeDetail() {
             </div>
           )}
 
-          {loadingEp && !hasSupabaseEpisodes ? (
-            <div className="space-y-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 rounded-lg" />
-              ))}
-            </div>
-          ) : hasPublicEpisodes ? (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                {episodes.data.map((ep) => {
-                    const dbEpisode = supabaseEpisodeMap.get(ep.mal_id);
-                    const style = getEpisodeStyle(dbEpisode || ep);
-                    return (
-                      <Link
-                        key={ep.mal_id}
-                        to={`/watch/${animeId}/${ep.mal_id}`}
-                        className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-colors hover:bg-secondary/50 ${style.background} ${style.border}`}
-                      >
-                        <span className="text-primary font-bold text-sm w-8 text-center shrink-0">
-                          {ep.mal_id}
-                        </span>
-                        <span className="text-sm line-clamp-1 flex-1">
-                          {ep.title || `الحلقة ${ep.mal_id}`}
-                        </span>
-                      </Link>
-                    );
-                  })}
-              </div>
-
-              {episodes.pagination && (
-                <div className="flex justify-center gap-3 mt-4">
-                  <Button variant="outline" disabled={epPage <= 1} onClick={() => setEpPage((p) => p - 1)}>
-                    السابق
-                  </Button>
-                  <span className="flex items-center text-sm text-muted-foreground">صفحة {epPage}</span>
-                  <Button variant="outline" disabled={!episodes.pagination.has_next_page} onClick={() => setEpPage((p) => p + 1)}>
-                    التالي
-                  </Button>
-                </div>
-              )}
-            </>
-          ) : hasSupabaseEpisodes ? (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                {supabaseEpisodes
-                  .sort((a, b) => a.episode_number - b.episode_number)
-                  .map((ep) => (
-                  <Link
-                    key={ep.id}
-                    to={`/watch/${animeId}/${ep.episode_number}`}
-                    className={`flex items-center gap-3 p-3 rounded-lg border-2 hover:bg-secondary/50 transition-colors ${getEpisodeStyle(ep).background} ${getEpisodeStyle(ep).border}`}
-                  >
-                    <span className="text-primary font-bold text-base w-10 text-center shrink-0">
-                      {ep.episode_number}
+          <ContentRail
+            title="قائمة الحلقات"
+            loading={loadingEp && !hasSupabaseEpisodes}
+            items={episodeRailItems}
+            emptyMessage="لا توجد حلقات متاحة"
+            itemClassName="basis-[86%] sm:basis-[58%] lg:basis-[42%] xl:basis-[34%]"
+            headerAction={(
+              <Button asChild variant="outline" size="sm">
+                <Link to={`/watch/${anime.mal_id}/1`}>عرض كل الحلقات</Link>
+              </Button>
+            )}
+            renderItem={(item) => {
+              const style = getEpisodeStyle(item.styleTarget);
+              return (
+                <Link
+                  to={`/watch/${animeId}/${item.episodeNumber}`}
+                  className={`block h-full rounded-xl border-2 p-4 transition-colors hover:bg-secondary/50 ${style.background} ${style.border}`}
+                >
+                  <div className="flex h-full flex-col justify-between gap-4">
+                    <span className="text-primary font-extrabold text-lg leading-none">
+                      {item.episodeNumber}
                     </span>
-                    <span className="text-sm flex-1">
-                      الحلقة {ep.episode_number}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">لا توجد حلقات متاحة</p>
-          )}
+                    <p className="text-sm font-semibold leading-6 line-clamp-2">
+                      {item.title}
+                    </p>
+                  </div>
+                </Link>
+              );
+            }}
+          />
         </div>
         )}
 
@@ -485,34 +488,30 @@ export default function AnimeDetail() {
         <div className="mt-10 space-y-4">
           <h2 className="text-xl font-bold border-r-4 border-primary pr-3">المواسم والأفلام المرتبطة</h2>
           {loadingRelations ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="space-y-2">
-                  <Skeleton className="aspect-[3/4] rounded-lg" />
-                  <Skeleton className="h-4 w-3/4" />
-                </div>
-              ))}
-            </div>
-          ) : relations?.data && relations.data.length > 0 ? (
+            <ContentRail
+              title="تحميل الأعمال المرتبطة"
+              loading
+              items={[]}
+              emptyMessage="لا توجد أعمال مرتبطة"
+            renderItem={() => null}
+            />
+          ) : relatedGroups.length > 0 ? (
             <div className="space-y-4">
-              {relations.data.map((group) => {
-                const animeEntries = group.entry.filter((e) => e.type === "anime");
-                if (animeEntries.length === 0) return null;
-                const label = RELATION_TYPE_AR[group.relation] || group.relation;
+              {relatedGroups.map((group) => {
                 return (
-                  <div key={group.relation} className="space-y-2">
-                    <h3 className="text-sm font-semibold text-muted-foreground">{label}</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                      {animeEntries.map((entry) => (
-                        <RelatedAnimeCard
-                          key={entry.mal_id}
-                          mal_id={entry.mal_id}
-                          name={entry.name}
-                          relationLabel={label}
-                        />
-                      ))}
-                    </div>
-                  </div>
+                  <ContentRail
+                    key={group.relation}
+                    title={group.label}
+                    items={group.entries}
+                    emptyMessage="لا توجد أعمال مرتبطة"
+                    renderItem={(entry) => (
+                      <RelatedAnimeCard
+                        mal_id={entry.mal_id}
+                        name={entry.name}
+                        relationLabel={group.label}
+                      />
+                    )}
+                  />
                 );
               })}
             </div>
@@ -523,37 +522,27 @@ export default function AnimeDetail() {
 
         {/* Related Recommendations */}
         <div className="mt-10 space-y-4">
-          <h2 className="text-xl font-bold border-r-4 border-primary pr-3">أنمي مشابه</h2>
-          {loadingRec ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="space-y-2">
-                  <Skeleton className="aspect-[3/4] rounded-lg" />
-                  <Skeleton className="h-4 w-3/4" />
+          <ContentRail
+            title="أنمي مشابه"
+            loading={loadingRec}
+            items={recommendationItems}
+            emptyMessage="لا توجد توصيات متاحة"
+            renderItem={(rec, index) => (
+              <div key={rec.entry.mal_id} className="relative">
+                <div className="absolute top-2 left-2 z-10 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shadow-lg ring-2 ring-background">
+                  {index + 1}
                 </div>
-              ))}
-            </div>
-          ) : recommendations?.data && recommendations.data.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {recommendationItems.map((rec, index) => (
-                  <div key={rec.entry.mal_id} className="relative">
-                    <div className="absolute top-2 left-2 z-10 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shadow-lg ring-2 ring-background">
-                      {index + 1}
-                    </div>
-                    <AnimeCard
-                      anime={rec.entry as JikanAnime}
-                      artworkUrl={resolveTitleArtworkUrl(
-                        recommendationArtworkMap?.get(rec.entry.mal_id),
-                        rec.entry as JikanAnime,
-                        "poster",
-                      )}
-                    />
-                  </div>
-                ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">لا توجد توصيات متاحة</p>
-          )}
+                <AnimeCard
+                  anime={rec.entry as JikanAnime}
+                  artworkUrl={resolveTitleArtworkUrl(
+                    recommendationArtworkMap?.get(rec.entry.mal_id),
+                    rec.entry as JikanAnime,
+                    "poster",
+                  )}
+                />
+              </div>
+            )}
+          />
         </div>
       </div>
     </Layout>

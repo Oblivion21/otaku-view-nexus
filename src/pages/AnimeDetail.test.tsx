@@ -27,6 +27,15 @@ const animeCardSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/components/Layout", () => ({
   default: ({ children }: { children: any }) => <div>{children}</div>,
 }));
+vi.mock("@/components/ContentRail", () => ({
+  default: ({ title, items, emptyMessage, renderItem, headerAction }: any) => (
+    <section>
+      <div>{title}</div>
+      {headerAction}
+      {items?.length ? items.map((item: any, index: number) => <div key={index}>{renderItem(item, index)}</div>) : <p>{emptyMessage}</p>}
+    </section>
+  ),
+}));
 vi.mock("@/components/AnimeCard", () => ({
   default: (props: any) => {
     animeCardSpy(props);
@@ -164,7 +173,7 @@ describe("AnimeDetail", () => {
     expect(container.querySelector('[src*="jikan.example.com"]')).toBeNull();
   });
 
-  it("falls back to Jikan artwork when TMDB is missing", async () => {
+  it("falls back to placeholders when TMDB is missing", async () => {
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
     });
@@ -175,16 +184,12 @@ describe("AnimeDetail", () => {
     const { container } = renderPage();
 
     await waitFor(() => {
-      expect(screen.getByAltText("Naruto")).toHaveAttribute(
-        "src",
-        expect.stringContaining("jikan.example.com/naruto-large.webp"),
-      );
+      expect(screen.getByLabelText("Naruto artwork placeholder")).toBeInTheDocument();
     });
-    expect(container.querySelector('[style*="jikan.example.com/naruto-large.webp"]')).not.toBeNull();
+    expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
     expect(animeCardSpy.mock.calls[0][0]).toEqual(expect.objectContaining({
-      artworkUrl: "https://jikan.example.com/naruto-large.webp",
+      artworkUrl: null,
     }));
-    expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
   });
 
   it("does not render the episode list section on movie pages", async () => {
@@ -360,5 +365,49 @@ describe("AnimeDetail", () => {
     expect(await screen.findByText("Naruto")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "شاهد الحلقة 1" })).not.toBeInTheDocument();
     expect(screen.queryByText("قائمة الحلقات")).not.toBeInTheDocument();
+  });
+
+  it("dedupes recommendation cards and shows the full-episodes CTA for series", async () => {
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+    });
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: {
+        data: [
+          {
+            mal_id: 1,
+            title: "Episode 1",
+            title_japanese: null,
+            title_romanji: null,
+            aired: null,
+            filler: false,
+            recap: false,
+          },
+        ],
+      },
+      isLoading: false,
+    });
+    hookMocks.useAnimeRecommendations.mockReturnValue({
+      data: {
+        data: [
+          recommendation,
+          {
+            entry: {
+              ...anime,
+              mal_id: 2,
+              title: "Bleach Duplicate",
+            },
+            votes: 110,
+          },
+        ],
+      },
+      isLoading: false,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Naruto")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "عرض كل الحلقات" })).toBeInTheDocument();
+    expect(screen.getAllByTestId("recommendation-2")).toHaveLength(1);
   });
 });
