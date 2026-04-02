@@ -114,7 +114,7 @@ export default function AnimeDetail() {
     supabaseEpisodes.map((ep) => [ep.episode_number, ep])
   );
   const canWatchMovie = anime.type === "Movie";
-  const canWatchSeries = isSeriesType && (hasSupabaseEpisodes || hasPublicEpisodes || Boolean(anime.episodes && anime.episodes > 0));
+  const canWatchSeries = isSeriesType && (hasSupabaseEpisodes || hasPublicEpisodes);
 
   return (
     <Layout>

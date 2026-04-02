@@ -246,4 +246,21 @@ describe("AnimeDetail", () => {
     expect(screen.queryByText("قائمة الحلقات")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "الحلقة 1" })).not.toBeInTheDocument();
   });
+
+  it("does not render the episode watch button when a series has no actual episode data", async () => {
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+    });
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: { data: [] },
+      isLoading: false,
+    });
+    supabaseMocks.getAnimeEpisodes.mockResolvedValue([]);
+
+    renderPage();
+
+    expect(await screen.findByText("Naruto")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "شاهد الحلقة 1" })).not.toBeInTheDocument();
+    expect(screen.queryByText("قائمة الحلقات")).not.toBeInTheDocument();
+  });
 });
