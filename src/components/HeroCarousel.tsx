@@ -4,21 +4,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
-import { useTopAnime } from "@/hooks/useAnime";
-import { GENRE_AR, getVisibleGenres, type JikanAnime } from "@/lib/jikan";
-import { getFeaturedAnimeIds } from "@/lib/supabase";
+import { useFeaturedCarousel, useTopAnime } from "@/hooks/useAnime";
+import { GENRE_AR, getVisibleGenres } from "@/lib/jikan";
+import type { FeaturedCarouselAnime } from "@/lib/featuredCarousel";
 import { getMultipleAnimeTmdbArtwork, type TmdbAnimeArtwork } from "@/lib/tmdb";
 import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 import { useState, useEffect, useRef } from "react";
 
 interface AnimeWithBanner {
-  anime: JikanAnime
+  anime: FeaturedCarouselAnime
   bannerImage: string | null
 }
 
 export default function HeroCarousel() {
   const navigate = useNavigate();
   const { data: defaultData, isLoading: defaultLoading } = useTopAnime(1, "airing");
+  const { data: featuredCarouselItems } = useFeaturedCarousel();
   const [items, setItems] = useState<AnimeWithBanner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [current, setCurrent] = useState(0);
@@ -28,12 +29,12 @@ export default function HeroCarousel() {
   const activeSourceRef = useRef<"none" | "default" | "featured">("none");
   const activeItemsKeyRef = useRef("");
 
-  function getAnimeIdsKey(animeList: JikanAnime[]): string {
+  function getAnimeIdsKey(animeList: FeaturedCarouselAnime[]): string {
     return animeList.map((anime) => anime.mal_id).join(",");
   }
 
   function buildCarouselItems(
-    animeList: JikanAnime[],
+    animeList: FeaturedCarouselAnime[],
     artworkMap = new Map<number, TmdbAnimeArtwork>(),
   ): AnimeWithBanner[] {
     return animeList.map((anime) => {
@@ -46,14 +47,14 @@ export default function HeroCarousel() {
     });
   }
 
-  function showCarouselItems(animeList: JikanAnime[], source: "default" | "featured") {
+  function showCarouselItems(animeList: FeaturedCarouselAnime[], source: "default" | "featured") {
     activeSourceRef.current = source;
     activeItemsKeyRef.current = `${source}:${getAnimeIdsKey(animeList)}`;
     setItems(buildCarouselItems(animeList));
     setIsLoading(false);
   }
 
-  async function hydrateCarouselItems(animeList: JikanAnime[], source: "default" | "featured") {
+  async function hydrateCarouselItems(animeList: FeaturedCarouselAnime[], source: "default" | "featured") {
     const itemsKey = `${source}:${getAnimeIdsKey(animeList)}`;
 
     try {
@@ -88,42 +89,13 @@ export default function HeroCarousel() {
   }, [defaultData, defaultLoading]);
 
   useEffect(() => {
-    let isActive = true;
-
-    async function loadCarousel() {
-      try {
-        const featuredIds = await getFeaturedAnimeIds();
-        if (!isActive || featuredIds.length === 0) {
-          return;
-        }
-
-        const animePromises: Promise<JikanAnime | null>[] = featuredIds.slice(0, 5).map((id) =>
-          fetch(`https://api.jikan.moe/v4/anime/${id}`)
-            .then((res) => res.json())
-            .then((data: { data?: JikanAnime }) => data.data || null)
-            .catch(() => null),
-        );
-
-        const animeResults = await Promise.all(animePromises);
-        const selectedAnime = animeResults.filter((anime): anime is JikanAnime => Boolean(anime));
-
-        if (!isActive || !selectedAnime.length) {
-          return;
-        }
-
-        showCarouselItems(selectedAnime, "featured");
-        void hydrateCarouselItems(selectedAnime, "featured");
-      } catch (error) {
-        console.error("Error loading featured anime:", error);
-      }
+    if (!featuredCarouselItems?.length) {
+      return;
     }
 
-    void loadCarousel();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
+    showCarouselItems(featuredCarouselItems, "featured");
+    void hydrateCarouselItems(featuredCarouselItems, "featured");
+  }, [featuredCarouselItems]);
 
   useEffect(() => {
     if (!items.length) return;

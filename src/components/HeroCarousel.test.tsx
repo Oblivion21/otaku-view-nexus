@@ -5,10 +5,7 @@ import type { JikanAnime } from "@/lib/jikan";
 
 const hookMocks = vi.hoisted(() => ({
   useTopAnime: vi.fn(),
-}));
-
-const supabaseMocks = vi.hoisted(() => ({
-  getFeaturedAnimeIds: vi.fn(),
+  useFeaturedCarousel: vi.fn(),
 }));
 
 const tmdbMocks = vi.hoisted(() => ({
@@ -16,7 +13,6 @@ const tmdbMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/useAnime", () => hookMocks);
-vi.mock("@/lib/supabase", () => supabaseMocks);
 vi.mock("@/lib/tmdb", () => tmdbMocks);
 
 import HeroCarousel from "@/components/HeroCarousel";
@@ -63,23 +59,17 @@ function renderCarousel() {
   );
 }
 
-function createDeferredPromise<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-
-  return { promise, resolve };
-}
-
 describe("HeroCarousel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    supabaseMocks.getFeaturedAnimeIds.mockResolvedValue([]);
     hookMocks.useTopAnime.mockReturnValue({
       data: { data: [anime] },
       isLoading: false,
+    });
+    hookMocks.useFeaturedCarousel.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
     });
   });
 
@@ -110,16 +100,44 @@ describe("HeroCarousel", () => {
     expect(container.querySelector('[style*="jikan.example.com/naruto-large.webp"]')).not.toBeNull();
   });
 
-  it("renders fallback hero data without waiting for featured anime to load", async () => {
-    const deferredFeaturedIds = createDeferredPromise<number[]>();
-    supabaseMocks.getFeaturedAnimeIds.mockReturnValue(deferredFeaturedIds.promise);
+  it("renders fallback hero data while featured payload is still pending", async () => {
     tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
+    hookMocks.useFeaturedCarousel.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    });
 
     renderCarousel();
 
     await waitFor(() => {
       expect(screen.getByText("Naruto")).toBeInTheDocument();
     });
-    expect(supabaseMocks.getFeaturedAnimeIds).toHaveBeenCalledTimes(1);
+  });
+
+  it("swaps to featured carousel items when the payload resolves", async () => {
+    const featuredAnime: JikanAnime = {
+      ...anime,
+      mal_id: 7,
+      title: "Bleach",
+      title_english: "Bleach",
+      title_japanese: "ブリーチ",
+      synopsis: "A soul reaper story.",
+    };
+
+    hookMocks.useFeaturedCarousel.mockReturnValue({
+      data: [featuredAnime],
+      isLoading: false,
+      error: null,
+    });
+    tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
+
+    renderCarousel();
+
+    await screen.findByText("Bleach");
+    expect(screen.queryByText("Naruto")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(tmdbMocks.getMultipleAnimeTmdbArtwork).toHaveBeenCalledWith([featuredAnime]);
+    });
   });
 });

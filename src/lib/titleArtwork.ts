@@ -2,6 +2,7 @@ import type { TmdbAnimeArtwork } from "@/lib/tmdb";
 import type { JikanAnime } from "@/lib/jikan";
 
 export type TitleArtworkVariant = "banner" | "poster";
+type JikanTitleArtworkAnime = Pick<JikanAnime, "images">;
 
 export function resolveTmdbTitleArtworkUrl(
   artwork: TmdbAnimeArtwork | null | undefined,
@@ -19,7 +20,7 @@ export function resolveTmdbTitleArtworkUrl(
 }
 
 function resolveJikanTitleArtworkUrl(
-  anime: JikanAnime | null | undefined,
+  anime: JikanTitleArtworkAnime | null | undefined,
   variant: TitleArtworkVariant,
 ): string | null {
   if (!anime) {
@@ -47,7 +48,7 @@ function resolveJikanTitleArtworkUrl(
 
 export function resolveTitleArtworkUrl(
   artwork: TmdbAnimeArtwork | null | undefined,
-  anime: JikanAnime | null | undefined,
+  anime: JikanTitleArtworkAnime | null | undefined,
   variant: TitleArtworkVariant,
 ): string | null {
   return resolveTmdbTitleArtworkUrl(artwork, variant) || resolveJikanTitleArtworkUrl(anime, variant);

@@ -19,11 +19,20 @@ import {
 import { getAnimeAniListMedia } from "@/lib/anilist";
 import { getAnimeTmdbArtwork } from "@/lib/tmdb";
 import { getMultipleAnimeTmdbArtwork } from "@/lib/tmdb";
+import { getFeaturedCarouselItems } from "@/lib/featuredCarousel";
 
 export function useTopAnime(page = 1, filter?: string) {
   return useQuery({
     queryKey: ["top-anime", page, filter],
     queryFn: () => getTopAnime(page, filter),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useFeaturedCarousel() {
+  return useQuery({
+    queryKey: ["featured-carousel"],
+    queryFn: getFeaturedCarouselItems,
     staleTime: 5 * 60 * 1000,
   });
 }
