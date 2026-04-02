@@ -52,8 +52,8 @@ const animeList: JikanAnime[] = [
     title_english: "Bleach",
     title_japanese: "ブリーチ",
     images: {
-      jpg: { image_url: "", large_image_url: "" },
-      webp: { image_url: "", large_image_url: "" },
+      jpg: { image_url: "https://jikan.example.com/bleach.jpg", large_image_url: "https://jikan.example.com/bleach-large.jpg" },
+      webp: { image_url: "https://jikan.example.com/bleach.webp", large_image_url: "https://jikan.example.com/bleach-large.webp" },
     },
     trailer: { youtube_id: null, url: null, embed_url: null },
     synopsis: null,
@@ -81,12 +81,12 @@ describe("AnimeGrid", () => {
     hookMocks.useMultipleAnimeTmdbArtwork.mockReturnValue({
       data: new Map([
         [1, { posterUrl: "https://image.tmdb.org/t/p/w780/naruto-poster.jpg", backdropUrl: null }],
-        [2, { posterUrl: null, backdropUrl: "https://image.tmdb.org/t/p/original/bleach-backdrop.jpg" }],
+        [2, null],
       ]),
     });
   });
 
-  it("uses one batched TMDB lookup and passes resolved artwork urls to cards", () => {
+  it("uses one batched TMDB lookup and falls back to Jikan artwork when TMDB is missing", () => {
     render(<AnimeGrid title="Popular" anime={animeList} isLoading={false} />);
 
     expect(hookMocks.useMultipleAnimeTmdbArtwork).toHaveBeenCalledWith(animeList);
@@ -98,7 +98,7 @@ describe("AnimeGrid", () => {
     }));
     expect(animeCardSpy.mock.calls[1][0]).toEqual(expect.objectContaining({
       anime: animeList[1],
-      artworkUrl: "https://image.tmdb.org/t/p/original/bleach-backdrop.jpg",
+      artworkUrl: "https://jikan.example.com/bleach-large.webp",
     }));
   });
 });

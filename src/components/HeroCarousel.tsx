@@ -8,7 +8,7 @@ import { useTopAnime } from "@/hooks/useAnime";
 import { GENRE_AR, type JikanAnime } from "@/lib/jikan";
 import { getFeaturedAnimeIds } from "@/lib/supabase";
 import { getMultipleAnimeTmdbArtwork } from "@/lib/tmdb";
-import { resolveTmdbTitleArtworkUrl } from "@/lib/titleArtwork";
+import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 import { useState, useEffect, useRef } from "react";
 
 interface AnimeWithBanner {
@@ -119,7 +119,7 @@ export default function HeroCarousel() {
 
       return {
         anime,
-        bannerImage: resolveTmdbTitleArtworkUrl(artwork, "banner"),
+        bannerImage: resolveTitleArtworkUrl(artwork, anime, "banner"),
       };
     });
   }

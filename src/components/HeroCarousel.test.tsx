@@ -73,7 +73,7 @@ describe("HeroCarousel", () => {
     });
   });
 
-  it("uses the TMDB banner artwork without falling back to Jikan", async () => {
+  it("uses the TMDB banner artwork when available", async () => {
     tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(
       new Map([
         [1, { posterUrl: null, backdropUrl: "https://image.tmdb.org/t/p/original/naruto-backdrop.jpg" }],
@@ -90,12 +90,13 @@ describe("HeroCarousel", () => {
     expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
   });
 
-  it("renders the banner placeholder when TMDB artwork is missing", async () => {
+  it("falls back to Jikan artwork when TMDB artwork is missing", async () => {
     tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
 
     const { container } = renderCarousel();
 
-    expect(await screen.findByLabelText("Naruto artwork placeholder")).toBeInTheDocument();
-    expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
+    await screen.findByText("Naruto");
+    expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
+    expect(container.querySelector('[style*="jikan.example.com/naruto-large.webp"]')).not.toBeNull();
   });
 });

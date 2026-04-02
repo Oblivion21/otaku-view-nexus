@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 import { Star } from "lucide-react";
 import { TYPE_MAP, isBlockedAnime } from "@/lib/jikan";
-import { resolveTmdbTitleArtworkUrl } from "@/lib/titleArtwork";
+import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 interface RelatedAnimeCardProps {
   mal_id: number;
@@ -22,7 +22,7 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
     return null;
   }
 
-  const imageUrl = resolveTmdbTitleArtworkUrl(tmdbArtwork, "poster");
+  const imageUrl = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
 
   return (
     <Link

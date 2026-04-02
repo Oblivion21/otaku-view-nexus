@@ -12,7 +12,7 @@ import { TrailerBanner } from "@/components/TrailerBanner";
 import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, isBlockedAnime, type JikanAnime } from "@/lib/jikan";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
-import { resolveTmdbTitleArtworkUrl } from "@/lib/titleArtwork";
+import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 import { useState, useEffect } from "react";
 
 export default function AnimeDetail() {
@@ -105,8 +105,8 @@ export default function AnimeDetail() {
     anime.trailer?.youtube_id || null,
     anime.trailer?.embed_url || null
   );
-  const bannerImage = resolveTmdbTitleArtworkUrl(tmdbArtwork, "banner");
-  const posterImage = resolveTmdbTitleArtworkUrl(tmdbArtwork, "poster");
+  const bannerImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "banner");
+  const posterImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
   const isSeriesType = anime.type === "TV" || anime.type === "OVA" || anime.type === "ONA" || anime.type === "Special";
   const hasSupabaseEpisodes = supabaseEpisodes.length > 0;
   const hasPublicEpisodes = Boolean(episodes?.data && episodes.data.length > 0);
@@ -504,8 +504,9 @@ export default function AnimeDetail() {
                     </div>
                     <AnimeCard
                       anime={rec.entry as JikanAnime}
-                      artworkUrl={resolveTmdbTitleArtworkUrl(
+                      artworkUrl={resolveTitleArtworkUrl(
                         recommendationArtworkMap?.get(rec.entry.mal_id),
+                        rec.entry as JikanAnime,
                         "poster",
                       )}
                     />

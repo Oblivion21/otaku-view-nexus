@@ -164,7 +164,7 @@ describe("AnimeDetail", () => {
     expect(container.querySelector('[src*="jikan.example.com"]')).toBeNull();
   });
 
-  it("renders placeholders instead of falling back to Jikan artwork when TMDB is missing", async () => {
+  it("falls back to Jikan artwork when TMDB is missing", async () => {
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
     });
@@ -175,9 +175,15 @@ describe("AnimeDetail", () => {
     const { container } = renderPage();
 
     await waitFor(() => {
-      expect(screen.getAllByLabelText("Naruto artwork placeholder").length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByAltText("Naruto")).toHaveAttribute(
+        "src",
+        expect.stringContaining("jikan.example.com/naruto-large.webp"),
+      );
     });
-    expect(screen.queryByAltText("Naruto")).not.toBeInTheDocument();
-    expect(container.querySelector('[src*="jikan.example.com"]')).toBeNull();
+    expect(container.querySelector('[style*="jikan.example.com/naruto-large.webp"]')).not.toBeNull();
+    expect(animeCardSpy.mock.calls[0][0]).toEqual(expect.objectContaining({
+      artworkUrl: "https://jikan.example.com/naruto-large.webp",
+    }));
+    expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
   });
 });

@@ -55,7 +55,7 @@ function renderCard(artworkUrl?: string | null) {
 }
 
 describe("AnimeCard", () => {
-  it("renders the TMDB artwork url when provided", () => {
+  it("renders the artwork url when provided", () => {
     renderCard("https://image.tmdb.org/t/p/w780/naruto-poster.jpg");
 
     expect(screen.getByAltText("Naruto")).toHaveAttribute(
@@ -65,11 +65,21 @@ describe("AnimeCard", () => {
     expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
   });
 
-  it("renders a placeholder and never falls back to Jikan artwork when TMDB is missing", () => {
+  it("renders a fallback artwork url when the parent resolves one", () => {
+    renderCard("https://jikan.example.com/naruto-large.webp");
+
+    expect(screen.getByAltText("Naruto")).toHaveAttribute(
+      "src",
+      expect.stringContaining("jikan.example.com/naruto-large.webp"),
+    );
+    expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
+  });
+
+  it("renders a placeholder when no artwork url is available", () => {
     const { container } = renderCard(null);
 
     expect(screen.getByLabelText("Naruto artwork placeholder")).toBeInTheDocument();
     expect(screen.queryByAltText("Naruto")).not.toBeInTheDocument();
-    expect(container.querySelector('img[src*="jikan.example.com"]')).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
   });
 });

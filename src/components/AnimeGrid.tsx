@@ -2,7 +2,7 @@ import AnimeCard from "@/components/AnimeCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import type { JikanAnime } from "@/lib/jikan";
-import { resolveTmdbTitleArtworkUrl } from "@/lib/titleArtwork";
+import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 interface AnimeGridProps {
   title: string;
@@ -31,7 +31,7 @@ export default function AnimeGrid({ title, anime, isLoading }: AnimeGridProps) {
             <AnimeCard
               key={a.mal_id}
               anime={a}
-              artworkUrl={resolveTmdbTitleArtworkUrl(artworkMap?.get(a.mal_id), "poster")}
+              artworkUrl={resolveTitleArtworkUrl(artworkMap?.get(a.mal_id), a, "poster")}
             />
           ))}
         </div>
