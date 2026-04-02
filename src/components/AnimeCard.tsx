@@ -48,13 +48,13 @@ export default function AnimeCard({ anime, artworkUrl = null }: AnimeCardProps) 
         )}
 
         {/* Bottom info */}
-        <div className="absolute bottom-0 inset-x-0 p-2">
-          {anime.episodes && (
-            <span className="text-[10px] text-muted-foreground">
-              {anime.episodes} حلقة
+        {anime.rating && (
+          <div className="absolute bottom-0 inset-x-0 p-2">
+            <span className="block truncate text-[10px] text-muted-foreground">
+              {anime.rating}
             </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="p-2.5">

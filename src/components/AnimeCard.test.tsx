@@ -75,6 +75,13 @@ describe("AnimeCard", () => {
     expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
   });
 
+  it("shows the anime rating instead of the episode count", () => {
+    renderCard("https://image.tmdb.org/t/p/w780/naruto-poster.jpg");
+
+    expect(screen.getByText("PG-13")).toBeInTheDocument();
+    expect(screen.queryByText("220 حلقة")).not.toBeInTheDocument();
+  });
+
   it("renders nothing when no artwork url is available from TMDB or Jikan", () => {
     const animeWithoutArtwork: JikanAnime = {
       ...anime,

@@ -270,9 +270,9 @@ export default function HeroCarousel() {
                 شاهد الآن
               </Link>
             </Button>
-            {anime.episodes && (
-              <span className="text-sm text-muted-foreground drop-shadow">
-                {anime.episodes} حلقة
+            {anime.rating && (
+              <span className="max-w-[18rem] truncate text-sm text-muted-foreground drop-shadow">
+                {anime.rating}
               </span>
             )}
           </div>

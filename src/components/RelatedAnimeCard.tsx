@@ -59,10 +59,10 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
           </Badge>
         )}
 
-        {anime?.episodes && (
+        {anime?.rating && (
           <div className="absolute bottom-0 inset-x-0 p-2">
-            <span className="text-[10px] text-muted-foreground">
-              {anime.episodes} حلقة
+            <span className="block truncate text-[10px] text-muted-foreground">
+              {anime.rating}
             </span>
           </div>
         )}

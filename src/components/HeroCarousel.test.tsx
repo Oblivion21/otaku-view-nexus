@@ -100,6 +100,15 @@ describe("HeroCarousel", () => {
     expect(container.querySelector('[style*="jikan.example.com/naruto-large.webp"]')).not.toBeNull();
   });
 
+  it("shows the anime rating instead of the episode count", async () => {
+    tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
+
+    renderCarousel();
+
+    expect(await screen.findByText("PG-13")).toBeInTheDocument();
+    expect(screen.queryByText("220 حلقة")).not.toBeInTheDocument();
+  });
+
   it("renders fallback hero data while featured payload is still pending", async () => {
     tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
     hookMocks.useFeaturedCarousel.mockReturnValue({
