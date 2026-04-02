@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { JikanAnime } from "@/lib/jikan";
-import { GENRE_AR, TYPE_MAP } from "@/lib/jikan";
+import { GENRE_AR, TYPE_MAP, getVisibleGenres } from "@/lib/jikan";
 import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 
 interface AnimeCardProps {
@@ -64,7 +64,7 @@ export default function AnimeCard({ anime, artworkUrl = null }: AnimeCardProps) 
           {anime.title}
         </h3>
         <div className="flex flex-wrap gap-1 mt-1.5">
-          {anime.genres?.slice(0, 2).map((g) => (
+          {getVisibleGenres(anime).slice(0, 2).map((g) => (
             <span key={g.mal_id} className="text-[10px] text-muted-foreground bg-secondary rounded px-1.5 py-0.5">
               {GENRE_AR[g.name] || g.name}
             </span>

@@ -9,7 +9,7 @@ import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharac
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
 import { TrailerBanner } from "@/components/TrailerBanner";
-import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, isBlockedAnime, type JikanAnime } from "@/lib/jikan";
+import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, getVisibleGenres, isBlockedAnime, type JikanAnime } from "@/lib/jikan";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
 import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
@@ -204,7 +204,7 @@ export default function AnimeDetail() {
             </Badge>
 
             <div className="flex flex-wrap gap-1.5">
-              {anime.genres.map((g) => (
+              {getVisibleGenres(anime).map((g) => (
                 <Badge key={g.mal_id} variant="secondary" className="text-xs">
                   {GENRE_AR[g.name] || g.name}
                 </Badge>

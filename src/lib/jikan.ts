@@ -57,13 +57,22 @@ interface JikanResponse<T> {
   pagination?: JikanPagination;
 }
 
-const BLOCKED_GENRE_NAMES = new Set([
-  "Ecchi",
-  "Hentai",
-  "Boys Love",
-  "Girls Love",
-  "Avant Garde",
-  "Erotica",
+const ALLOWED_GENRE_NAMES = new Set([
+  "Action",
+  "Adventure",
+  "Award Winning",
+  "Comedy",
+  "Drama",
+  "Fantasy",
+  "Gourmet",
+  "Horror",
+  "Mystery",
+  "Romance",
+  "Sci-Fi",
+  "Slice of Life",
+  "Sports",
+  "Supernatural",
+  "Suspense",
 ]);
 
 type GenreLike = {
@@ -78,12 +87,18 @@ async function fetchJikan<T>(endpoint: string): Promise<JikanResponse<T>> {
 }
 
 export function isBlockedAnime(anime: { genres?: GenreLike[] } | null | undefined): boolean {
-  if (!anime?.genres?.length) return false;
-  return anime.genres.some((genre) => BLOCKED_GENRE_NAMES.has(genre.name));
+  if (!anime?.genres?.length) return true;
+  return !anime.genres.some((genre) => ALLOWED_GENRE_NAMES.has(genre.name));
 }
 
 function filterAnimeList<T extends { genres?: GenreLike[] }>(animeList: T[]): T[] {
   return animeList.filter((anime) => !isBlockedAnime(anime));
+}
+
+export function getVisibleGenres<T extends { genres?: GenreLike[] } | null | undefined>(
+  anime: T,
+): GenreLike[] {
+  return (anime?.genres || []).filter((genre) => ALLOWED_GENRE_NAMES.has(genre.name));
 }
 
 export async function getTopAnime(page = 1, filter?: string) {
@@ -133,7 +148,7 @@ export async function getGenres() {
   const response = await fetchJikan<{ mal_id: number; name: string; count: number }[]>("/genres/anime");
   return {
     ...response,
-    data: response.data.filter((genre) => !BLOCKED_GENRE_NAMES.has(genre.name)),
+    data: response.data.filter((genre) => ALLOWED_GENRE_NAMES.has(genre.name)),
   };
 }
 
@@ -208,15 +223,18 @@ export const TYPE_MAP: Record<string, string> = {
 export const GENRE_AR: Record<string, string> = {
   Action: "أكشن",
   Adventure: "مغامرة",
+  "Award Winning": "Award Winning",
   Comedy: "كوميدي",
   Drama: "دراما",
   Fantasy: "فانتازيا",
+  Gourmet: "Gourmet",
   Horror: "رعب",
   Mystery: "غموض",
   Romance: "رومانسي",
   "Sci-Fi": "خيال علمي",
   "Slice of Life": "شريحة من الحياة",
   Sports: "رياضة",
+  Suspense: "Suspense",
   Supernatural: "خارق",
   Thriller: "إثارة",
   Ecchi: "إيتشي",

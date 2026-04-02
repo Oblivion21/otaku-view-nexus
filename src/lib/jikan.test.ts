@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getGenres, getTopAnime, isBlockedAnime, type JikanAnime } from "@/lib/jikan";
+import { getGenres, getTopAnime, getVisibleGenres, isBlockedAnime, type JikanAnime } from "@/lib/jikan";
 
 const baseAnime: JikanAnime = {
   mal_id: 1,
@@ -42,31 +42,32 @@ describe("jikan genre filtering", () => {
     vi.restoreAllMocks();
   });
 
-  it("blocks anime that contain the configured restricted genres", () => {
-    const blockedGenres = [
-      "Hentai",
-      "Boys Love",
-      "Girls Love",
-      "Avant Garde",
-      "Erotica",
-      "Ecchi",
-    ];
-
-    blockedGenres.forEach((genreName, index) => {
-      expect(isBlockedAnime({
-        ...baseAnime,
-        mal_id: index + 1,
-        genres: [{ mal_id: index + 1, name: genreName }],
-      })).toBe(true);
-    });
+  it("blocks anime that have no genres from the configured allowlist", () => {
+    expect(isBlockedAnime({
+      ...baseAnime,
+      genres: [{ mal_id: 1, name: "School" }],
+    })).toBe(true);
 
     expect(isBlockedAnime({
       ...baseAnime,
       genres: [{ mal_id: 99, name: "Action" }],
     })).toBe(false);
+
+    expect(isBlockedAnime({
+      ...baseAnime,
+      genres: [
+        { mal_id: 99, name: "Action" },
+        { mal_id: 100, name: "School" },
+      ],
+    })).toBe(false);
+
+    expect(isBlockedAnime({
+      ...baseAnime,
+      genres: [],
+    })).toBe(true);
   });
 
-  it("filters blocked anime from top anime results", async () => {
+  it("filters anime with no allowed genres from top anime results", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -81,7 +82,7 @@ describe("jikan genre filtering", () => {
             ...baseAnime,
             mal_id: 2,
             title: "Blocked Anime",
-            genres: [{ mal_id: 2, name: "Hentai" }],
+            genres: [{ mal_id: 2, name: "School" }],
           },
         ],
         pagination: {
@@ -98,20 +99,39 @@ describe("jikan genre filtering", () => {
     expect(result.data[0].title).toBe("Allowed Anime");
   });
 
-  it("filters blocked genres from the browse genre list", async () => {
+  it("filters non-allowed genres from the browse genre list", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
         data: [
           { mal_id: 1, name: "Action", count: 10 },
-          { mal_id: 2, name: "Hentai", count: 4 },
-          { mal_id: 3, name: "Girls Love", count: 2 },
+          { mal_id: 2, name: "School", count: 4 },
+          { mal_id: 3, name: "Award Winning", count: 2 },
         ],
       }),
     } as Response);
 
     const result = await getGenres();
 
-    expect(result.data).toEqual([{ mal_id: 1, name: "Action", count: 10 }]);
+    expect(result.data).toEqual([
+      { mal_id: 1, name: "Action", count: 10 },
+      { mal_id: 3, name: "Award Winning", count: 2 },
+    ]);
+  });
+
+  it("returns only allowed visible genres for badges", () => {
+    const visibleGenres = getVisibleGenres({
+      ...baseAnime,
+      genres: [
+        { mal_id: 1, name: "Action" },
+        { mal_id: 2, name: "School" },
+        { mal_id: 3, name: "Mystery" },
+      ],
+    });
+
+    expect(visibleGenres).toEqual([
+      { mal_id: 1, name: "Action" },
+      { mal_id: 3, name: "Mystery" },
+    ]);
   });
 });

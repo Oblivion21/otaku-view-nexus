@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 import { useTopAnime } from "@/hooks/useAnime";
-import { GENRE_AR, type JikanAnime } from "@/lib/jikan";
+import { GENRE_AR, getVisibleGenres, type JikanAnime } from "@/lib/jikan";
 import { getFeaturedAnimeIds } from "@/lib/supabase";
 import { getMultipleAnimeTmdbArtwork } from "@/lib/tmdb";
 import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
@@ -239,7 +239,7 @@ export default function HeroCarousel() {
                 <span className="text-sm font-bold text-anime-gold">{anime.score}</span>
               </div>
             )}
-            {anime.genres.slice(0, 3).map((g) => (
+            {getVisibleGenres(anime).slice(0, 3).map((g) => (
               <Badge key={g.mal_id} variant="secondary" className="text-xs">
                 {GENRE_AR[g.name] || g.name}
               </Badge>
