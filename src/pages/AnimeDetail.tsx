@@ -220,6 +220,7 @@ export default function AnimeDetail() {
       ...item,
       href: `/watch/${animeId}/${item.episodeNumber}`,
       imageUrl: episodePreviewImageMap?.get(item.episodeNumber)?.imageUrl || null,
+      ratingLabel: anime?.rating || "Not Rated",
       badges: getEpisodeBadges(item.styleTarget),
       styleClassName: `${style.background} ${style.border}`,
     };

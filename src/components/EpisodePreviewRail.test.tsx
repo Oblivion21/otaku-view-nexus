@@ -54,6 +54,7 @@ describe("EpisodePreviewRail", () => {
               title: "Episode 1",
               href: "/watch/1/1",
               imageUrl: "https://image.tmdb.org/t/p/w780/ep1.jpg",
+              ratingLabel: "PG-13",
             },
           ]}
           emptyMessage="Nothing here"
@@ -65,6 +66,7 @@ describe("EpisodePreviewRail", () => {
 
     expect(screen.getByTestId("episode-carousel")).toHaveAttribute("dir", "rtl");
     expect(screen.getByText("Episode 1")).toBeInTheDocument();
+    expect(screen.getByText("PG-13")).toBeInTheDocument();
     expect(carouselMocks.carouselSpy).toHaveBeenCalledWith(expect.objectContaining({ dir: "rtl" }));
     expect(carouselMocks.previousSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -89,6 +91,7 @@ describe("EpisodePreviewRail", () => {
               title: "Episode 3",
               href: "/watch/1/3",
               imageUrl: null,
+              ratingLabel: "R - 17+",
             },
           ]}
           emptyMessage="Nothing here"
@@ -99,6 +102,7 @@ describe("EpisodePreviewRail", () => {
     );
 
     expect(screen.getByLabelText("Episode 3 preview placeholder")).toBeInTheDocument();
+    expect(screen.getByText("R - 17+")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Episode 3" })).not.toBeInTheDocument();
   });
 });

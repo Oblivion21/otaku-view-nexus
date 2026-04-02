@@ -17,6 +17,7 @@ export type EpisodePreviewRailItem = {
   title: string;
   href: string;
   imageUrl: string | null;
+  ratingLabel?: string | null;
   badges?: string[];
   styleClassName?: string;
 };
@@ -61,9 +62,6 @@ function EpisodePreviewCard({ item }: { item: EpisodePreviewRailItem }) {
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/10" />
-        <div className="absolute right-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-bold text-white ring-1 ring-white/10 backdrop-blur">
-          الحلقة {item.episodeNumber}
-        </div>
         {item.badges?.length ? (
           <div className="absolute bottom-3 right-3 flex flex-wrap gap-1.5">
             {item.badges.slice(0, 3).map((badge) => (
@@ -79,19 +77,14 @@ function EpisodePreviewCard({ item }: { item: EpisodePreviewRailItem }) {
         ) : null}
       </div>
       <div className="space-y-2.5 p-3 text-right">
-        <div className="flex items-start justify-between gap-2.5">
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold tracking-wide text-primary/90">
-              EPISODE {item.episodeNumber}
-            </p>
-            <h3 className="mt-1.5 line-clamp-2 text-sm font-bold leading-6 text-foreground md:text-[15px]">
-              {item.title}
-            </h3>
-          </div>
-          <span className="shrink-0 text-2xl font-black leading-none text-primary/90 md:text-[30px]">
-            {item.episodeNumber}
-          </span>
-        </div>
+        {item.ratingLabel ? (
+          <p className="truncate text-[11px] font-semibold tracking-wide text-primary/90">
+            {item.ratingLabel}
+          </p>
+        ) : null}
+        <h3 className="line-clamp-2 text-sm font-bold leading-6 text-foreground md:text-[15px]">
+          {item.title}
+        </h3>
       </div>
     </Link>
   );
