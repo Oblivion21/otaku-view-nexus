@@ -63,6 +63,16 @@ function renderCarousel() {
   );
 }
 
+function createDeferredPromise<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+
+  return { promise, resolve };
+}
+
 describe("HeroCarousel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -98,5 +108,18 @@ describe("HeroCarousel", () => {
     await screen.findByText("Naruto");
     expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
     expect(container.querySelector('[style*="jikan.example.com/naruto-large.webp"]')).not.toBeNull();
+  });
+
+  it("renders fallback hero data without waiting for featured anime to load", async () => {
+    const deferredFeaturedIds = createDeferredPromise<number[]>();
+    supabaseMocks.getFeaturedAnimeIds.mockReturnValue(deferredFeaturedIds.promise);
+    tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
+
+    renderCarousel();
+
+    await waitFor(() => {
+      expect(screen.getByText("Naruto")).toBeInTheDocument();
+    });
+    expect(supabaseMocks.getFeaturedAnimeIds).toHaveBeenCalledTimes(1);
   });
 });

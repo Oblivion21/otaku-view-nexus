@@ -7,7 +7,7 @@ import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 import { useTopAnime } from "@/hooks/useAnime";
 import { GENRE_AR, getVisibleGenres, type JikanAnime } from "@/lib/jikan";
 import { getFeaturedAnimeIds } from "@/lib/supabase";
-import { getMultipleAnimeTmdbArtwork } from "@/lib/tmdb";
+import { getMultipleAnimeTmdbArtwork, type TmdbAnimeArtwork } from "@/lib/tmdb";
 import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 import { useState, useEffect, useRef } from "react";
 
@@ -25,68 +25,96 @@ export default function HeroCarousel() {
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
+  const activeSourceRef = useRef<"none" | "default" | "featured">("none");
+  const activeItemsKeyRef = useRef("");
+
+  function getAnimeIdsKey(animeList: JikanAnime[]): string {
+    return animeList.map((anime) => anime.mal_id).join(",");
+  }
+
+  function buildCarouselItems(
+    animeList: JikanAnime[],
+    artworkMap = new Map<number, TmdbAnimeArtwork>(),
+  ): AnimeWithBanner[] {
+    return animeList.map((anime) => {
+      const artwork = artworkMap.get(anime.mal_id);
+
+      return {
+        anime,
+        bannerImage: resolveTitleArtworkUrl(artwork, anime, "banner"),
+      };
+    });
+  }
+
+  function showCarouselItems(animeList: JikanAnime[], source: "default" | "featured") {
+    activeSourceRef.current = source;
+    activeItemsKeyRef.current = `${source}:${getAnimeIdsKey(animeList)}`;
+    setItems(buildCarouselItems(animeList));
+    setIsLoading(false);
+  }
+
+  async function hydrateCarouselItems(animeList: JikanAnime[], source: "default" | "featured") {
+    const itemsKey = `${source}:${getAnimeIdsKey(animeList)}`;
+
+    try {
+      const artworkMap = await getMultipleAnimeTmdbArtwork(animeList);
+
+      if (
+        activeSourceRef.current !== source ||
+        activeItemsKeyRef.current !== itemsKey
+      ) {
+        return;
+      }
+
+      setItems(buildCarouselItems(animeList, artworkMap));
+    } catch (error) {
+      console.error("Error hydrating carousel artwork:", error);
+    }
+  }
+
+  useEffect(() => {
+    const fallbackAnime = defaultData?.data?.slice(0, 5) ?? [];
+
+    if (fallbackAnime.length > 0 && activeSourceRef.current !== "featured") {
+      showCarouselItems(fallbackAnime, "default");
+      void hydrateCarouselItems(fallbackAnime, "default");
+      return;
+    }
+
+    if (!defaultLoading && fallbackAnime.length === 0 && activeSourceRef.current === "none") {
+      setItems([]);
+      setIsLoading(false);
+    }
+  }, [defaultData, defaultLoading]);
 
   useEffect(() => {
     let isActive = true;
 
     async function loadCarousel() {
-      setIsLoading(true);
-
       try {
         const featuredIds = await getFeaturedAnimeIds();
-        let selectedAnime: JikanAnime[] = [];
-
-        if (featuredIds.length > 0) {
-          const animePromises: Promise<JikanAnime | null>[] = featuredIds.slice(0, 5).map((id) =>
-            fetch(`https://api.jikan.moe/v4/anime/${id}`)
-              .then((res) => res.json())
-              .then((data: { data?: JikanAnime }) => data.data || null)
-              .catch(() => null),
-          );
-
-          const animeResults = await Promise.all(animePromises);
-          selectedAnime = animeResults.filter((anime): anime is JikanAnime => Boolean(anime));
-        }
-
-        if (!selectedAnime.length && defaultData?.data?.length) {
-          selectedAnime = defaultData.data.slice(0, 5);
-        }
-
-        if (!selectedAnime.length) {
-          if (!defaultLoading && isActive) {
-            setItems([]);
-            setIsLoading(false);
-          }
+        if (!isActive || featuredIds.length === 0) {
           return;
         }
 
-        const itemsWithBanners = await buildCarouselItems(selectedAnime);
+        const animePromises: Promise<JikanAnime | null>[] = featuredIds.slice(0, 5).map((id) =>
+          fetch(`https://api.jikan.moe/v4/anime/${id}`)
+            .then((res) => res.json())
+            .then((data: { data?: JikanAnime }) => data.data || null)
+            .catch(() => null),
+        );
 
-        if (!isActive) {
+        const animeResults = await Promise.all(animePromises);
+        const selectedAnime = animeResults.filter((anime): anime is JikanAnime => Boolean(anime));
+
+        if (!isActive || !selectedAnime.length) {
           return;
         }
 
-        setItems(itemsWithBanners);
-        setIsLoading(false);
+        showCarouselItems(selectedAnime, "featured");
+        void hydrateCarouselItems(selectedAnime, "featured");
       } catch (error) {
         console.error("Error loading featured anime:", error);
-
-        if (!defaultData?.data?.length) {
-          if (!defaultLoading && isActive) {
-            setItems([]);
-            setIsLoading(false);
-          }
-          return;
-        }
-
-        const fallbackItems = await buildCarouselItems(defaultData.data.slice(0, 5));
-
-        if (!isActive) {
-          return;
-        }
-
-        setItems(fallbackItems);
-        setIsLoading(false);
       }
     }
 
@@ -95,7 +123,7 @@ export default function HeroCarousel() {
     return () => {
       isActive = false;
     };
-  }, [defaultData, defaultLoading]);
+  }, []);
 
   useEffect(() => {
     if (!items.length) return;
@@ -110,19 +138,6 @@ export default function HeroCarousel() {
       img.src = url;
     });
   }, [items, current]);
-
-  async function buildCarouselItems(animeList: JikanAnime[]): Promise<AnimeWithBanner[]> {
-    const artworkMap = await getMultipleAnimeTmdbArtwork(animeList);
-
-    return animeList.map((anime) => {
-      const artwork = artworkMap.get(anime.mal_id);
-
-      return {
-        anime,
-        bannerImage: resolveTitleArtworkUrl(artwork, anime, "banner"),
-      };
-    });
-  }
 
   useEffect(() => {
     if (items.length === 0 || !isAutoPlaying) return;
