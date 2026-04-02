@@ -7,10 +7,10 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAnimeAniListMedia, useAnimeById, useAnimeEpisodes } from "@/hooks/useAnime";
+import { useAnimeAniListMedia, useAnimeById, useAnimeEpisodes, useAnimeTmdbArtwork } from "@/hooks/useAnime";
 import { isBlockedAnime } from "@/lib/jikan";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
-import { buildVideasyAnimeEmbedUrl, getVideasyUnavailableReason } from "@/lib/videasy";
+import { getVideasyUnavailableReason, resolveVideasyMainPlayerUrl } from "@/lib/videasy";
 import {
   getEpisodeData,
   getAnimeEpisodes,
@@ -93,6 +93,12 @@ export default function EpisodeWatch() {
   const { data: animeData, isLoading } = useAnimeById(animeId);
   const anime = animeData?.data;
   const { data: episodes } = useAnimeEpisodes(animeId);
+  const isMovie = anime?.type === "Movie";
+  const {
+    data: tmdbArtwork,
+    isLoading: loadingTmdbArtwork,
+    error: tmdbArtworkError,
+  } = useAnimeTmdbArtwork(anime, !isTrailer && isMovie);
   const {
     data: aniListMedia,
     isLoading: loadingAniListMedia,
@@ -160,7 +166,7 @@ export default function EpisodeWatch() {
       : "";
   const isActiveDirectVideo = Boolean(activeVideoUrl && isDirectPlayableUrl(activeVideoUrl));
   const mainPlayerUrl = !isTrailer
-    ? buildVideasyAnimeEmbedUrl(aniListMedia ?? null, anime?.type ?? null, epNum)
+    ? resolveVideasyMainPlayerUrl(tmdbArtwork ?? null, aniListMedia ?? null, anime?.type ?? null, epNum)
     : null;
 
   function fallbackToBackup(message: string) {
@@ -185,20 +191,27 @@ export default function EpisodeWatch() {
       return;
     }
 
-    if (!anime || loadingAniListMedia) {
+    if (!anime || loadingAniListMedia || (isMovie && loadingTmdbArtwork)) {
       setMainPlayerStatus("loading");
       setMainPlayerMessage(null);
       return;
     }
 
-    if (aniListMediaError) {
+    if (isMovie && tmdbArtworkError && !aniListMedia) {
+      fallbackToBackup("Main Player could not resolve this movie. Switched to Backup Player.");
+      return;
+    }
+
+    if (aniListMediaError && !isMovie) {
       fallbackToBackup("Main Player could not resolve this title. Switched to Backup Player.");
       return;
     }
 
     if (!mainPlayerUrl) {
       setMainPlayerStatus("unavailable");
-      setMainPlayerMessage(getVideasyUnavailableReason(aniListMedia ?? null, anime.type ?? null, epNum));
+      setMainPlayerMessage(
+        getVideasyUnavailableReason(tmdbArtwork ?? null, aniListMedia ?? null, anime.type ?? null, epNum),
+      );
       setActivePlayerTab("backup");
       return;
     }
@@ -209,7 +222,11 @@ export default function EpisodeWatch() {
     isTrailer,
     anime,
     loadingAniListMedia,
+    loadingTmdbArtwork,
     aniListMediaError,
+    tmdbArtworkError,
+    isMovie,
+    tmdbArtwork,
     aniListMedia,
     mainPlayerUrl,
     epNum,

@@ -6,6 +6,7 @@ const hookMocks = vi.hoisted(() => ({
   useAnimeById: vi.fn(),
   useAnimeEpisodes: vi.fn(),
   useAnimeAniListMedia: vi.fn(),
+  useAnimeTmdbArtwork: vi.fn(),
 }));
 
 const supabaseMocks = vi.hoisted(() => ({
@@ -97,6 +98,11 @@ describe("EpisodeWatch", () => {
       isLoading: false,
       error: null,
     });
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
 
     jikanMocks.isBlockedAnime.mockReturnValue(false);
     trailerFallbackMocks.getTrailerYoutubeId.mockReturnValue(null);
@@ -183,6 +189,66 @@ describe("EpisodeWatch", () => {
       isLoading: false,
     });
 
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: {
+        tmdbId: 299534,
+        mediaType: "movie",
+        posterUrl: null,
+        backdropUrl: null,
+        matchedTitle: "Naruto Movie",
+        seasonNumber: null,
+        seasonName: null,
+        matchConfidence: "high",
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
+      data: {
+        id: 145139,
+        idMal: 1,
+        format: "MOVIE",
+        title: {
+          romaji: "The First Slam Dunk",
+          english: "The First Slam Dunk",
+          native: "THE FIRST SLAM DUNK",
+        },
+        bannerImage: null,
+        coverImage: {
+          extraLarge: "",
+          large: "",
+          color: null,
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderPage();
+
+    const mainIframe = await screen.findByTitle("Naruto - Main Player");
+    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/movie/299534?color=00D0FF"));
+    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/anime/145139"));
+  });
+
+  it("falls back to the AniList movie path when tmdb movie metadata is unavailable", async () => {
+    hookMocks.useAnimeById.mockReturnValue({
+      data: {
+        data: {
+          ...anime,
+          type: "Movie",
+        },
+      },
+      isLoading: false,
+    });
+
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+
     hookMocks.useAnimeAniListMedia.mockReturnValue({
       data: {
         id: 145139,
@@ -208,7 +274,62 @@ describe("EpisodeWatch", () => {
 
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/145139?color=00D0FF"));
-    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/1?color="));
+    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/145139/1"));
+  });
+
+  it("switches to the backup player when neither tmdb nor anilist movie metadata is available", async () => {
+    hookMocks.useAnimeById.mockReturnValue({
+      data: {
+        data: {
+          ...anime,
+          type: "Movie",
+        },
+      },
+      isLoading: false,
+    });
+
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+
+    supabaseMocks.getEpisodeData.mockResolvedValue({
+      id: "movie-1",
+      mal_id: 1,
+      episode_number: 1,
+      episode_page_url: null,
+      video_url: "https://cdn.example.com/naruto-movie.mp4",
+      quality: "1080p",
+      video_sources: [
+        {
+          url: "https://cdn.example.com/naruto-movie.mp4",
+          type: "direct",
+          server_name: "anime3rb",
+          quality: "1080p",
+        },
+      ],
+      subtitle_language: "ar",
+      is_active: true,
+      category: null,
+      tags: [],
+      scraped_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");
+      expect(document.querySelector("video")).toBeInTheDocument();
+    });
   });
 
   it("keeps trailer pages on the existing youtube player without player tabs", async () => {
