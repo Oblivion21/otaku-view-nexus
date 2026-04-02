@@ -11,6 +11,7 @@ const hookMocks = vi.hoisted(() => ({
   useAnimeThemes: vi.fn(),
   useAnimeRelations: vi.fn(),
   useAnimeTmdbArtwork: vi.fn(),
+  useAnimeEpisodeStills: vi.fn(),
   useMultipleAnimeTmdbArtwork: vi.fn(),
 }));
 
@@ -33,6 +34,23 @@ vi.mock("@/components/ContentRail", () => ({
       <div>{title}</div>
       {headerAction}
       {items?.length ? items.map((item: any, index: number) => <div key={index}>{renderItem(item, index)}</div>) : <p>{emptyMessage}</p>}
+    </section>
+  ),
+}));
+vi.mock("@/components/EpisodePreviewRail", () => ({
+  default: ({ title, items, emptyMessage, headerActionHref, headerActionLabel }: any) => (
+    <section data-testid="episode-preview-rail">
+      <div>{title}</div>
+      <a href={headerActionHref}>{headerActionLabel}</a>
+      {items?.length ? items.map((item: any) => (
+        <div
+          key={item.episodeNumber}
+          data-testid={`episode-preview-${item.episodeNumber}`}
+          data-image-url={item.imageUrl || ""}
+        >
+          {item.title}
+        </div>
+      )) : <p>{emptyMessage}</p>}
     </section>
   ),
 }));
@@ -136,6 +154,12 @@ describe("AnimeDetail", () => {
       data: { data: [] },
       isLoading: false,
     });
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+    });
+    hookMocks.useAnimeEpisodeStills.mockReturnValue({
+      data: new Map(),
+    });
     hookMocks.useMultipleAnimeTmdbArtwork.mockReturnValue({
       data: new Map([
         [2, { posterUrl: "https://image.tmdb.org/t/p/w780/bleach-poster.jpg", backdropUrl: null }],
@@ -145,7 +169,7 @@ describe("AnimeDetail", () => {
     trailerFallbackMocks.getTrailerYoutubeId.mockReturnValue(null);
   });
 
-  it("uses TMDB banner and poster artwork on the detail page and recommendations", async () => {
+  it("uses TMDB banner and poster artwork on the detail page, recommendations, and episode previews", async () => {
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: {
         tmdbId: 1,
@@ -153,10 +177,31 @@ describe("AnimeDetail", () => {
         posterUrl: "https://image.tmdb.org/t/p/w780/naruto-poster.jpg",
         backdropUrl: "https://image.tmdb.org/t/p/original/naruto-backdrop.jpg",
         matchedTitle: "Naruto",
-        seasonNumber: null,
+        seasonNumber: 1,
         seasonName: null,
         matchConfidence: "high",
       },
+    });
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: {
+        data: [
+          {
+            mal_id: 1,
+            title: "Episode 1",
+            title_japanese: null,
+            title_romanji: null,
+            aired: null,
+            filler: false,
+            recap: false,
+          },
+        ],
+      },
+      isLoading: false,
+    });
+    hookMocks.useAnimeEpisodeStills.mockReturnValue({
+      data: new Map([
+        [1, { episodeNumber: 1, stillUrl: "https://image.tmdb.org/t/p/w780/naruto-ep-1.jpg" }],
+      ]),
     });
 
     const { container } = renderPage();
@@ -171,6 +216,10 @@ describe("AnimeDetail", () => {
       artworkUrl: "https://image.tmdb.org/t/p/w780/bleach-poster.jpg",
     }));
     expect(container.querySelector('[src*="jikan.example.com"]')).toBeNull();
+    expect(screen.getByTestId("episode-preview-1")).toHaveAttribute(
+      "data-image-url",
+      expect.stringContaining("naruto-ep-1.jpg"),
+    );
   });
 
   it("falls back to Jikan artwork when TMDB is missing", async () => {

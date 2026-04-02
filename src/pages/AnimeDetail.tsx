@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import ContentRail from "@/components/ContentRail";
-import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations, useAnimeTmdbArtwork, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
+import EpisodePreviewRail from "@/components/EpisodePreviewRail";
+import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations, useAnimeTmdbArtwork, useAnimeEpisodeStills, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
 import { TrailerBanner } from "@/components/TrailerBanner";
@@ -13,7 +14,7 @@ import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, getVisibleGenres, isB
 import { dedupeAnimeList, dedupeJikanEpisodes, dedupeRelationEntries, dedupeSupabaseEpisodes } from "@/lib/listDeduping";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
-import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import { hasAnyTitleArtwork, resolveJikanTitleArtworkUrl, resolveTitleArtworkUrl, resolveTmdbTitleArtworkUrl } from "@/lib/titleArtwork";
 import { useState, useEffect } from "react";
 
 function hasPlayableEpisodeData(episode: Pick<AnimeEpisode, "video_sources" | "video_url"> | null | undefined) {
@@ -122,6 +123,30 @@ export default function AnimeDetail() {
     return { background, border };
   }
 
+  function getEpisodeBadges(episode: Pick<AnimeEpisode, "category" | "tags">) {
+    const badges: string[] = [];
+
+    if (episode.category === "main_story") {
+      badges.push("القصة الرئيسية");
+    } else if (episode.category === "black_org") {
+      badges.push("المنظمة السوداء");
+    }
+
+    if (episode.tags?.includes("filler")) {
+      badges.push("فلر");
+    }
+
+    if (episode.tags?.includes("special")) {
+      badges.push("خاصة");
+    }
+
+    if (episode.tags?.includes("manga")) {
+      badges.push("مانجا");
+    }
+
+    return badges;
+  }
+
   if (isLoading) {
     return (
       <Layout>
@@ -165,7 +190,7 @@ export default function AnimeDetail() {
   const movieEpisode = supabaseEpisodeMap.get(1) ?? null;
   const canWatchMovie = isMovie && loadedSupabaseEpisodes && hasAnimeAlreadyAired(anime) && hasPlayableEpisodeData(movieEpisode);
   const canWatchSeries = isSeriesType && (hasSupabaseEpisodes || hasPublicEpisodes);
-  const episodeRailItems = hasPublicEpisodes
+  const rawEpisodeRailItems = hasPublicEpisodes
     ? dedupedPublicEpisodes.slice(0, 24).map((ep) => {
         const dbEpisode = supabaseEpisodeMap.get(ep.mal_id);
         return {
@@ -179,6 +204,28 @@ export default function AnimeDetail() {
         title: `الحلقة ${ep.episode_number}`,
         styleTarget: ep,
       }));
+  const episodeNumbers = rawEpisodeRailItems.map((item) => item.episodeNumber);
+  const { data: episodeStillMap } = useAnimeEpisodeStills(
+    tmdbArtwork,
+    episodeNumbers,
+    canWatchSeries && !isMovie,
+  );
+  const seriesPreviewImage =
+    resolveTmdbTitleArtworkUrl(tmdbArtwork, "banner") ||
+    resolveTmdbTitleArtworkUrl(tmdbArtwork, "poster") ||
+    resolveJikanTitleArtworkUrl(anime, "banner") ||
+    resolveJikanTitleArtworkUrl(anime, "poster");
+  const episodeRailItems = rawEpisodeRailItems.map((item) => {
+    const style = getEpisodeStyle(item.styleTarget);
+
+    return {
+      ...item,
+      href: `/watch/${animeId}/${item.episodeNumber}`,
+      imageUrl: episodeStillMap?.get(item.episodeNumber)?.stillUrl || seriesPreviewImage,
+      badges: getEpisodeBadges(item.styleTarget),
+      styleClassName: `${style.background} ${style.border}`,
+    };
+  });
   const relatedGroups = (relations?.data || [])
     .map((group) => {
       const animeEntries = dedupeRelationEntries(group.entry.filter((entry) => entry.type === "anime"));
@@ -316,47 +363,21 @@ export default function AnimeDetail() {
         {/* Episode list */}
         {canWatchSeries && (
         <div className="mt-10 space-y-4">
-
-          {/* Show color legend for Detective Conan */}
-          {isDetectiveConan && hasSupabaseEpisodes && (
-            <div className="flex flex-wrap gap-3 items-center text-sm bg-slate-800 text-white p-4 rounded-lg border border-slate-700">
-              <span className="font-bold">دليل الألوان:</span>
-              <div className="bg-green-500/30 border-2 border-green-500 px-3 py-1.5 rounded font-medium">مانجا/القصة الرئيسية</div>
-              <div className="bg-blue-500/30 border-2 border-blue-500 px-3 py-1.5 rounded font-medium">المنظمة السوداء</div>
-              <div className="bg-gray-400/30 border-2 border-gray-400 px-3 py-1.5 rounded font-medium">فلر</div>
-              <div className="bg-slate-700 border-2 border-red-500 px-3 py-1.5 rounded font-medium">حلقة خاصة</div>
-            </div>
-          )}
-
-          <ContentRail
+          <EpisodePreviewRail
             title="قائمة الحلقات"
             loading={loadingEp && !hasSupabaseEpisodes}
             items={episodeRailItems}
             emptyMessage="لا توجد حلقات متاحة"
-            itemClassName="basis-[86%] sm:basis-[58%] lg:basis-[42%] xl:basis-[34%]"
-            headerAction={(
-              <Button asChild variant="outline" size="sm">
-                <Link to={`/watch/${anime.mal_id}/1`}>عرض كل الحلقات</Link>
-              </Button>
-            )}
-            renderItem={(item) => {
-              const style = getEpisodeStyle(item.styleTarget);
-              return (
-                <Link
-                  to={`/watch/${animeId}/${item.episodeNumber}`}
-                  className={`block h-full rounded-xl border-2 p-4 transition-colors hover:bg-secondary/50 ${style.background} ${style.border}`}
-                >
-                  <div className="flex h-full flex-col justify-between gap-4">
-                    <span className="text-primary font-extrabold text-lg leading-none">
-                      {item.episodeNumber}
-                    </span>
-                    <p className="text-sm font-semibold leading-6 line-clamp-2">
-                      {item.title}
-                    </p>
-                  </div>
-                </Link>
-              );
-            }}
+            headerActionHref={`/watch/${anime.mal_id}/1`}
+            headerActionLabel="عرض كل الحلقات"
+            accentLegend={isDetectiveConan && hasSupabaseEpisodes ? (
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <Badge variant="secondary" className="bg-green-500/15 text-green-100 border-green-500/30">القصة الرئيسية</Badge>
+                <Badge variant="secondary" className="bg-blue-500/15 text-blue-100 border-blue-500/30">المنظمة السوداء</Badge>
+                <Badge variant="secondary" className="bg-gray-400/15 text-gray-100 border-gray-400/30">فلر</Badge>
+                <Badge variant="secondary" className="bg-red-500/15 text-red-100 border-red-500/30">خاصة</Badge>
+              </div>
+            ) : undefined}
           />
         </div>
         )}
