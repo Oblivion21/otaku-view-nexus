@@ -286,7 +286,7 @@ export default function EpisodeWatch() {
         anime.title_english || null,
         epNum,
         animeId,
-        true,
+        false,
       );
 
       setScraping(false);

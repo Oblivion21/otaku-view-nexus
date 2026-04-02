@@ -24,7 +24,6 @@ const corsHeaders = {
 const MIN_PREFERRED_RESOLUTION = 1080
 const DEFAULT_REMOTE_SCRAPER_URL = 'https://ani3rbscraper.onrender.com'
 const SCRAPE_CACHE_TTL_MS = 2 * 60 * 60 * 1000
-const PREFETCH_EPISODE_COUNT = 3
 
 type RemoteResolveResponse = {
   success?: boolean
@@ -771,26 +770,6 @@ function hasUsableCachedVideoSources(videoSources: unknown): videoSources is Vid
   })
 }
 
-function buildEpisodeUrlFromKnownEpisodeUrl(episodeUrl: string | null, episodeNumber: number): string | null {
-  const normalized = normalizeDirectUrl(String(episodeUrl || ''))
-    .replace(/[#?].*$/, '')
-    .replace(/\/+$/, '')
-
-  if (!normalized) return null
-
-  const slashFormat = normalized.match(/^https?:\/\/(?:www\.)?anime3rb\.com\/episode\/([a-z0-9-]+)\/\d+$/i)
-  if (slashFormat?.[1]) {
-    return `https://anime3rb.com/episode/${slashFormat[1]}/${episodeNumber}`
-  }
-
-  const dashFormat = normalized.match(/^https?:\/\/(?:www\.)?anime3rb\.com\/episode\/([a-z0-9-]+)-episode-\d+$/i)
-  if (dashFormat?.[1]) {
-    return `https://anime3rb.com/episode/${dashFormat[1]}-episode-${episodeNumber}`
-  }
-
-  return null
-}
-
 async function resolveAndCacheEpisode({
   animeTitle,
   animeTitleEnglish,
@@ -1155,73 +1134,6 @@ async function resolveAndCacheEpisode({
   }
 }
 
-function scheduleBackgroundTask(task: Promise<unknown>) {
-  const wrappedTask = task.catch((error) => {
-    console.error('[Prefetch] Background task failed:', error)
-  })
-
-  const edgeRuntime = (globalThis as typeof globalThis & {
-    EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void }
-  }).EdgeRuntime
-
-  if (edgeRuntime?.waitUntil) {
-    edgeRuntime.waitUntil(wrappedTask)
-    return
-  }
-
-  void wrappedTask
-}
-
-function getPrefetchEpisodeNumbers(currentEpisodeNumber: number, count = PREFETCH_EPISODE_COUNT): number[] {
-  return Array.from({ length: count }, (_, index) => currentEpisodeNumber + index + 1)
-}
-
-async function prefetchUpcomingEpisodes(
-  baseParams: Omit<ResolveEpisodeParams, 'episodeNumber' | 'rawEpisodeNumber' | 'directEpisodeUrl'>,
-  currentEpisodeNumber: number,
-  currentEpisodeUrl: string | null,
-): Promise<number[]> {
-  if (!baseParams.supabase || !baseParams.malId) return []
-  if (!baseParams.animeTitle && !currentEpisodeUrl) return []
-
-  const episodeNumbers = getPrefetchEpisodeNumbers(currentEpisodeNumber)
-  if (episodeNumbers.length === 0) return []
-
-  await Promise.allSettled(
-    episodeNumbers.map(async (targetEpisodeNumber) => {
-      const directCandidate = buildEpisodeUrlFromKnownEpisodeUrl(currentEpisodeUrl, targetEpisodeNumber)
-      let result = await resolveAndCacheEpisode({
-        ...baseParams,
-        episodeNumber: targetEpisodeNumber,
-        rawEpisodeNumber: targetEpisodeNumber,
-        forceRefresh: false,
-        directUrlOnly: Boolean(directCandidate),
-        directEpisodeUrl: directCandidate,
-      })
-
-      if (!result.ok && directCandidate) {
-        console.log(`[Prefetch] Exact episode URL failed for ${targetEpisodeNumber}, falling back to full Render resolver`)
-        result = await resolveAndCacheEpisode({
-          ...baseParams,
-          episodeNumber: targetEpisodeNumber,
-          rawEpisodeNumber: targetEpisodeNumber,
-          forceRefresh: false,
-          directUrlOnly: false,
-          directEpisodeUrl: directCandidate,
-        })
-      }
-
-      if (result.ok) {
-        console.log(`[Prefetch] Episode ${targetEpisodeNumber} cached (${result.cached ? 'cache-hit' : 'fresh'})`)
-      } else {
-        console.log(`[Prefetch] Episode ${targetEpisodeNumber} skipped: ${result.error}`)
-      }
-    })
-  )
-
-  return episodeNumbers
-}
-
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -1273,35 +1185,14 @@ serve(async (req: Request) => {
       })
     }
 
-    const prefetchBaseUrl = result.usedEpisodeUrl || (directEpisodeUrl ? String(directEpisodeUrl) : null)
-    const canPrefetch = Boolean(supabase && malId && (animeTitle || prefetchBaseUrl))
-    const prefetchedEpisodeNumbers = canPrefetch ? getPrefetchEpisodeNumbers(normalizedEpisodeNumber) : []
-
-    if (canPrefetch) {
-      scheduleBackgroundTask(
-        prefetchUpcomingEpisodes(
-          {
-            animeTitle,
-            animeTitleEnglish,
-            malId,
-            forceRefresh: false,
-            remoteScraperUrl,
-            supabase,
-          },
-          normalizedEpisodeNumber,
-          prefetchBaseUrl,
-        )
-      )
-    }
-
     return jsonResponse({
       video_sources: result.videoSources,
       cached: result.cached,
       episode_page_url: result.resolvedEpisodePageUrl,
       debug: {
         ...result.debug,
-        prefetch_scheduled: canPrefetch,
-        prefetched_episode_numbers: prefetchedEpisodeNumbers,
+        prefetch_scheduled: false,
+        prefetched_episode_numbers: [],
       },
     })
   } catch (error: any) {

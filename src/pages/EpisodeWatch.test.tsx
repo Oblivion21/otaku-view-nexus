@@ -136,7 +136,76 @@ describe("EpisodeWatch", () => {
 
     await waitFor(() => {
       expect(supabaseMocks.getEpisodeData).toHaveBeenCalledWith(1, 1);
-      expect(supabaseMocks.scrapeAnime3rbEpisode).toHaveBeenCalledWith("Naruto", "Naruto", 1, 1, true);
+      expect(supabaseMocks.scrapeAnime3rbEpisode).toHaveBeenCalledWith("Naruto", "Naruto", 1, 1, false);
+    });
+  });
+
+  it("does not scrape when a fresh cached episode link already exists", async () => {
+    supabaseMocks.getEpisodeData.mockResolvedValue({
+      id: "episode-1",
+      mal_id: 1,
+      episode_number: 1,
+      episode_page_url: "https://anime3rb.com/episode/naruto/1",
+      video_url: "https://cdn.example.com/naruto-1.mp4",
+      quality: "1080p",
+      video_sources: [
+        {
+          url: "https://cdn.example.com/naruto-1.mp4",
+          type: "direct",
+          server_name: "anime3rb",
+          quality: "1080p",
+        },
+      ],
+      subtitle_language: "ar",
+      is_active: true,
+      category: null,
+      tags: [],
+      scraped_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    renderPage();
+
+    await screen.findByTitle("Naruto - Main Player");
+    expect(screen.getByRole("tab", { name: "Main Player" })).toHaveAttribute("data-state", "active");
+
+    expect(supabaseMocks.scrapeAnime3rbEpisode).not.toHaveBeenCalled();
+  });
+
+  it("scrapes when the cached episode link is older than 2 hours", async () => {
+    const staleScrapedAt = new Date(Date.now() - ((2 * 60 * 60 * 1000) + 60_000)).toISOString();
+
+    supabaseMocks.getEpisodeData.mockResolvedValue({
+      id: "episode-1",
+      mal_id: 1,
+      episode_number: 1,
+      episode_page_url: "https://anime3rb.com/episode/naruto/1",
+      video_url: "https://cdn.example.com/naruto-1.mp4",
+      quality: "1080p",
+      video_sources: [
+        {
+          url: "https://cdn.example.com/naruto-1.mp4",
+          type: "direct",
+          server_name: "anime3rb",
+          quality: "1080p",
+        },
+      ],
+      subtitle_language: "ar",
+      is_active: true,
+      category: null,
+      tags: [],
+      scraped_at: staleScrapedAt,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    renderPage();
+
+    await screen.findByTitle("Naruto - Main Player");
+
+    await waitFor(() => {
+      expect(supabaseMocks.scrapeAnime3rbEpisode).toHaveBeenCalledWith("Naruto", "Naruto", 1, 1, false);
     });
   });
 

@@ -124,7 +124,7 @@ export async function scrapeAnime3rbEpisode(
   animeTitleEnglish: string | null,
   episodeNumber: number,
   malId: number,
-  forceRefresh = true,
+  forceRefresh = false,
 ): Promise<{ video_sources: VideoSource[] | null; cached: boolean; episode_page_url?: string | null; error?: string }> {
   if (!supabase) return { video_sources: null, cached: false, episode_page_url: null, error: 'Supabase not configured' }
 
