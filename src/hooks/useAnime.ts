@@ -18,6 +18,7 @@ import {
 } from "@/lib/jikan";
 import { getAnimeAniListMedia } from "@/lib/anilist";
 import { getAnimeTmdbArtwork } from "@/lib/tmdb";
+import { getMultipleAnimeTmdbArtwork } from "@/lib/tmdb";
 
 export function useTopAnime(page = 1, filter?: string) {
   return useQuery({
@@ -52,6 +53,23 @@ export function useAnimeTmdbArtwork(
     queryKey: ["anime-tmdb-artwork", anime?.mal_id],
     queryFn: () => getAnimeTmdbArtwork(anime),
     enabled: enabled && Boolean(anime?.mal_id),
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+}
+
+export function useMultipleAnimeTmdbArtwork(
+  animeList: JikanAnime[] | null | undefined,
+  enabled = true,
+) {
+  const malIds = (animeList || [])
+    .map((anime) => anime?.mal_id)
+    .filter((malId): malId is number => Boolean(malId))
+    .sort((a, b) => a - b);
+
+  return useQuery({
+    queryKey: ["multiple-anime-tmdb-artwork", malIds],
+    queryFn: () => getMultipleAnimeTmdbArtwork(animeList || []),
+    enabled: enabled && malIds.length > 0,
     staleTime: 24 * 60 * 60 * 1000,
   });
 }

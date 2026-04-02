@@ -4,13 +4,15 @@ import Layout from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations, useAnimeTmdbArtwork } from "@/hooks/useAnime";
+import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
+import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeThemes, useAnimeRelations, useAnimeTmdbArtwork, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
 import { TrailerBanner } from "@/components/TrailerBanner";
-import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, isBlockedAnime } from "@/lib/jikan";
+import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, isBlockedAnime, type JikanAnime } from "@/lib/jikan";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
+import { resolveTmdbTitleArtworkUrl } from "@/lib/titleArtwork";
 import { useState, useEffect } from "react";
 
 export default function AnimeDetail() {
@@ -27,6 +29,13 @@ export default function AnimeDetail() {
   const isDetectiveConan = animeId === 235; // Detective Conan MAL ID
   const anime = data?.data;
   const { data: tmdbArtwork } = useAnimeTmdbArtwork(anime);
+  const recommendationItems = recommendations?.data
+    ? [...recommendations.data]
+        .sort((a, b) => b.votes - a.votes)
+        .slice(0, 12)
+    : [];
+  const recommendationAnime = recommendationItems.map((rec) => rec.entry as JikanAnime);
+  const { data: recommendationArtworkMap } = useMultipleAnimeTmdbArtwork(recommendationAnime);
 
   // Fetch episodes from Supabase database
   useEffect(() => {
@@ -96,16 +105,8 @@ export default function AnimeDetail() {
     anime.trailer?.youtube_id || null,
     anime.trailer?.embed_url || null
   );
-  const bannerImage =
-    tmdbArtwork?.backdropUrl ||
-    tmdbArtwork?.posterUrl ||
-    anime.images.webp.large_image_url ||
-    anime.images.jpg.large_image_url;
-  const posterImage =
-    tmdbArtwork?.posterUrl ||
-    tmdbArtwork?.backdropUrl ||
-    anime.images.webp.large_image_url ||
-    anime.images.jpg.large_image_url;
+  const bannerImage = resolveTmdbTitleArtworkUrl(tmdbArtwork, "banner");
+  const posterImage = resolveTmdbTitleArtworkUrl(tmdbArtwork, "poster");
   const isSeriesType = anime.type === "TV" || anime.type === "OVA" || anime.type === "ONA" || anime.type === "Special";
   const hasSupabaseEpisodes = supabaseEpisodes.length > 0;
   const hasPublicEpisodes = Boolean(episodes?.data && episodes.data.length > 0);
@@ -122,16 +123,25 @@ export default function AnimeDetail() {
         <TrailerBanner
           youtubeId={trailerYoutubeId}
           posterUrl={bannerImage}
+          title={anime.title}
           height="400px"
           startSeconds={12}
           loopDurationSeconds={30}
         />
       ) : (
         <div className="relative h-[300px] md:h-[400px] overflow-hidden">
-          <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${bannerImage})` }}
-          />
+          {bannerImage ? (
+            <div
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: `url(${bannerImage})` }}
+            />
+          ) : (
+            <TitleArtworkPlaceholder
+              title={anime.title}
+              variant="banner"
+              className="absolute inset-0"
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/30" />
         </div>
       )}
@@ -139,11 +149,19 @@ export default function AnimeDetail() {
       <div className="container -mt-32 relative z-10 pb-8">
         <div className="flex flex-col md:flex-row gap-6">
           {/* Poster */}
-          <img
-            src={posterImage}
-            alt={anime.title}
-            className="w-48 aspect-[2/3] object-cover rounded-lg shadow-xl border border-border shrink-0"
-          />
+          {posterImage ? (
+            <img
+              src={posterImage}
+              alt={anime.title}
+              className="w-48 aspect-[2/3] object-cover rounded-lg shadow-xl border border-border shrink-0"
+            />
+          ) : (
+            <TitleArtworkPlaceholder
+              title={anime.title}
+              variant="poster"
+              className="w-48 aspect-[2/3] rounded-lg shadow-xl border border-border shrink-0"
+            />
+          )}
 
           {/* Info */}
           <div className="space-y-3 flex-1">
@@ -479,15 +497,18 @@ export default function AnimeDetail() {
             </div>
           ) : recommendations?.data && recommendations.data.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {[...recommendations.data]
-                .sort((a, b) => b.votes - a.votes)
-                .slice(0, 12)
-                .map((rec, index) => (
+              {recommendationItems.map((rec, index) => (
                   <div key={rec.entry.mal_id} className="relative">
                     <div className="absolute top-2 left-2 z-10 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shadow-lg ring-2 ring-background">
                       {index + 1}
                     </div>
-                    <AnimeCard anime={rec.entry as JikanAnime} preferTmdbArtwork />
+                    <AnimeCard
+                      anime={rec.entry as JikanAnime}
+                      artworkUrl={resolveTmdbTitleArtworkUrl(
+                        recommendationArtworkMap?.get(rec.entry.mal_id),
+                        "poster",
+                      )}
+                    />
                   </div>
                 ))}
             </div>

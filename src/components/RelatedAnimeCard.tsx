@@ -2,8 +2,10 @@ import { Link } from "react-router-dom";
 import { useAnimeById, useAnimeTmdbArtwork } from "@/hooks/useAnime";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 import { Star } from "lucide-react";
 import { TYPE_MAP, isBlockedAnime } from "@/lib/jikan";
+import { resolveTmdbTitleArtworkUrl } from "@/lib/titleArtwork";
 
 interface RelatedAnimeCardProps {
   mal_id: number;
@@ -20,13 +22,7 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
     return null;
   }
 
-  const imageUrl =
-    tmdbArtwork?.posterUrl ||
-    tmdbArtwork?.backdropUrl ||
-    anime?.images?.webp?.large_image_url ||
-    anime?.images?.webp?.image_url ||
-    anime?.images?.jpg?.large_image_url ||
-    anime?.images?.jpg?.image_url;
+  const imageUrl = resolveTmdbTitleArtworkUrl(tmdbArtwork, "poster");
 
   return (
     <Link
@@ -34,14 +30,20 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
       className="group block rounded-lg overflow-hidden bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5"
     >
       <div className="relative aspect-[3/4] overflow-hidden">
-        {isLoading || !imageUrl ? (
+        {isLoading ? (
           <Skeleton className="w-full h-full" />
-        ) : (
+        ) : imageUrl ? (
           <img
             src={imageUrl}
             alt={name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
+          />
+        ) : (
+          <TitleArtworkPlaceholder
+            title={name}
+            variant="poster"
+            className="h-full w-full"
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />

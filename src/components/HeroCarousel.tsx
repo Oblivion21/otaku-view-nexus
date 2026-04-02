@@ -3,15 +3,17 @@ import { Star, Play, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 import { useTopAnime } from "@/hooks/useAnime";
 import { GENRE_AR, type JikanAnime } from "@/lib/jikan";
 import { getFeaturedAnimeIds } from "@/lib/supabase";
 import { getMultipleAnimeTmdbArtwork } from "@/lib/tmdb";
+import { resolveTmdbTitleArtworkUrl } from "@/lib/titleArtwork";
 import { useState, useEffect, useRef } from "react";
 
 interface AnimeWithBanner {
   anime: JikanAnime
-  bannerImage: string
+  bannerImage: string | null
 }
 
 export default function HeroCarousel() {
@@ -117,11 +119,7 @@ export default function HeroCarousel() {
 
       return {
         anime,
-        bannerImage:
-          artwork?.backdropUrl ||
-          artwork?.posterUrl ||
-          anime.images.webp.large_image_url ||
-          anime.images.jpg.large_image_url,
+        bannerImage: resolveTmdbTitleArtworkUrl(artwork, "banner"),
       };
     });
   }
@@ -194,10 +192,18 @@ export default function HeroCarousel() {
       aria-label={`افتح صفحة ${anime.title}`}
     >
       {/* Background image */}
-      <div
-        className="absolute inset-0 bg-cover bg-center transition-all duration-700"
-        style={{ backgroundImage: `url(${bannerImage})` }}
-      />
+      {bannerImage ? (
+        <div
+          className="absolute inset-0 bg-cover bg-center transition-all duration-700"
+          style={{ backgroundImage: `url(${bannerImage})` }}
+        />
+      ) : (
+        <TitleArtworkPlaceholder
+          title={anime.title}
+          variant="banner"
+          className="absolute inset-0"
+        />
+      )}
       <div className="absolute inset-0 bg-gradient-to-l from-background via-background/80 to-background/40" />
       <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/30" />
 

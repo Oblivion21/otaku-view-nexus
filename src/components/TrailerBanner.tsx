@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 
 interface TrailerBannerProps {
   youtubeId: string;
-  posterUrl: string;
+  posterUrl: string | null;
+  title?: string;
   height?: string;
   startSeconds?: number;
   loopDurationSeconds?: number;
@@ -20,6 +22,7 @@ const isMobilePhone = () => {
 export function TrailerBanner({
   youtubeId,
   posterUrl,
+  title = "Anime",
   height = '400px',
   startSeconds = 0,
   loopDurationSeconds = 28,
@@ -105,10 +108,18 @@ export function TrailerBanner({
     <div className="relative overflow-hidden" style={{ height }}>
       {/* Show poster image on mobile phones or when loading/error on desktop/tablet */}
       {(isMobile || !isLoaded || hasError) && (
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${posterUrl})` }}
-        />
+        posterUrl ? (
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: `url(${posterUrl})` }}
+          />
+        ) : (
+          <TitleArtworkPlaceholder
+            title={title}
+            variant="banner"
+            className="absolute inset-0"
+          />
+        )
       )}
 
       {/* YouTube Player - Desktop and Tablet only (not mobile phones) */}

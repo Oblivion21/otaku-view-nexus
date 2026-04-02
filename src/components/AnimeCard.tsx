@@ -1,35 +1,36 @@
 import { Link } from "react-router-dom";
 import { Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useAnimeTmdbArtwork } from "@/hooks/useAnime";
 import type { JikanAnime } from "@/lib/jikan";
 import { GENRE_AR, TYPE_MAP } from "@/lib/jikan";
+import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 
 interface AnimeCardProps {
   anime: JikanAnime;
-  preferTmdbArtwork?: boolean;
+  artworkUrl?: string | null;
 }
 
-export default function AnimeCard({ anime, preferTmdbArtwork = false }: AnimeCardProps) {
-  const { data: tmdbArtwork } = useAnimeTmdbArtwork(anime, preferTmdbArtwork);
-  const imageUrl =
-    tmdbArtwork?.posterUrl ||
-    tmdbArtwork?.backdropUrl ||
-    anime.images.webp.large_image_url ||
-    anime.images.jpg.large_image_url;
-
+export default function AnimeCard({ anime, artworkUrl = null }: AnimeCardProps) {
   return (
     <Link
       to={`/anime/${anime.mal_id}`}
       className="group block rounded-lg overflow-hidden bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5"
     >
       <div className="relative aspect-[3/4] overflow-hidden">
-        <img
-          src={imageUrl}
-          alt={anime.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          loading="lazy"
-        />
+        {artworkUrl ? (
+          <img
+            src={artworkUrl}
+            alt={anime.title}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            loading="lazy"
+          />
+        ) : (
+          <TitleArtworkPlaceholder
+            title={anime.title}
+            variant="poster"
+            className="h-full w-full"
+          />
+        )}
         {/* Overlay gradient */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
 
