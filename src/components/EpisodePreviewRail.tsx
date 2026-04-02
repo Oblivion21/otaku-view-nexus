@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ export type EpisodePreviewRailItem = {
   title: string;
   href: string;
   imageUrl: string | null;
-  ratingLabel?: string | null;
+  scoreLabel?: string | null;
   badges?: string[];
   styleClassName?: string;
 };
@@ -62,6 +63,12 @@ function EpisodePreviewCard({ item }: { item: EpisodePreviewRailItem }) {
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/10" />
+        {item.scoreLabel ? (
+          <div className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-black/70 px-3 py-1 text-xs font-bold text-anime-gold ring-1 ring-white/10 backdrop-blur">
+            <Star className="h-3.5 w-3.5 fill-anime-gold text-anime-gold" />
+            <span>{item.scoreLabel}</span>
+          </div>
+        ) : null}
         {item.badges?.length ? (
           <div className="absolute bottom-3 right-3 flex flex-wrap gap-1.5">
             {item.badges.slice(0, 3).map((badge) => (
@@ -77,11 +84,6 @@ function EpisodePreviewCard({ item }: { item: EpisodePreviewRailItem }) {
         ) : null}
       </div>
       <div className="space-y-2.5 p-3 text-right">
-        {item.ratingLabel ? (
-          <p className="truncate text-[11px] font-semibold tracking-wide text-primary/90">
-            {item.ratingLabel}
-          </p>
-        ) : null}
         <h3 className="line-clamp-2 text-sm font-bold leading-6 text-foreground md:text-[15px]">
           {item.title}
         </h3>

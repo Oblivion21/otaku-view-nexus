@@ -463,23 +463,18 @@ export default function EpisodeWatch() {
 
     if (mainPlayerStatus === "ready" && mainPlayerUrl) {
       return (
-        <div className="space-y-3">
-          <div className="episode-watch-player-shell relative w-full aspect-video rounded-xl overflow-hidden border border-primary/20 bg-black shadow-[0_0_30px_rgba(0,208,255,0.08)]">
-            <iframe
-              src={mainPlayerUrl}
-              title={`${anime.title} - Main Player`}
-              className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
-              allowFullScreen
-              allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-              onLoad={() => setMainPlayerFrameLoaded(true)}
-              onError={() => {
-                fallbackToBackup("Main Player failed to load. Switched to Backup Player.");
-              }}
-            />
-          </div>
-          <p className="text-sm text-muted-foreground">
-            If playback does not start automatically, press play in the embedded player.
-          </p>
+        <div className="episode-watch-player-shell relative w-full aspect-video rounded-xl overflow-hidden border border-primary/20 bg-black shadow-[0_0_30px_rgba(0,208,255,0.08)]">
+          <iframe
+            src={mainPlayerUrl}
+            title={`${anime.title} - Main Player`}
+            className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
+            allowFullScreen
+            allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+            onLoad={() => setMainPlayerFrameLoaded(true)}
+            onError={() => {
+              fallbackToBackup("Main Player failed to load. Switched to Backup Player.");
+            }}
+          />
         </div>
       );
     }
