@@ -161,7 +161,7 @@ describe("AnimeDetail", () => {
 
     const { container } = renderPage();
 
-    expect(await screen.findByText("Naruto")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
     expect(screen.getByAltText("Naruto")).toHaveAttribute(
       "src",
       expect.stringContaining("naruto-poster.jpg"),
@@ -184,7 +184,7 @@ describe("AnimeDetail", () => {
     const { container } = renderPage();
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Naruto artwork placeholder")).toBeInTheDocument();
+      expect(screen.getAllByLabelText("Naruto artwork placeholder")).toHaveLength(2);
     });
     expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
     expect(animeCardSpy.mock.calls[0][0]).toEqual(expect.objectContaining({
@@ -248,7 +248,7 @@ describe("AnimeDetail", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Kimi no Na wa.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Kimi no Na wa." })).toBeInTheDocument();
     expect(screen.queryByText("1 حلقة")).not.toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "غير متوفر حالياً" })).toBeDisabled();
@@ -298,7 +298,7 @@ describe("AnimeDetail", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Kimi no Na wa.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Kimi no Na wa." })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "شاهد الفيلم" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "غير متوفر حالياً" })).not.toBeInTheDocument();
   });
@@ -343,7 +343,7 @@ describe("AnimeDetail", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Meitantei Conan Movie 29: Highway no Datenshi")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Meitantei Conan Movie 29: Highway no Datenshi" })).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "غير متوفر حالياً" })).toBeDisabled();
     });
@@ -362,7 +362,7 @@ describe("AnimeDetail", () => {
 
     renderPage();
 
-    expect(await screen.findByText("Naruto")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "شاهد الحلقة 1" })).not.toBeInTheDocument();
     expect(screen.queryByText("قائمة الحلقات")).not.toBeInTheDocument();
   });
@@ -406,7 +406,7 @@ describe("AnimeDetail", () => {
 
     renderPage();
 
-    expect(await screen.findByText("Naruto")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "عرض كل الحلقات" })).toBeInTheDocument();
     expect(screen.getAllByTestId("recommendation-2")).toHaveLength(1);
   });

@@ -82,7 +82,7 @@ describe("HeroCarousel", () => {
 
     const { container } = renderCarousel();
 
-    await screen.findByText("Naruto");
+    await screen.findByRole("heading", { name: "Naruto" });
     await waitFor(() => {
       expect(tmdbMocks.getMultipleAnimeTmdbArtwork).toHaveBeenCalledWith([anime]);
     });
@@ -95,7 +95,7 @@ describe("HeroCarousel", () => {
 
     const { container } = renderCarousel();
 
-    await screen.findByText("Naruto");
+    await screen.findByRole("heading", { name: "Naruto" });
     expect(screen.getByLabelText("Naruto artwork placeholder")).toBeInTheDocument();
     expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
   });
@@ -111,7 +111,7 @@ describe("HeroCarousel", () => {
     renderCarousel();
 
     await waitFor(() => {
-      expect(screen.getByText("Naruto")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Naruto" })).toBeInTheDocument();
     });
   });
 
@@ -134,8 +134,8 @@ describe("HeroCarousel", () => {
 
     renderCarousel();
 
-    await screen.findByText("Bleach");
-    expect(screen.queryByText("Naruto")).not.toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Bleach" });
+    expect(screen.queryByRole("heading", { name: "Naruto" })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(tmdbMocks.getMultipleAnimeTmdbArtwork).toHaveBeenCalledWith([featuredAnime]);
     });
