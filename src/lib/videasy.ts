@@ -7,6 +7,7 @@ const VIDEASY_BASE_URL = "https://player.videasy.net";
 function buildVideasyParams() {
   return new URLSearchParams({
     color: VIDEASY_COLOR_HEX,
+    autoplay: "1",
   });
 }
 

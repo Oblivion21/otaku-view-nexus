@@ -127,6 +127,7 @@ describe("EpisodeWatch", () => {
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/21/1"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("color=00D0FF"));
+    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("nextEpisode="));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("episodeSelector="));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("autoplayNextEpisode="));
@@ -299,6 +300,7 @@ describe("EpisodeWatch", () => {
 
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/movie/299534?color=00D0FF"));
+    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/anime/145139"));
   });
 
@@ -344,6 +346,7 @@ describe("EpisodeWatch", () => {
 
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/145139?color=00D0FF"));
+    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/145139/1"));
   });
 

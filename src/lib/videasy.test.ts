@@ -39,31 +39,31 @@ const movieArtwork: TmdbAnimeArtwork = {
 describe("videasy helpers", () => {
   it("builds a tmdb movie embed url with color", () => {
     expect(buildVideasyMovieEmbedUrl(movieArtwork)).toBe(
-      "https://player.videasy.net/movie/299534?color=00D0FF",
+      "https://player.videasy.net/movie/299534?color=00D0FF&autoplay=1",
     );
   });
 
   it("builds a show embed url with an AniList id, episode, and color", () => {
     expect(buildVideasyAnimeEmbedUrl(baseMedia, "TV", 7)).toBe(
-      "https://player.videasy.net/anime/21/7?color=00D0FF",
+      "https://player.videasy.net/anime/21/7?color=00D0FF&autoplay=1",
     );
   });
 
   it("builds a movie embed url without an episode segment", () => {
     expect(buildVideasyAnimeEmbedUrl(baseMedia, "Movie", 1)).toBe(
-      "https://player.videasy.net/anime/21?color=00D0FF",
+      "https://player.videasy.net/anime/21?color=00D0FF&autoplay=1",
     );
   });
 
   it("prefers the tmdb movie path for anime movies when available", () => {
     expect(resolveVideasyMainPlayerUrl(movieArtwork, baseMedia, "Movie", 1)).toBe(
-      "https://player.videasy.net/movie/299534?color=00D0FF",
+      "https://player.videasy.net/movie/299534?color=00D0FF&autoplay=1",
     );
   });
 
   it("falls back to the anilist anime-movie path when tmdb movie data is missing", () => {
     expect(resolveVideasyMainPlayerUrl(null, baseMedia, "Movie", 1)).toBe(
-      "https://player.videasy.net/anime/21?color=00D0FF",
+      "https://player.videasy.net/anime/21?color=00D0FF&autoplay=1",
     );
   });
 
