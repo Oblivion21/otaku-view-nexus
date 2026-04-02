@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 
 interface TrailerBannerProps {
@@ -6,8 +6,6 @@ interface TrailerBannerProps {
   posterUrl: string | null;
   title?: string;
   height?: string;
-  startSeconds?: number;
-  loopDurationSeconds?: number;
 }
 
 // Detect if user is on mobile device (phone only, not tablets)
@@ -24,11 +22,7 @@ export function TrailerBanner({
   posterUrl,
   title = "Anime",
   height = '400px',
-  startSeconds = 0,
-  loopDurationSeconds = 28,
 }: TrailerBannerProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const loopTimerRef = useRef<number | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -38,63 +32,9 @@ export function TrailerBanner({
     setIsMobile(isMobilePhone());
   }, []);
 
-  const restartVideoFromOffset = useCallback(() => {
-    if (!iframeRef.current?.contentWindow) {
-      return;
-    }
-
-    const seekTarget = Math.max(0, Math.floor(startSeconds));
-    const sendCommand = (func: string, args: unknown[] = []) => {
-      iframeRef.current?.contentWindow?.postMessage(
-        JSON.stringify({
-          event: "command",
-          func,
-          args,
-        }),
-        "https://www.youtube.com",
-      );
-    };
-
-    sendCommand("seekTo", [seekTarget, true]);
-    sendCommand("playVideo");
-  }, [startSeconds]);
-
-  useEffect(() => {
-    if (isMobile) return; // Skip video setup on mobile phones
-
-    // Restart the video from the requested offset after the configured loop duration.
-    loopTimerRef.current = window.setInterval(() => {
-      if (iframeRef.current && isLoaded && !hasError) {
-        restartVideoFromOffset();
-      }
-    }, Math.max(1, Math.floor(loopDurationSeconds)) * 1000);
-
-    return () => {
-      if (loopTimerRef.current) {
-        clearInterval(loopTimerRef.current);
-      }
-    };
-  }, [youtubeId, isLoaded, hasError, isMobile, startSeconds, loopDurationSeconds, restartVideoFromOffset]);
-
-  useEffect(() => {
-    if (!isLoaded || hasError || isMobile || startSeconds <= 0) {
-      return;
-    }
-
-    const attemptTimers = [
-      window.setTimeout(restartVideoFromOffset, 250),
-      window.setTimeout(restartVideoFromOffset, 1000),
-      window.setTimeout(restartVideoFromOffset, 2000),
-    ];
-
-    return () => {
-      attemptTimers.forEach((timer) => clearTimeout(timer));
-    };
-  }, [isLoaded, hasError, isMobile, startSeconds, youtubeId, restartVideoFromOffset]);
-
   // Enhanced URL parameters for better quality and control (desktop/tablet only)
   const origin = typeof window !== "undefined" ? encodeURIComponent(window.location.origin) : "";
-  const embedUrl = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&showinfo=0&modestbranding=1&rel=0&playsinline=1&disablekb=1&fs=0&iv_load_policy=3&loop=1&playlist=${youtubeId}&enablejsapi=1&origin=${origin}&start=${Math.max(0, Math.floor(startSeconds))}`;
+  const embedUrl = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&showinfo=0&modestbranding=1&rel=0&playsinline=1&disablekb=1&fs=0&iv_load_policy=3&loop=1&playlist=${youtubeId}&origin=${origin}`;
 
   const handleLoad = () => {
     setIsLoaded(true);
@@ -126,7 +66,6 @@ export function TrailerBanner({
       {!isMobile && !hasError && (
         <div className="absolute inset-0 overflow-hidden">
           <iframe
-            ref={iframeRef}
             src={embedUrl}
             allow="autoplay; encrypted-media"
             className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"

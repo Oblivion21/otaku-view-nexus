@@ -125,8 +125,6 @@ export default function AnimeDetail() {
           posterUrl={bannerImage}
           title={anime.title}
           height="400px"
-          startSeconds={12}
-          loopDurationSeconds={30}
         />
       ) : (
         <div className="relative h-[300px] md:h-[400px] overflow-hidden">
