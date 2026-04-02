@@ -74,6 +74,7 @@ vi.mock("@/components/EpisodePreviewRail", () => ({
           key={item.episodeNumber}
           data-testid={`episode-preview-${item.episodeNumber}`}
           data-image-url={item.imageUrl || ""}
+          data-score-label={item.scoreLabel || ""}
         >
           {item.title}
         </div>
@@ -219,6 +220,7 @@ describe("AnimeDetail", () => {
             title_japanese: null,
             title_romanji: null,
             aired: null,
+            score: 9.4,
             filler: false,
             recap: false,
           },
@@ -253,6 +255,7 @@ describe("AnimeDetail", () => {
       "data-image-url",
       expect.stringContaining("naruto-ep-1.jpg"),
     );
+    expect(screen.getByTestId("episode-preview-1")).toHaveAttribute("data-score-label", "9.4");
   });
 
   it("falls back to the Jikan trailer for the background banner when TMDB has no trailer", async () => {

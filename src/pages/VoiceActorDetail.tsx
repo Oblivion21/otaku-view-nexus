@@ -3,7 +3,8 @@ import { ChevronLeft, Star } from "lucide-react";
 import Layout from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { usePersonById, usePersonVoices } from "@/hooks/useAnime";
+import { useMultipleAnimeTmdbArtwork, usePersonById, usePersonVoices } from "@/hooks/useAnime";
+import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 export default function VoiceActorDetail() {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +35,16 @@ export default function VoiceActorDetail() {
   }
 
   const voices = voicesData?.data || [];
+  const voiceAnimeArtworkLookup = voices.map((voice) => ({
+    mal_id: voice.anime.mal_id,
+    title: voice.anime.title,
+    title_english: null,
+    title_japanese: voice.anime.title,
+    type: null,
+    year: null,
+    aired: null,
+  }));
+  const { data: voiceAnimeArtworkMap } = useMultipleAnimeTmdbArtwork(voiceAnimeArtworkLookup, voices.length > 0);
 
   return (
     <Layout>
@@ -108,7 +119,11 @@ export default function VoiceActorDetail() {
                   {/* Anime side */}
                   <div className="flex items-center gap-3 flex-1 p-3 min-w-0">
                     <img
-                      src={voice.anime.images.webp.image_url || voice.anime.images.jpg.image_url}
+                      src={resolveTitleArtworkUrl(
+                        voiceAnimeArtworkMap?.get(voice.anime.mal_id),
+                        voice.anime,
+                        "poster",
+                      ) || ""}
                       alt={voice.anime.title}
                       className="w-16 h-20 rounded object-cover shrink-0"
                       loading="lazy"

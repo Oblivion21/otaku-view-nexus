@@ -76,12 +76,14 @@ export default function AnimeDetail() {
         return {
           episodeNumber: ep.mal_id,
           title: ep.title || `الحلقة ${ep.mal_id}`,
+          scoreLabel: typeof ep.score === "number" ? ep.score.toFixed(1) : null,
           styleTarget: dbEpisode || { category: null, tags: [] },
         };
       })
     : dedupedSupabaseEpisodes.slice(0, 24).map((ep) => ({
         episodeNumber: ep.episode_number,
         title: `الحلقة ${ep.episode_number}`,
+        scoreLabel: null,
         styleTarget: ep,
       }));
   const episodeNumbers = rawEpisodeRailItems.map((item) => item.episodeNumber);
@@ -219,7 +221,7 @@ export default function AnimeDetail() {
       ...item,
       href: `/watch/${animeId}/${item.episodeNumber}`,
       imageUrl: episodePreviewImageMap?.get(item.episodeNumber)?.imageUrl || null,
-      scoreLabel: typeof anime?.score === "number" ? anime.score.toFixed(1) : null,
+      scoreLabel: item.scoreLabel,
       badges: getEpisodeBadges(item.styleTarget),
       styleClassName: `${style.background} ${style.border}`,
     };

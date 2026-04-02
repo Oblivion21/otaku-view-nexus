@@ -21,6 +21,7 @@ import { getAnimeTmdbArtwork } from "@/lib/tmdb";
 import { getMultipleAnimeTmdbArtwork } from "@/lib/tmdb";
 import { getAnimeEpisodeStills } from "@/lib/tmdb";
 import { getAnimeEpisodePreviewImages } from "@/lib/tmdb";
+import type { AnimeArtworkLookup } from "@/lib/tmdb";
 import { getFeaturedCarouselItems } from "@/lib/featuredCarousel";
 
 export function useTopAnime(page = 1, filter?: string) {
@@ -69,7 +70,7 @@ export function useAnimeTmdbArtwork(
 }
 
 export function useMultipleAnimeTmdbArtwork(
-  animeList: JikanAnime[] | null | undefined,
+  animeList: AnimeArtworkLookup[] | null | undefined,
   enabled = true,
 ) {
   const malIds = (animeList || [])

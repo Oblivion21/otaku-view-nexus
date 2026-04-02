@@ -42,6 +42,7 @@ export interface JikanEpisode {
   title_japanese: string | null;
   title_romanji: string | null;
   aired: string | null;
+  score?: number | null;
   filler: boolean;
   recap: boolean;
 }
