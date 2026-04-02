@@ -84,6 +84,9 @@ function EpisodePreviewCard({ item }: { item: EpisodePreviewRailItem }) {
         ) : null}
       </div>
       <div className="space-y-2.5 p-3 text-right">
+        <p className="text-[11px] font-semibold tracking-wide text-primary/90">
+          EPISODE {item.episodeNumber}
+        </p>
         <h3 className="line-clamp-2 text-sm font-bold leading-6 text-foreground md:text-[15px]">
           {item.title}
         </h3>

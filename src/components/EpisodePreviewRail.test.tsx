@@ -66,6 +66,7 @@ describe("EpisodePreviewRail", () => {
 
     expect(screen.getByTestId("episode-carousel")).toHaveAttribute("dir", "rtl");
     expect(screen.getByText("Episode 1")).toBeInTheDocument();
+    expect(screen.getByText("EPISODE 1")).toBeInTheDocument();
     expect(screen.getByText("8.7")).toBeInTheDocument();
     expect(carouselMocks.carouselSpy).toHaveBeenCalledWith(expect.objectContaining({ dir: "rtl" }));
     expect(carouselMocks.previousSpy).toHaveBeenCalledWith(
@@ -102,6 +103,7 @@ describe("EpisodePreviewRail", () => {
     );
 
     expect(screen.getByLabelText("Episode 3 preview placeholder")).toBeInTheDocument();
+    expect(screen.getByText("EPISODE 3")).toBeInTheDocument();
     expect(screen.getByText("9.1")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Episode 3" })).not.toBeInTheDocument();
   });
