@@ -57,7 +57,14 @@ interface JikanResponse<T> {
   pagination?: JikanPagination;
 }
 
-const BLOCKED_GENRE_NAMES = new Set(["Ecchi"]);
+const BLOCKED_GENRE_NAMES = new Set([
+  "Ecchi",
+  "Hentai",
+  "Boys Love",
+  "Girls Love",
+  "Avant Garde",
+  "Erotica",
+]);
 
 type GenreLike = {
   mal_id: number;
