@@ -133,6 +133,7 @@ export default function EpisodeWatch() {
   const [scrapeError, setScrapeError] = useState<string | null>(null);
   const [episodeSearchQuery, setEpisodeSearchQuery] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const autoSelectedPrimaryPlayerRef = useRef(false);
 
   const supabaseEpisodeMap = new Map(
     availableEpisodes.map((ep) => [ep.episode_number, ep]),
@@ -196,6 +197,8 @@ export default function EpisodeWatch() {
     : isMovie
       ? anime?.title || ""
       : `${anime?.title || ""} — الحلقة ${epNum}`;
+  const hasPrimaryVidplays = Boolean(vidplaysUrl);
+  const mainPlayerTabLabel = hasPrimaryVidplays ? "Videasy" : "Main Player";
 
   function fallbackToBackup(message: string) {
     setMainPlayerStatus("error");
@@ -206,11 +209,21 @@ export default function EpisodeWatch() {
   useEffect(() => {
     if (isTrailer) return;
 
+    autoSelectedPrimaryPlayerRef.current = false;
     setActivePlayerTab("main");
     setMainPlayerStatus("idle");
     setMainPlayerMessage(null);
     setMainPlayerFrameLoaded(false);
   }, [animeId, epNum, isTrailer]);
+
+  useEffect(() => {
+    if (isTrailer || !vidplaysUrl || autoSelectedPrimaryPlayerRef.current) {
+      return;
+    }
+
+    autoSelectedPrimaryPlayerRef.current = true;
+    setActivePlayerTab("vidplays");
+  }, [isTrailer, vidplaysUrl]);
 
   useEffect(() => {
     if (isTrailer) {
@@ -226,12 +239,22 @@ export default function EpisodeWatch() {
     }
 
     if (isMovie && tmdbArtworkError && !aniListMedia) {
-      fallbackToBackup("Main Player could not resolve this movie. Switched to Backup Player.");
+      if (!hasPrimaryVidplays) {
+        fallbackToBackup("Main Player could not resolve this movie. Switched to Backup Player.");
+      } else {
+        setMainPlayerStatus("error");
+        setMainPlayerMessage("Videasy could not resolve this movie.");
+      }
       return;
     }
 
     if (aniListMediaError && !isMovie) {
-      fallbackToBackup("Main Player could not resolve this title. Switched to Backup Player.");
+      if (!hasPrimaryVidplays) {
+        fallbackToBackup("Main Player could not resolve this title. Switched to Backup Player.");
+      } else {
+        setMainPlayerStatus("error");
+        setMainPlayerMessage("Videasy could not resolve this title.");
+      }
       return;
     }
 
@@ -240,7 +263,9 @@ export default function EpisodeWatch() {
       setMainPlayerMessage(
         getVideasyUnavailableReason(tmdbArtwork ?? null, aniListMedia ?? null, anime.type ?? null, epNum),
       );
-      setActivePlayerTab("backup");
+      if (!hasPrimaryVidplays) {
+        setActivePlayerTab("backup");
+      }
       return;
     }
 
@@ -257,6 +282,7 @@ export default function EpisodeWatch() {
     tmdbArtwork,
     aniListMedia,
     mainPlayerUrl,
+    hasPrimaryVidplays,
     epNum,
   ]);
 
@@ -272,11 +298,11 @@ export default function EpisodeWatch() {
     }
 
     const timeout = window.setTimeout(() => {
-      fallbackToBackup("Main Player took too long to load. Switched to Backup Player.");
+      fallbackToBackup(`${mainPlayerTabLabel} took too long to load. Switched to Backup Player.`);
     }, 12000);
 
     return () => window.clearTimeout(timeout);
-  }, [isTrailer, activePlayerTab, mainPlayerStatus, mainPlayerUrl, mainPlayerFrameLoaded]);
+  }, [isTrailer, activePlayerTab, mainPlayerStatus, mainPlayerUrl, mainPlayerFrameLoaded, mainPlayerTabLabel]);
 
   useEffect(() => {
     async function fetchEpisodeVideo() {
@@ -474,7 +500,7 @@ export default function EpisodeWatch() {
       return (
         <div className="w-full aspect-video rounded-xl border border-primary/20 bg-[radial-gradient(circle_at_top,_rgba(0,208,255,0.12),_transparent_55%),linear-gradient(180deg,_rgba(15,23,42,0.96),_rgba(2,6,23,0.96))] flex flex-col items-center justify-center gap-3">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          <p className="text-slate-200">Loading Main Player...</p>
+          <p className="text-slate-200">Loading {mainPlayerTabLabel}...</p>
         </div>
       );
     }
@@ -484,13 +510,13 @@ export default function EpisodeWatch() {
         <div className="episode-watch-player-shell relative w-full aspect-video rounded-xl overflow-hidden border border-primary/20 bg-black shadow-[0_0_30px_rgba(0,208,255,0.08)]">
           <iframe
             src={mainPlayerUrl}
-            title={`${anime.title} - Main Player`}
+            title={`${anime.title} - ${mainPlayerTabLabel}`}
             className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
             allowFullScreen
             allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
             onLoad={() => setMainPlayerFrameLoaded(true)}
             onError={() => {
-              fallbackToBackup("Main Player failed to load. Switched to Backup Player.");
+              fallbackToBackup(`${mainPlayerTabLabel} failed to load. Switched to Backup Player.`);
             }}
           />
         </div>
@@ -500,7 +526,7 @@ export default function EpisodeWatch() {
     return (
       <div className="w-full aspect-video rounded-xl border border-amber-500/30 bg-card flex items-center justify-center">
         <div className="text-center space-y-2 px-6">
-          <p className="text-amber-300 font-medium">Main Player unavailable</p>
+          <p className="text-amber-300 font-medium">{mainPlayerTabLabel} unavailable</p>
           <p className="text-sm text-muted-foreground">
             {mainPlayerMessage || "Switched to Backup Player for this episode."}
           </p>
@@ -527,7 +553,7 @@ export default function EpisodeWatch() {
       <div className="episode-watch-player-shell relative w-full aspect-video rounded-xl overflow-hidden border border-primary/20 bg-black shadow-[0_0_30px_rgba(0,208,255,0.08)]">
         <iframe
           src={vidplaysUrl}
-          title={`${anime.title} - Vidplays`}
+          title={`${anime.title} - Main Player`}
           className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
           allowFullScreen
           allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
@@ -706,20 +732,20 @@ export default function EpisodeWatch() {
             <Tabs value={activePlayerTab} onValueChange={(value) => setActivePlayerTab(value as PlayerTab)}>
               <div className="space-y-3">
                 <TabsList className="bg-slate-900/80 border border-primary/10">
-                  <TabsTrigger value="main">Main Player</TabsTrigger>
-                  {vidplaysUrl ? <TabsTrigger value="vidplays">Vidplays</TabsTrigger> : null}
+                  {vidplaysUrl ? <TabsTrigger value="vidplays">Main Player</TabsTrigger> : null}
+                  <TabsTrigger value="main">{mainPlayerTabLabel}</TabsTrigger>
                   <TabsTrigger value="backup">Backup Player</TabsTrigger>
                 </TabsList>
-
-                <TabsContent value="main" className="mt-0">
-                  {renderMainPlayer()}
-                </TabsContent>
 
                 {vidplaysUrl ? (
                   <TabsContent value="vidplays" className="mt-0">
                     {renderVidplaysPlayer()}
                   </TabsContent>
                 ) : null}
+
+                <TabsContent value="main" className="mt-0">
+                  {renderMainPlayer()}
+                </TabsContent>
 
                 <TabsContent value="backup" className="mt-0">
                   {renderBackupPlayer()}

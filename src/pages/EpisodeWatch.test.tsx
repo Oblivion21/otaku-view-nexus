@@ -123,21 +123,16 @@ describe("EpisodeWatch", () => {
     });
   });
 
-  it("shows Main Player by default and prepares the backup flow in the background", async () => {
+  it("shows Vidplays as Main Player by default and prepares the backup flow in the background", async () => {
     renderPage();
 
     const mainTab = await screen.findByRole("tab", { name: "Main Player" });
     expect(mainTab).toHaveAttribute("data-state", "active");
-    expect(screen.getByRole("tab", { name: "Vidplays" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Videasy" })).toBeInTheDocument();
 
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
-    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/21/1"));
-    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("color=00D0FF"));
-    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
-    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("nextEpisode="));
-    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("episodeSelector="));
-    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("autoplayNextEpisode="));
-    expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("overlay="));
+    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://vidplays.fun/embed/anime/21/1/sub"));
+    expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=true"));
     expect(screen.getByRole("link", { name: /الحلقة السابقة/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /الحلقة التالية/ })).toBeInTheDocument();
 
@@ -147,18 +142,11 @@ describe("EpisodeWatch", () => {
     });
   });
 
-  it("uses the AniList anime embed path for the Vidplays tab", async () => {
+  it("uses the AniList anime embed path for the Main Player tab", async () => {
     renderPage();
 
-    const vidplaysTab = screen.getByRole("tab", { name: "Vidplays" });
-    activateTab(vidplaysTab);
-
-    await waitFor(() => {
-      expect(vidplaysTab).toHaveAttribute("data-state", "active");
-    });
-
-    const vidplaysIframe = await screen.findByTitle("Naruto - Vidplays");
-    expect(vidplaysIframe).toHaveAttribute(
+    const mainIframe = await screen.findByTitle("Naruto - Main Player");
+    expect(mainIframe).toHaveAttribute(
       "src",
       expect.stringContaining("https://vidplays.fun/embed/anime/21/1/sub?autoplay=true"),
     );
@@ -306,7 +294,7 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
-    expect(screen.queryByRole("tab", { name: "Vidplays" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Videasy" })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");
@@ -363,14 +351,21 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
-    const mainIframe = await screen.findByTitle("Naruto - Main Player");
+    const videasyTab = await screen.findByRole("tab", { name: "Videasy" });
+    activateTab(videasyTab);
+
+    await waitFor(() => {
+      expect(videasyTab).toHaveAttribute("data-state", "active");
+    });
+
+    const mainIframe = await screen.findByTitle("Naruto - Videasy");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/movie/299534?color=00D0FF"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/anime/145139"));
-    expect(screen.getByRole("tab", { name: "Vidplays" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Main Player" })).toBeInTheDocument();
   });
 
-  it("uses the tmdb movie path for the Vidplays movie tab", async () => {
+  it("uses the tmdb movie path for the Main Player movie tab", async () => {
     hookMocks.useAnimeById.mockReturnValue({
       data: {
         data: {
@@ -400,15 +395,8 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
-    const vidplaysTab = screen.getByRole("tab", { name: "Vidplays" });
-    activateTab(vidplaysTab);
-
-    await waitFor(() => {
-      expect(vidplaysTab).toHaveAttribute("data-state", "active");
-    });
-
-    const vidplaysIframe = await screen.findByTitle("Kimi no Na wa. - Vidplays");
-    expect(vidplaysIframe).toHaveAttribute(
+    const mainIframe = await screen.findByTitle("Kimi no Na wa. - Main Player");
+    expect(mainIframe).toHaveAttribute(
       "src",
       expect.stringContaining("https://vidplays.fun/embed/movie/299534?autoplay=true"),
     );
@@ -458,7 +446,7 @@ describe("EpisodeWatch", () => {
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/145139?color=00D0FF"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/145139/1"));
-    expect(screen.queryByRole("tab", { name: "Vidplays" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Videasy" })).not.toBeInTheDocument();
   });
 
   it("switches to the backup player when neither tmdb nor anilist movie metadata is available", async () => {
@@ -510,7 +498,7 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
-    expect(screen.queryByRole("tab", { name: "Vidplays" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Videasy" })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");
