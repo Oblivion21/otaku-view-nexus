@@ -6,6 +6,7 @@ import {
   getTopAnime,
   getVisibleGenres,
   isBlockedAnime,
+  searchAnime,
   type JikanAnime,
 } from "@/lib/jikan";
 
@@ -227,5 +228,100 @@ describe("jikan genre filtering", () => {
         votes: 42,
       },
     ]);
+  });
+
+  it("builds a query-only anime search request", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [],
+        pagination: {
+          last_visible_page: 1,
+          has_next_page: false,
+          current_page: 2,
+        },
+      }),
+    } as Response);
+
+    await searchAnime({ query: "Naruto", page: 2 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const requestedUrl = new URL(String(fetchMock.mock.calls[0][0]));
+
+    expect(requestedUrl.pathname).toBe("/v4/anime");
+    expect(requestedUrl.searchParams.get("q")).toBe("Naruto");
+    expect(requestedUrl.searchParams.get("page")).toBe("2");
+    expect(requestedUrl.searchParams.get("limit")).toBe("24");
+    expect(requestedUrl.searchParams.get("sfw")).toBe("true");
+    expect(requestedUrl.searchParams.get("genres")).toBeNull();
+  });
+
+  it("supports filter-only anime search requests with year and score bounds", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [],
+        pagination: {
+          last_visible_page: 1,
+          has_next_page: false,
+          current_page: 1,
+        },
+      }),
+    } as Response);
+
+    await searchAnime({
+      type: "movie",
+      genreId: 10,
+      yearFrom: 2005,
+      yearTo: 2012,
+      minScore: 7,
+      maxScore: 9,
+      orderBy: "score",
+      sort: "desc",
+    });
+
+    const requestedUrl = new URL(String(fetchMock.mock.calls[0][0]));
+
+    expect(requestedUrl.searchParams.get("q")).toBeNull();
+    expect(requestedUrl.searchParams.get("type")).toBe("movie");
+    expect(requestedUrl.searchParams.get("genres")).toBe("10");
+    expect(requestedUrl.searchParams.get("start_date")).toBe("2005-01-01");
+    expect(requestedUrl.searchParams.get("end_date")).toBe("2012-12-31");
+    expect(requestedUrl.searchParams.get("min_score")).toBe("7");
+    expect(requestedUrl.searchParams.get("max_score")).toBe("9");
+    expect(requestedUrl.searchParams.get("order_by")).toBe("score");
+    expect(requestedUrl.searchParams.get("sort")).toBe("desc");
+  });
+
+  it("omits empty params and normalizes inverted ranges in anime search requests", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [],
+        pagination: {
+          last_visible_page: 1,
+          has_next_page: false,
+          current_page: 1,
+        },
+      }),
+    } as Response);
+
+    await searchAnime({
+      query: "   ",
+      yearFrom: 2022,
+      yearTo: 2018,
+      minScore: 9,
+      maxScore: 4,
+      sort: "asc",
+    });
+
+    const requestedUrl = new URL(String(fetchMock.mock.calls[0][0]));
+
+    expect(requestedUrl.searchParams.get("q")).toBeNull();
+    expect(requestedUrl.searchParams.get("start_date")).toBe("2018-01-01");
+    expect(requestedUrl.searchParams.get("end_date")).toBe("2022-12-31");
+    expect(requestedUrl.searchParams.get("min_score")).toBe("4");
+    expect(requestedUrl.searchParams.get("max_score")).toBe("9");
+    expect(requestedUrl.searchParams.get("sort")).toBeNull();
   });
 });

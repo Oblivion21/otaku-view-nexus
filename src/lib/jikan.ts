@@ -1,5 +1,10 @@
 const BASE_URL = "https://api.jikan.moe/v4";
 
+const SEARCH_ANIME_TYPES = ["tv", "movie", "ova", "special", "ona", "music"] as const;
+const SEARCH_ANIME_STATUSES = ["airing", "complete", "upcoming"] as const;
+const SEARCH_ANIME_ORDER_BY = ["score", "popularity", "start_date"] as const;
+const SEARCH_ANIME_SORTS = ["desc", "asc"] as const;
+
 export interface JikanAnime {
   mal_id: number;
   title: string;
@@ -65,6 +70,25 @@ export interface JikanPagination {
   current_page: number;
 }
 
+export type AnimeSearchType = (typeof SEARCH_ANIME_TYPES)[number];
+export type AnimeSearchStatus = (typeof SEARCH_ANIME_STATUSES)[number];
+export type AnimeSearchOrderBy = (typeof SEARCH_ANIME_ORDER_BY)[number];
+export type AnimeSearchSort = (typeof SEARCH_ANIME_SORTS)[number];
+
+export interface AnimeSearchFilters {
+  query?: string;
+  page?: number;
+  type?: AnimeSearchType;
+  status?: AnimeSearchStatus;
+  genreId?: number;
+  yearFrom?: number;
+  yearTo?: number;
+  minScore?: number;
+  maxScore?: number;
+  orderBy?: AnimeSearchOrderBy;
+  sort?: AnimeSearchSort;
+}
+
 interface JikanResponse<T> {
   data: T;
   pagination?: JikanPagination;
@@ -101,6 +125,79 @@ async function fetchJikan<T>(endpoint: string): Promise<JikanResponse<T>> {
   const res = await fetch(`${BASE_URL}${endpoint}`);
   if (!res.ok) throw new Error(`Jikan API error: ${res.status}`);
   return res.json();
+}
+
+function parsePositiveInt(value: unknown) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function parseYear(value: unknown) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 1900 && parsed <= 2100 ? parsed : undefined;
+}
+
+function parseScore(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.min(Math.max(parsed, 0), 10);
+}
+
+function isSearchAnimeType(value: unknown): value is AnimeSearchType {
+  return typeof value === "string" && SEARCH_ANIME_TYPES.includes(value as AnimeSearchType);
+}
+
+function isSearchAnimeStatus(value: unknown): value is AnimeSearchStatus {
+  return typeof value === "string" && SEARCH_ANIME_STATUSES.includes(value as AnimeSearchStatus);
+}
+
+function isSearchAnimeOrderBy(value: unknown): value is AnimeSearchOrderBy {
+  return typeof value === "string" && SEARCH_ANIME_ORDER_BY.includes(value as AnimeSearchOrderBy);
+}
+
+function isSearchAnimeSort(value: unknown): value is AnimeSearchSort {
+  return typeof value === "string" && SEARCH_ANIME_SORTS.includes(value as AnimeSearchSort);
+}
+
+export function normalizeAnimeSearchFilters(filters: AnimeSearchFilters = {}): AnimeSearchFilters {
+  const query = typeof filters.query === "string" ? filters.query.trim() : "";
+  const page = parsePositiveInt(filters.page) ?? 1;
+  const type = isSearchAnimeType(filters.type) ? filters.type : undefined;
+  const status = isSearchAnimeStatus(filters.status) ? filters.status : undefined;
+  const genreId = parsePositiveInt(filters.genreId);
+  let yearFrom = parseYear(filters.yearFrom);
+  let yearTo = parseYear(filters.yearTo);
+  let minScore = parseScore(filters.minScore);
+  let maxScore = parseScore(filters.maxScore);
+  const orderBy = isSearchAnimeOrderBy(filters.orderBy) ? filters.orderBy : undefined;
+  const sort = isSearchAnimeSort(filters.sort) ? filters.sort : undefined;
+
+  if (yearFrom !== undefined && yearTo !== undefined && yearFrom > yearTo) {
+    [yearFrom, yearTo] = [yearTo, yearFrom];
+  }
+
+  if (minScore !== undefined && maxScore !== undefined && minScore > maxScore) {
+    [minScore, maxScore] = [maxScore, minScore];
+  }
+
+  return {
+    ...(query ? { query } : {}),
+    page,
+    ...(type ? { type } : {}),
+    ...(status ? { status } : {}),
+    ...(genreId ? { genreId } : {}),
+    ...(yearFrom !== undefined ? { yearFrom } : {}),
+    ...(yearTo !== undefined ? { yearTo } : {}),
+    ...(minScore !== undefined ? { minScore } : {}),
+    ...(maxScore !== undefined ? { maxScore } : {}),
+    ...(orderBy ? { orderBy } : {}),
+    ...(sort ? { sort } : {}),
+  };
+}
+
+export function hasAnimeSearchCriteria(filters: AnimeSearchFilters = {}) {
+  const normalized = normalizeAnimeSearchFilters(filters);
+  return Object.entries(normalized).some(([key, value]) => key !== "page" && value !== undefined && value !== "");
 }
 
 function normalizeJikanVideoEpisode(value: unknown): JikanVideoEpisode | null {
@@ -173,8 +270,26 @@ export async function getAnimeVideoEpisodes(id: number) {
     .filter((episode): episode is JikanVideoEpisode => Boolean(episode));
 }
 
-export async function searchAnime(query: string, page = 1) {
-  const response = await fetchJikan<JikanAnime[]>(`/anime?q=${encodeURIComponent(query)}&page=${page}&limit=24&sfw=true`);
+export async function searchAnime(filters: AnimeSearchFilters = {}) {
+  const normalized = normalizeAnimeSearchFilters(filters);
+  const params = new URLSearchParams({
+    page: String(normalized.page ?? 1),
+    limit: "24",
+    sfw: "true",
+  });
+
+  if (normalized.query) params.set("q", normalized.query);
+  if (normalized.type) params.set("type", normalized.type);
+  if (normalized.status) params.set("status", normalized.status);
+  if (normalized.genreId) params.set("genres", String(normalized.genreId));
+  if (normalized.yearFrom) params.set("start_date", `${normalized.yearFrom}-01-01`);
+  if (normalized.yearTo) params.set("end_date", `${normalized.yearTo}-12-31`);
+  if (normalized.minScore !== undefined) params.set("min_score", String(normalized.minScore));
+  if (normalized.maxScore !== undefined) params.set("max_score", String(normalized.maxScore));
+  if (normalized.orderBy) params.set("order_by", normalized.orderBy);
+  if (normalized.orderBy && normalized.sort) params.set("sort", normalized.sort);
+
+  const response = await fetchJikan<JikanAnime[]>(`/anime?${params.toString()}`);
   return { ...response, data: filterAnimeList(response.data) };
 }
 

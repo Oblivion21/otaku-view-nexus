@@ -14,7 +14,10 @@ import {
   getAnimeRelations,
   getPersonById,
   getPersonVoices,
+  hasAnimeSearchCriteria,
+  normalizeAnimeSearchFilters,
   type JikanAnime,
+  type AnimeSearchFilters,
 } from "@/lib/jikan";
 import { getAnimeAniListMedia } from "@/lib/anilist";
 import { getAnimeTmdbArtwork } from "@/lib/tmdb";
@@ -176,11 +179,17 @@ export function useAnimeEpisodes(id: number, page = 1) {
   });
 }
 
-export function useSearchAnime(query: string, page = 1) {
+export function useSearchAnime(filters: AnimeSearchFilters) {
+  const normalizedFilters = normalizeAnimeSearchFilters(filters);
+
   return useQuery({
-    queryKey: ["search-anime", query, page],
-    queryFn: () => searchAnime(query, page),
-    enabled: query.length >= 2,
+    queryKey: ["search-anime", normalizedFilters],
+    queryFn: () => searchAnime(normalizedFilters),
+    enabled: hasAnimeSearchCriteria(normalizedFilters)
+      && ((normalizedFilters.query?.length ?? 0) >= 2 || hasAnimeSearchCriteria({
+        ...normalizedFilters,
+        query: undefined,
+      })),
     staleTime: 3 * 60 * 1000,
   });
 }
