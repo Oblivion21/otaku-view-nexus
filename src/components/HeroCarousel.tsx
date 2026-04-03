@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
 import { useFeaturedCarousel, useTopAnime } from "@/hooks/useAnime";
 import { GENRE_AR, getVisibleGenres } from "@/lib/jikan";
+import { getAnimeDetailPath } from "@/lib/animeRoutes";
 import { dedupeAnimeList } from "@/lib/listDeduping";
 import type { FeaturedCarouselAnime } from "@/lib/featuredCarousel";
 import { getMultipleAnimeTmdbArtwork, type TmdbAnimeArtwork } from "@/lib/tmdb";
@@ -224,7 +225,7 @@ export default function HeroCarousel() {
   };
 
   const goToAnimePage = () => {
-    navigate(`/anime/${anime.mal_id}`);
+    navigate(getAnimeDetailPath(anime));
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -341,7 +342,7 @@ export default function HeroCarousel() {
           <div className="flex items-center gap-3">
             <Button asChild>
               <Link
-                to={`/anime/${anime.mal_id}`}
+                to={getAnimeDetailPath(anime)}
                 onClick={(e) => e.stopPropagation()}
               >
                 <Play className="h-4 w-4 ml-1" />

@@ -58,6 +58,7 @@ describe("AnimeCard", () => {
   it("renders the artwork url when provided", () => {
     renderCard("https://image.tmdb.org/t/p/w780/naruto-poster.jpg");
 
+    expect(screen.getByRole("link")).toHaveAttribute("href", "/anime/naruto-1");
     expect(screen.getByAltText("Naruto")).toHaveAttribute(
       "src",
       expect.stringContaining("image.tmdb.org/t/p/w780/naruto-poster.jpg"),

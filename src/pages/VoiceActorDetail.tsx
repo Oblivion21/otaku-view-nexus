@@ -4,6 +4,7 @@ import Layout from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMultipleAnimeTmdbArtwork, usePersonById, usePersonVoices } from "@/hooks/useAnime";
+import { getAnimeDetailPath } from "@/lib/animeRoutes";
 import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 export default function VoiceActorDetail() {
@@ -116,7 +117,7 @@ export default function VoiceActorDetail() {
               {voices.map((voice, idx) => (
                 <Link
                   key={`${voice.anime.mal_id}-${voice.character.mal_id}-${idx}`}
-                  to={`/anime/${voice.anime.mal_id}`}
+                  to={getAnimeDetailPath(voice.anime)}
                   className="flex items-center gap-0 rounded-lg bg-card border border-border overflow-hidden hover:border-primary/40 transition-colors"
                 >
                   {/* Anime side */}

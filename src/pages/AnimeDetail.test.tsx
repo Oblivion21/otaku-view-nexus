@@ -145,9 +145,9 @@ const recommendation = {
   votes: 120,
 };
 
-function renderPage() {
+function renderPage(path = "/anime/1") {
   return render(
-    <MemoryRouter initialEntries={["/anime/1"]}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/anime/:id" element={<AnimeDetail />} />
       </Routes>
@@ -201,6 +201,13 @@ describe("AnimeDetail", () => {
     });
     supabaseMocks.getAnimeEpisodes.mockResolvedValue([]);
     trailerFallbackMocks.getTrailerYoutubeId.mockReturnValue(null);
+  });
+
+  it("accepts slugged anime detail routes and still resolves the MAL id", async () => {
+    renderPage("/anime/naruto-1");
+
+    expect(hookMocks.useAnimeById).toHaveBeenCalledWith(1);
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
   });
 
   it("uses TMDB banner and poster artwork on the detail page, recommendations, and episode previews", async () => {

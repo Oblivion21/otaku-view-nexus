@@ -15,6 +15,7 @@ import { dedupeAnimeList, dedupeJikanEpisodes, dedupeRelationEntries, dedupeSupa
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
 import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import { getAnimeIdFromRouteParam } from "@/lib/animeRoutes";
 import { useState, useEffect } from "react";
 
 function hasPlayableEpisodeData(episode: Pick<AnimeEpisode, "video_sources" | "video_url"> | null | undefined) {
@@ -55,7 +56,7 @@ const HIDDEN_RELATION_TYPES = new Set(["Character", "Other"]);
 
 export default function AnimeDetail() {
   const { id } = useParams<{ id: string }>();
-  const animeId = Number(id);
+  const animeId = getAnimeIdFromRouteParam(id) ?? 0;
   const { data, isLoading } = useAnimeById(animeId);
   const { data: episodes, isLoading: loadingEp } = useAnimeEpisodes(animeId, 1);
   const { data: recommendations, isLoading: loadingRec } = useAnimeRecommendations(animeId);

@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAnimeAniListMedia, useAnimeById, useAnimeEpisodes, useAnimeTmdbArtwork } from "@/hooks/useAnime";
 import { isBlockedAnime } from "@/lib/jikan";
 import { buildEpisodeDataFromScrape } from "@/lib/episodePlayback";
+import { getAnimeDetailPath } from "@/lib/animeRoutes";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getVideasyUnavailableReason, resolveVideasyMainPlayerUrl } from "@/lib/videasy";
 import {
@@ -633,7 +634,7 @@ export default function EpisodeWatch() {
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Link to="/" className="hover:text-foreground">الرئيسية</Link>
           <ChevronLeft className="h-3 w-3" />
-          <Link to={`/anime/${animeId}`} className="hover:text-foreground">{anime.title}</Link>
+          <Link to={getAnimeDetailPath(anime)} className="hover:text-foreground">{anime.title}</Link>
           <ChevronLeft className="h-3 w-3" />
           <span className="text-foreground">
             {currentPlaybackLabel}

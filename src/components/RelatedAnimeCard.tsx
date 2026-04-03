@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Star } from "lucide-react";
 import { TYPE_MAP, isBlockedAnime } from "@/lib/jikan";
+import { getAnimeDetailPath } from "@/lib/animeRoutes";
 import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 interface RelatedAnimeCardProps {
@@ -38,7 +39,12 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
 
   return (
     <Link
-      to={`/anime/${mal_id}`}
+      to={getAnimeDetailPath({
+        mal_id,
+        title: anime?.title || name,
+        title_english: anime?.title_english,
+        title_japanese: anime?.title_japanese,
+      })}
       className="group block rounded-lg overflow-hidden bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5"
     >
       <div className="relative aspect-[3/4] overflow-hidden">
