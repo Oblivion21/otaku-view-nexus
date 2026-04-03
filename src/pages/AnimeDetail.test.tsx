@@ -330,7 +330,7 @@ describe("AnimeDetail", () => {
     );
   });
 
-  it("does not reuse the series artwork when no episode-specific preview image exists", async () => {
+  it("falls back to the series artwork when no episode-specific preview image exists", async () => {
     hookMocks.useAnimeEpisodes.mockReturnValue({
       data: {
         data: [
@@ -369,7 +369,10 @@ describe("AnimeDetail", () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
-    expect(screen.getByTestId("episode-preview-1")).toHaveAttribute("data-image-url", "");
+    expect(screen.getByTestId("episode-preview-1")).toHaveAttribute(
+      "data-image-url",
+      expect.stringContaining("naruto-backdrop.jpg"),
+    );
   });
 
   it("falls back to Jikan artwork when TMDB is missing", async () => {

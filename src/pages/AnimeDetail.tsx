@@ -214,13 +214,16 @@ export default function AnimeDetail() {
   );
   const bannerImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "banner");
   const posterImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
+  const episodeSeriesFallbackImage = bannerImage || posterImage;
   const episodeRailItems = rawEpisodeRailItems.map((item) => {
     const style = getEpisodeStyle(item.styleTarget);
+    const previewImage = episodePreviewImageMap?.get(item.episodeNumber);
 
     return {
       ...item,
       href: `/watch/${animeId}/${item.episodeNumber}`,
-      imageUrl: episodePreviewImageMap?.get(item.episodeNumber)?.imageUrl || null,
+      imageUrl: previewImage?.imageUrl || episodeSeriesFallbackImage || null,
+      fallbackImageUrl: previewImage?.fallbackImageUrl || episodeSeriesFallbackImage || null,
       scoreLabel: item.scoreLabel,
       badges: getEpisodeBadges(item.styleTarget),
       styleClassName: `${style.background} ${style.border}`,

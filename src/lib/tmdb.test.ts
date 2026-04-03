@@ -84,17 +84,53 @@ describe("getAnimeEpisodePreviewImages", () => {
     expect(result.get(1)).toEqual({
       episodeNumber: 1,
       imageUrl: "https://image.tmdb.org/t/p/w780/episode-1.jpg",
+      fallbackImageUrl: null,
       source: "tmdb",
     });
     expect(result.get(2)).toEqual({
       episodeNumber: 2,
       imageUrl: "https://cdn.jikan.moe/episode-2.jpg",
+      fallbackImageUrl: null,
       source: "jikan",
     });
     expect(result.get(3)).toEqual({
       episodeNumber: 3,
       imageUrl: null,
+      fallbackImageUrl: null,
       source: "none",
+    });
+  });
+
+  it("stores a Jikan thumbnail as a render-time fallback when TMDB still exists", async () => {
+    supabaseMocks.invoke.mockResolvedValue({
+      data: {
+        results: {
+          "1": { stillUrl: "https://image.tmdb.org/t/p/w780/episode-1.jpg" },
+        },
+      },
+      error: null,
+    });
+    jikanMocks.getAnimeVideoEpisodes.mockResolvedValue([
+      {
+        mal_id: 1,
+        title: "Episode 1",
+        episode: "Episode 1",
+        url: "https://myanimelist.net/anime/20/Naruto/episode/1",
+        images: {
+          jpg: {
+            image_url: "https://cdn.jikan.moe/episode-1.jpg",
+          },
+        },
+      },
+    ]);
+
+    const result = await getAnimeEpisodePreviewImages(20, artwork, [1]);
+
+    expect(result.get(1)).toEqual({
+      episodeNumber: 1,
+      imageUrl: "https://image.tmdb.org/t/p/w780/episode-1.jpg",
+      fallbackImageUrl: "https://cdn.jikan.moe/episode-1.jpg",
+      source: "tmdb",
     });
   });
 });

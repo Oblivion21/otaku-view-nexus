@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -54,6 +54,7 @@ describe("EpisodePreviewRail", () => {
               title: "Episode 1",
               href: "/watch/1/1",
               imageUrl: "https://image.tmdb.org/t/p/w780/ep1.jpg",
+              fallbackImageUrl: null,
               scoreLabel: "8.7",
             },
           ]}
@@ -92,6 +93,7 @@ describe("EpisodePreviewRail", () => {
               title: "Episode 3",
               href: "/watch/1/3",
               imageUrl: null,
+              fallbackImageUrl: null,
               scoreLabel: "9.1",
             },
           ]}
@@ -106,5 +108,36 @@ describe("EpisodePreviewRail", () => {
     expect(screen.getByText("EPISODE 3")).toBeInTheDocument();
     expect(screen.getByText("9.1")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Episode 3" })).not.toBeInTheDocument();
+  });
+
+  it("falls back to the Jikan thumbnail when the TMDB image fails to load", () => {
+    render(
+      <MemoryRouter>
+        <EpisodePreviewRail
+          title="Latest Episodes"
+          items={[
+            {
+              episodeNumber: 4,
+              title: "Episode 4",
+              href: "/watch/1/4",
+              imageUrl: "https://image.tmdb.org/t/p/w780/ep4.jpg",
+              fallbackImageUrl: "https://cdn.jikan.moe/episode-4.jpg",
+              scoreLabel: "8.3",
+            },
+          ]}
+          emptyMessage="Nothing here"
+          headerActionHref="/anime/1"
+          headerActionLabel="View all"
+        />
+      </MemoryRouter>,
+    );
+
+    const image = screen.getByRole("img", { name: "Episode 4" });
+    fireEvent.error(image);
+
+    expect(screen.getByRole("img", { name: "Episode 4" })).toHaveAttribute(
+      "src",
+      expect.stringContaining("cdn.jikan.moe/episode-4.jpg"),
+    );
   });
 });

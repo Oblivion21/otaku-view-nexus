@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ export type EpisodePreviewRailItem = {
   title: string;
   href: string;
   imageUrl: string | null;
+  fallbackImageUrl?: string | null;
   scoreLabel?: string | null;
   badges?: string[];
   styleClassName?: string;
@@ -34,6 +35,12 @@ interface EpisodePreviewRailProps {
 }
 
 function EpisodePreviewCard({ item }: { item: EpisodePreviewRailItem }) {
+  const [currentImageUrl, setCurrentImageUrl] = useState(item.imageUrl);
+
+  useEffect(() => {
+    setCurrentImageUrl(item.imageUrl);
+  }, [item.imageUrl, item.fallbackImageUrl, item.episodeNumber]);
+
   return (
     <Link
       to={item.href}
@@ -43,12 +50,19 @@ function EpisodePreviewCard({ item }: { item: EpisodePreviewRailItem }) {
       )}
     >
       <div className="relative aspect-video overflow-hidden border-b border-white/10 bg-[linear-gradient(180deg,rgba(14,26,44,0.96),rgba(2,6,23,0.96))]">
-        {item.imageUrl ? (
+        {currentImageUrl ? (
           <img
-            src={item.imageUrl}
+            src={currentImageUrl}
             alt={item.title}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             loading="lazy"
+            onError={() => {
+              if (item.fallbackImageUrl && currentImageUrl !== item.fallbackImageUrl) {
+                setCurrentImageUrl(item.fallbackImageUrl);
+                return;
+              }
+              setCurrentImageUrl(null);
+            }}
           />
         ) : (
           <div
