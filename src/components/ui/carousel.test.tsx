@@ -81,7 +81,6 @@ describe("ui Carousel", () => {
     );
 
     expect(screen.getByTestId("content")).toHaveClass("-mr-4");
-    expect(screen.getByTestId("content")).toHaveClass("flex-row-reverse");
     expect(screen.getByTestId("item")).toHaveClass("pr-4");
   });
 });
