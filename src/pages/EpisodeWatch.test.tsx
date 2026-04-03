@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -63,6 +63,11 @@ function renderPage(path = "/watch/1/1") {
   );
 }
 
+function activateTab(tab: HTMLElement) {
+  fireEvent.mouseDown(tab, { button: 0 });
+  fireEvent.click(tab);
+}
+
 beforeAll(() => {
   vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
 });
@@ -123,6 +128,7 @@ describe("EpisodeWatch", () => {
 
     const mainTab = await screen.findByRole("tab", { name: "Main Player" });
     expect(mainTab).toHaveAttribute("data-state", "active");
+    expect(screen.getByRole("tab", { name: "Vidplays" })).toBeInTheDocument();
 
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/21/1"));
@@ -139,6 +145,23 @@ describe("EpisodeWatch", () => {
       expect(supabaseMocks.getEpisodeData).toHaveBeenCalledWith(1, 1);
       expect(supabaseMocks.scrapeAnime3rbEpisode).toHaveBeenCalledWith("Naruto", "Naruto", 1, 1, false);
     });
+  });
+
+  it("uses the AniList anime embed path for the Vidplays tab", async () => {
+    renderPage();
+
+    const vidplaysTab = screen.getByRole("tab", { name: "Vidplays" });
+    activateTab(vidplaysTab);
+
+    await waitFor(() => {
+      expect(vidplaysTab).toHaveAttribute("data-state", "active");
+    });
+
+    const vidplaysIframe = await screen.findByTitle("Naruto - Vidplays");
+    expect(vidplaysIframe).toHaveAttribute(
+      "src",
+      expect.stringContaining("https://vidplays.fun/embed/anime/21/1/sub?autoplay=true"),
+    );
   });
 
   it("does not scrape when a fresh cached episode link already exists", async () => {
@@ -283,6 +306,8 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
+    expect(screen.queryByRole("tab", { name: "Vidplays" })).not.toBeInTheDocument();
+
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");
       expect(document.querySelector("video")).toBeInTheDocument();
@@ -342,6 +367,51 @@ describe("EpisodeWatch", () => {
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/movie/299534?color=00D0FF"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/anime/145139"));
+    expect(screen.getByRole("tab", { name: "Vidplays" })).toBeInTheDocument();
+  });
+
+  it("uses the tmdb movie path for the Vidplays movie tab", async () => {
+    hookMocks.useAnimeById.mockReturnValue({
+      data: {
+        data: {
+          ...anime,
+          type: "Movie",
+          title: "Kimi no Na wa.",
+        },
+      },
+      isLoading: false,
+    });
+
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: {
+        tmdbId: 299534,
+        mediaType: "movie",
+        posterUrl: null,
+        backdropUrl: null,
+        trailerYoutubeId: null,
+        matchedTitle: "Kimi no Na wa.",
+        seasonNumber: null,
+        seasonName: null,
+        matchConfidence: "high",
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderPage();
+
+    const vidplaysTab = screen.getByRole("tab", { name: "Vidplays" });
+    activateTab(vidplaysTab);
+
+    await waitFor(() => {
+      expect(vidplaysTab).toHaveAttribute("data-state", "active");
+    });
+
+    const vidplaysIframe = await screen.findByTitle("Kimi no Na wa. - Vidplays");
+    expect(vidplaysIframe).toHaveAttribute(
+      "src",
+      expect.stringContaining("https://vidplays.fun/embed/movie/299534?autoplay=true"),
+    );
   });
 
   it("falls back to the AniList movie path when tmdb movie metadata is unavailable", async () => {
@@ -388,6 +458,7 @@ describe("EpisodeWatch", () => {
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/145139?color=00D0FF"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/145139/1"));
+    expect(screen.queryByRole("tab", { name: "Vidplays" })).not.toBeInTheDocument();
   });
 
   it("switches to the backup player when neither tmdb nor anilist movie metadata is available", async () => {
@@ -438,6 +509,8 @@ describe("EpisodeWatch", () => {
     });
 
     renderPage();
+
+    expect(screen.queryByRole("tab", { name: "Vidplays" })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");

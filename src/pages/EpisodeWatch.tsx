@@ -12,6 +12,7 @@ import { isBlockedAnime } from "@/lib/jikan";
 import { buildEpisodeDataFromScrape } from "@/lib/episodePlayback";
 import { getAnimeDetailPath } from "@/lib/animeRoutes";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
+import { resolveVidplaysPlayerUrl } from "@/lib/vidplays";
 import { getVideasyUnavailableReason, resolveVideasyMainPlayerUrl } from "@/lib/videasy";
 import {
   getEpisodeData,
@@ -91,7 +92,7 @@ function formatEpisodeScoreLabel(score: number | null | undefined) {
   return normalizedScore.toFixed(1);
 }
 
-type PlayerTab = "main" | "backup";
+type PlayerTab = "main" | "backup" | "vidplays";
 type MainPlayerStatus = "idle" | "loading" | "ready" | "unavailable" | "error";
 
 export default function EpisodeWatch() {
@@ -181,6 +182,9 @@ export default function EpisodeWatch() {
   const isActiveDirectVideo = Boolean(activeVideoUrl && isDirectPlayableUrl(activeVideoUrl));
   const mainPlayerUrl = !isTrailer
     ? resolveVideasyMainPlayerUrl(tmdbArtwork ?? null, aniListMedia ?? null, anime?.type ?? null, epNum)
+    : null;
+  const vidplaysUrl = !isTrailer
+    ? resolveVidplaysPlayerUrl(tmdbArtwork ?? null, aniListMedia ?? null, anime?.type ?? null, epNum)
     : null;
   const currentPlaybackLabel = isTrailer
     ? "العرض الدعائي"
@@ -505,6 +509,33 @@ export default function EpisodeWatch() {
     );
   };
 
+  const renderVidplaysPlayer = () => {
+    if (!vidplaysUrl) {
+      return (
+        <div className="w-full aspect-video rounded-xl border border-amber-500/30 bg-card flex items-center justify-center">
+          <div className="text-center space-y-2 px-6">
+            <p className="text-amber-300 font-medium">Vidplays unavailable</p>
+            <p className="text-sm text-muted-foreground">
+              Vidplays could not resolve this title.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="episode-watch-player-shell relative w-full aspect-video rounded-xl overflow-hidden border border-primary/20 bg-black shadow-[0_0_30px_rgba(0,208,255,0.08)]">
+        <iframe
+          src={vidplaysUrl}
+          title={`${anime.title} - Vidplays`}
+          className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
+          allowFullScreen
+          allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+        />
+      </div>
+    );
+  };
+
   const renderBackupPlayer = () => {
     if (loadingVideo || scraping) {
       return (
@@ -676,12 +707,19 @@ export default function EpisodeWatch() {
               <div className="space-y-3">
                 <TabsList className="bg-slate-900/80 border border-primary/10">
                   <TabsTrigger value="main">Main Player</TabsTrigger>
+                  {vidplaysUrl ? <TabsTrigger value="vidplays">Vidplays</TabsTrigger> : null}
                   <TabsTrigger value="backup">Backup Player</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="main" className="mt-0">
                   {renderMainPlayer()}
                 </TabsContent>
+
+                {vidplaysUrl ? (
+                  <TabsContent value="vidplays" className="mt-0">
+                    {renderVidplaysPlayer()}
+                  </TabsContent>
+                ) : null}
 
                 <TabsContent value="backup" className="mt-0">
                   {renderBackupPlayer()}
