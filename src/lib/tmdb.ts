@@ -50,6 +50,7 @@ interface TmdbEpisodeStillResponse {
 }
 
 const artworkCache = new Map<number, Promise<TmdbAnimeArtwork | null>>();
+const TMDB_ARTWORK_REQUEST_TIMEOUT_MS = 6000;
 
 function normalizeAnimeList(animeList: AnimeArtworkLookup[]) {
   return Array.from(
@@ -84,27 +85,44 @@ async function invokeTmdbArtwork(
     return new Map();
   }
 
-  const { data, error } = await supabase.functions.invoke("tmdb-artwork", {
-    body: { animeList: requestAnimeList },
-  });
+  let timeoutId: number | null = null;
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  try {
+    const response = await Promise.race([
+      supabase.functions.invoke("tmdb-artwork", {
+        body: { animeList: requestAnimeList },
+      }),
+      new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error("TMDB artwork request timed out"));
+        }, TMDB_ARTWORK_REQUEST_TIMEOUT_MS);
+      }),
+    ]);
 
-  const payload = data as TmdbArtworkResponse | null;
-  if (!payload?.results) {
-    if (payload?.error) {
-      throw new Error(payload.error);
+    const { data, error } = response;
+
+    if (error) {
+      throw new Error(error.message);
     }
-    return new Map();
-  }
 
-  return new Map(
-    Object.entries(payload.results)
-      .filter((entry): entry is [string, TmdbAnimeArtwork] => Boolean(entry[1]))
-      .map(([malId, artwork]) => [Number(malId), artwork]),
-  );
+    const payload = data as TmdbArtworkResponse | null;
+    if (!payload?.results) {
+      if (payload?.error) {
+        throw new Error(payload.error);
+      }
+      return new Map();
+    }
+
+    return new Map(
+      Object.entries(payload.results)
+        .filter((entry): entry is [string, TmdbAnimeArtwork] => Boolean(entry[1]))
+        .map(([malId, artwork]) => [Number(malId), artwork]),
+    );
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
 }
 
 export async function getMultipleAnimeTmdbArtwork(animeList: AnimeArtworkLookup[]) {

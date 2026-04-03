@@ -48,12 +48,19 @@ export function useSeasonNow(page = 1) {
   });
 }
 
-export function useAnimeById(id: number) {
+interface AnimeByIdOptions {
+  enabled?: boolean;
+  retry?: boolean | number;
+  staleTime?: number;
+}
+
+export function useAnimeById(id: number, options?: AnimeByIdOptions) {
   return useQuery({
     queryKey: ["anime", id],
     queryFn: () => getAnimeById(id),
-    enabled: !!id,
-    staleTime: 10 * 60 * 1000,
+    enabled: options?.enabled ?? !!id,
+    staleTime: options?.staleTime ?? 10 * 60 * 1000,
+    retry: options?.retry ?? 3,
   });
 }
 

@@ -13,9 +13,16 @@ interface RelatedAnimeCardProps {
 }
 
 export default function RelatedAnimeCard({ mal_id, name, relationLabel }: RelatedAnimeCardProps) {
-  const { data, isLoading } = useAnimeById(mal_id);
+  const { data, isLoading, isError } = useAnimeById(mal_id, {
+    retry: 0,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
   const anime = data?.data;
   const { data: tmdbArtwork, isLoading: loadingTmdbArtwork } = useAnimeTmdbArtwork(anime);
+
+  if (isError || (!isLoading && !anime)) {
+    return null;
+  }
 
   if (anime && isBlockedAnime(anime)) {
     return null;
