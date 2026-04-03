@@ -14,6 +14,16 @@ interface RelatedAnimeCardProps {
   relationLabel: string;
 }
 
+function getReleaseYear(anime: NonNullable<ReturnType<typeof useAnimeById>["data"]>["data"]) {
+  if (anime.year) {
+    return anime.year;
+  }
+
+  const airedYear = anime.aired?.from?.slice(0, 4);
+  const parsedYear = airedYear ? Number(airedYear) : Number.NaN;
+  return Number.isFinite(parsedYear) ? parsedYear : null;
+}
+
 export default function RelatedAnimeCard({ mal_id, name, relationLabel }: RelatedAnimeCardProps) {
   const {
     data,
@@ -67,6 +77,7 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
   const isArtworkPending = Boolean(anime && loadingTmdbArtwork);
   const imageUrl = isArtworkPending ? null : resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
   const shouldHide = Boolean(anime && !isLoading && !loadingTmdbArtwork && !hasAnyTitleArtwork(anime, tmdbArtwork));
+  const releaseYear = getReleaseYear(anime);
 
   if (shouldHide) {
     return null;
@@ -122,9 +133,9 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
           {name}
         </h3>
         <div className="mt-1.5 space-y-1.5">
-          {anime?.year && (
+          {releaseYear && (
             <p className="text-[11px] text-muted-foreground">
-              {anime.year}
+              {releaseYear}
             </p>
           )}
           <Badge variant="outline" className="text-[10px]">{relationLabel}</Badge>

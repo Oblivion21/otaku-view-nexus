@@ -82,5 +82,46 @@ describe("RelatedAnimeCard", () => {
     );
 
     expect(screen.getByRole("link")).toHaveAttribute("href", "/anime/naruto-1");
+    expect(screen.getByText("2002")).toBeInTheDocument();
+  });
+
+  it("falls back to the aired year when year is missing", () => {
+    hookMocks.useAnimeById.mockReturnValue({
+      data: {
+        data: {
+          mal_id: 1,
+          title: "Naruto",
+          title_english: "Naruto",
+          title_japanese: "ナルト",
+          score: 8.2,
+          type: "TV",
+          rating: "PG-13",
+          year: null,
+          aired: {
+            from: "2002-10-03",
+          },
+          genres: [{ mal_id: 1, name: "Action" }],
+        },
+      },
+      isLoading: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+      failureCount: 0,
+    });
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: {
+        posterUrl: "https://image.tmdb.org/t/p/w780/naruto.jpg",
+      },
+      isLoading: false,
+    });
+
+    render(
+      <MemoryRouter>
+        <RelatedAnimeCard mal_id={1} name="Naruto" relationLabel="تتمة" />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("2002")).toBeInTheDocument();
   });
 });
