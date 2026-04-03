@@ -153,9 +153,7 @@ export function TrailerBanner({
         });
       })
       .catch(() => {
-        if (!isCancelled) {
-          setHasError(true);
-        }
+        // Keep the regular iframe path working even if the JS API is blocked or unavailable.
       });
 
     return () => {
@@ -170,6 +168,21 @@ export function TrailerBanner({
   const embedUrl = activeYoutubeId
     ? `https://www.youtube.com/embed/${activeYoutubeId}?autoplay=1&mute=1&controls=0&showinfo=0&modestbranding=1&rel=0&playsinline=1&disablekb=1&fs=0&iv_load_policy=3&loop=1&playlist=${activeYoutubeId}&origin=${origin}&enablejsapi=1`
     : null;
+
+  const handleIframeLoad = () => {
+    setIsLoaded(true);
+  };
+
+  const handleIframeError = () => {
+    const hasFallback = candidateIndex + 1 < candidateYoutubeIds.length;
+    if (hasFallback) {
+      setIsLoaded(false);
+      setCandidateIndex((currentIndex) => currentIndex + 1);
+      return;
+    }
+
+    setHasError(true);
+  };
 
   return (
     <div className="relative overflow-hidden" style={{ height }}>
@@ -205,6 +218,8 @@ export function TrailerBanner({
               pointerEvents: 'none',
             }}
             title={`Trailer ${activeYoutubeId}`}
+            onLoad={handleIframeLoad}
+            onError={handleIframeError}
           />
         </div>
       )}
