@@ -90,6 +90,28 @@ describe("HeroCarousel", () => {
     expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
   });
 
+  it("waits for TMDB artwork before rendering the hero image", async () => {
+    let resolveArtwork: ((value: Map<number, { posterUrl: string | null; backdropUrl: string | null }>) => void) | null = null;
+    tmdbMocks.getMultipleAnimeTmdbArtwork.mockReturnValue(
+      new Promise((resolve) => {
+        resolveArtwork = resolve;
+      }),
+    );
+
+    const { container } = renderCarousel();
+
+    expect(screen.queryByRole("heading", { name: "Naruto" })).not.toBeInTheDocument();
+    expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
+
+    resolveArtwork?.(
+      new Map([
+        [1, { posterUrl: null, backdropUrl: "https://image.tmdb.org/t/p/original/naruto-backdrop.jpg" }],
+      ]),
+    );
+
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+  });
+
   it("falls back to Jikan artwork when TMDB artwork is missing", async () => {
     tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
 

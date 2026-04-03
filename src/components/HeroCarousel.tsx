@@ -56,25 +56,7 @@ export default function HeroCarousel() {
       });
   }
 
-  function showCarouselItems(animeList: FeaturedCarouselAnime[], source: "default" | "featured") {
-    const nextItems = buildCarouselItems(animeList);
-    if (nextItems.length === 0) {
-      if (source === "default" || activeSourceRef.current === "none") {
-        activeSourceRef.current = source;
-        activeItemsKeyRef.current = `${source}:${getAnimeIdsKey(animeList)}`;
-        setItems([]);
-        setIsLoading(false);
-      }
-      return;
-    }
-
-    activeSourceRef.current = source;
-    activeItemsKeyRef.current = `${source}:${getAnimeIdsKey(animeList)}`;
-    setItems(nextItems);
-    setIsLoading(false);
-  }
-
-  async function hydrateCarouselItems(animeList: FeaturedCarouselAnime[], source: "default" | "featured") {
+  async function resolveCarouselItems(animeList: FeaturedCarouselAnime[], source: "default" | "featured") {
     const itemsKey = `${source}:${getAnimeIdsKey(animeList)}`;
 
     try {
@@ -84,12 +66,50 @@ export default function HeroCarousel() {
         activeSourceRef.current !== source ||
         activeItemsKeyRef.current !== itemsKey
       ) {
-        return;
+        return false;
       }
 
-      setItems(buildCarouselItems(animeList, artworkMap));
+      const hydratedItems = buildCarouselItems(animeList, artworkMap);
+      if (hydratedItems.length > 0) {
+        setItems(hydratedItems);
+        setCurrent(0);
+        setIsLoading(false);
+        return true;
+      }
+
+      const fallbackItems = buildCarouselItems(animeList);
+      if (fallbackItems.length > 0) {
+        setItems(fallbackItems);
+        setCurrent(0);
+        setIsLoading(false);
+        return true;
+      }
+
+      setItems([]);
+      setCurrent(0);
+      setIsLoading(false);
+      return false;
     } catch (error) {
       console.error("Error hydrating carousel artwork:", error);
+      if (
+        activeSourceRef.current !== source ||
+        activeItemsKeyRef.current !== itemsKey
+      ) {
+        return false;
+      }
+
+      const fallbackItems = buildCarouselItems(animeList);
+      if (fallbackItems.length > 0) {
+        setItems(fallbackItems);
+        setCurrent(0);
+        setIsLoading(false);
+        return true;
+      }
+
+      setItems([]);
+      setCurrent(0);
+      setIsLoading(false);
+      return false;
     }
   }
 
@@ -103,8 +123,12 @@ export default function HeroCarousel() {
     }
 
     if (fallbackAnime.length > 0 && activeSourceRef.current !== "featured") {
-      showCarouselItems(fallbackAnime, "default");
-      void hydrateCarouselItems(fallbackAnime, "default");
+      activeSourceRef.current = "default";
+      activeItemsKeyRef.current = `default:${getAnimeIdsKey(fallbackAnime)}`;
+      setItems([]);
+      setCurrent(0);
+      setIsLoading(true);
+      void resolveCarouselItems(fallbackAnime, "default");
       return;
     }
 
@@ -133,34 +157,17 @@ export default function HeroCarousel() {
 
     setFeaturedUnavailable(false);
 
-    const immediateItems = buildCarouselItems(dedupedFeaturedItems);
-    if (immediateItems.length > 0) {
-      showCarouselItems(dedupedFeaturedItems, "featured");
-      void hydrateCarouselItems(dedupedFeaturedItems, "featured");
-      return;
-    }
-
     const itemsKey = `featured:${getAnimeIdsKey(dedupedFeaturedItems)}`;
     activeSourceRef.current = "featured";
     activeItemsKeyRef.current = itemsKey;
     setItems([]);
+    setCurrent(0);
     setIsLoading(true);
 
     void (async () => {
       try {
-        const artworkMap = await getMultipleAnimeTmdbArtwork(dedupedFeaturedItems);
-
-        if (
-          activeSourceRef.current !== "featured"
-          || activeItemsKeyRef.current !== itemsKey
-        ) {
-          return;
-        }
-
-        const hydratedItems = buildCarouselItems(dedupedFeaturedItems, artworkMap);
-        if (hydratedItems.length > 0) {
-          setItems(hydratedItems);
-          setIsLoading(false);
+        const resolved = await resolveCarouselItems(dedupedFeaturedItems, "featured");
+        if (resolved) {
           return;
         }
 
