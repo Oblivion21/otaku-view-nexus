@@ -26,6 +26,16 @@ export default function ContentRail<T>({
   skeletonCount = 6,
   itemClassName = DEFAULT_ITEM_CLASS_NAME,
 }: ContentRailProps<T>) {
+  const visibleItems = items
+    .map((item, index) => ({
+      item,
+      index,
+      content: renderItem(item, index),
+    }))
+    .filter(({ content }) => {
+      return content !== null && content !== undefined && content !== false;
+    });
+
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -52,16 +62,16 @@ export default function ContentRail<T>({
           <CarouselPrevious className="h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
           <CarouselNext className="h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
         </Carousel>
-      ) : items.length > 0 ? (
+      ) : visibleItems.length > 0 ? (
         <Carousel
           dir="rtl"
           opts={{ align: "start", dragFree: true }}
           className="px-10 sm:px-12"
         >
           <CarouselContent>
-            {items.map((item, index) => (
+            {visibleItems.map(({ item, index, content }) => (
               <CarouselItem key={index} className={cn(itemClassName)}>
-                {renderItem(item, index)}
+                {content}
               </CarouselItem>
             ))}
           </CarouselContent>

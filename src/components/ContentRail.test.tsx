@@ -74,4 +74,22 @@ describe("ContentRail", () => {
     expect(screen.getByText("Naruto")).toBeInTheDocument();
     expect(carouselMocks.carouselSpy).toHaveBeenCalledWith(expect.objectContaining({ dir: "rtl" }));
   });
+
+  it("does not render empty carousel slides when renderItem returns null", () => {
+    render(
+      <ContentRail
+        title="Latest"
+        items={[
+          { id: 1, name: "Naruto", hidden: false },
+          { id: 2, name: "Hidden", hidden: true },
+        ]}
+        emptyMessage="Nothing here"
+        renderItem={(item) => (item.hidden ? null : <div>{item.name}</div>)}
+      />,
+    );
+
+    expect(screen.getByText("Naruto")).toBeInTheDocument();
+    expect(screen.queryByText("Hidden")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Naruto|Previous|Next/)).toHaveLength(3);
+  });
 });
