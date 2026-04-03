@@ -12,6 +12,7 @@ import { isBlockedAnime } from "@/lib/jikan";
 import { buildEpisodeDataFromScrape } from "@/lib/episodePlayback";
 import { getAnimeDetailPath } from "@/lib/animeRoutes";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
+import { resolveVidplusPlayerUrl } from "@/lib/vidplus";
 import { resolveVidplaysPlayerUrl } from "@/lib/vidplays";
 import { getVideasyUnavailableReason, resolveVideasyMainPlayerUrl } from "@/lib/videasy";
 import {
@@ -92,7 +93,7 @@ function formatEpisodeScoreLabel(score: number | null | undefined) {
   return normalizedScore.toFixed(1);
 }
 
-type PlayerTab = "main" | "backup" | "vidplays";
+type PlayerTab = "main" | "backup" | "vidplays" | "vidplus";
 type MainPlayerStatus = "idle" | "loading" | "ready" | "unavailable" | "error";
 
 export default function EpisodeWatch() {
@@ -183,6 +184,9 @@ export default function EpisodeWatch() {
   const isActiveDirectVideo = Boolean(activeVideoUrl && isDirectPlayableUrl(activeVideoUrl));
   const mainPlayerUrl = !isTrailer
     ? resolveVideasyMainPlayerUrl(tmdbArtwork ?? null, aniListMedia ?? null, anime?.type ?? null, epNum)
+    : null;
+  const vidplusUrl = !isTrailer
+    ? resolveVidplusPlayerUrl(tmdbArtwork ?? null, aniListMedia ?? null, anime?.type ?? null, epNum)
     : null;
   const vidplaysUrl = !isTrailer
     ? resolveVidplaysPlayerUrl(tmdbArtwork ?? null, aniListMedia ?? null, anime?.type ?? null, epNum)
@@ -562,6 +566,33 @@ export default function EpisodeWatch() {
     );
   };
 
+  const renderVidplusPlayer = () => {
+    if (!vidplusUrl) {
+      return (
+        <div className="w-full aspect-video rounded-xl border border-amber-500/30 bg-card flex items-center justify-center">
+          <div className="text-center space-y-2 px-6">
+            <p className="text-amber-300 font-medium">VidPlus unavailable</p>
+            <p className="text-sm text-muted-foreground">
+              VidPlus could not resolve this title.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="episode-watch-player-shell relative w-full aspect-video rounded-xl overflow-hidden border border-primary/20 bg-black shadow-[0_0_30px_rgba(0,208,255,0.08)]">
+        <iframe
+          src={vidplusUrl}
+          title={`${anime.title} - VidPlus`}
+          className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
+          allowFullScreen
+          allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+        />
+      </div>
+    );
+  };
+
   const renderBackupPlayer = () => {
     if (loadingVideo || scraping) {
       return (
@@ -733,6 +764,7 @@ export default function EpisodeWatch() {
               <div className="space-y-3">
                 <TabsList className="bg-slate-900/80 border border-primary/10">
                   {vidplaysUrl ? <TabsTrigger value="vidplays">Main Player</TabsTrigger> : null}
+                  {vidplusUrl ? <TabsTrigger value="vidplus">VidPlus</TabsTrigger> : null}
                   <TabsTrigger value="main">{mainPlayerTabLabel}</TabsTrigger>
                   <TabsTrigger value="backup">Backup Player</TabsTrigger>
                 </TabsList>
@@ -740,6 +772,12 @@ export default function EpisodeWatch() {
                 {vidplaysUrl ? (
                   <TabsContent value="vidplays" className="mt-0">
                     {renderVidplaysPlayer()}
+                  </TabsContent>
+                ) : null}
+
+                {vidplusUrl ? (
+                  <TabsContent value="vidplus" className="mt-0">
+                    {renderVidplusPlayer()}
                   </TabsContent>
                 ) : null}
 

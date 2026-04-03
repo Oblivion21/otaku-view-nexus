@@ -128,6 +128,7 @@ describe("EpisodeWatch", () => {
 
     const mainTab = await screen.findByRole("tab", { name: "Main Player" });
     expect(mainTab).toHaveAttribute("data-state", "active");
+    expect(screen.getByRole("tab", { name: "VidPlus" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Videasy" })).toBeInTheDocument();
 
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
@@ -149,6 +150,23 @@ describe("EpisodeWatch", () => {
     expect(mainIframe).toHaveAttribute(
       "src",
       expect.stringContaining("https://vidplays.fun/embed/anime/21/1/sub?autoplay=true"),
+    );
+  });
+
+  it("uses the AniList anime embed path for the VidPlus tab", async () => {
+    renderPage();
+
+    const vidplusTab = screen.getByRole("tab", { name: "VidPlus" });
+    activateTab(vidplusTab);
+
+    await waitFor(() => {
+      expect(vidplusTab).toHaveAttribute("data-state", "active");
+    });
+
+    const vidplusIframe = await screen.findByTitle("Naruto - VidPlus");
+    expect(vidplusIframe).toHaveAttribute(
+      "src",
+      expect.stringContaining("https://player.vidplus.to/embed/anime/21/1?autoplay=true&dub=false"),
     );
   });
 
@@ -294,6 +312,7 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
+    expect(screen.queryByRole("tab", { name: "VidPlus" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Videasy" })).not.toBeInTheDocument();
 
     await waitFor(() => {
@@ -363,6 +382,7 @@ describe("EpisodeWatch", () => {
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/anime/145139"));
     expect(screen.getByRole("tab", { name: "Main Player" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "VidPlus" })).toBeInTheDocument();
   });
 
   it("uses the tmdb movie path for the Main Player movie tab", async () => {
@@ -399,6 +419,50 @@ describe("EpisodeWatch", () => {
     expect(mainIframe).toHaveAttribute(
       "src",
       expect.stringContaining("https://vidplays.fun/embed/movie/299534?autoplay=true"),
+    );
+  });
+
+  it("uses the tmdb movie path for the VidPlus movie tab", async () => {
+    hookMocks.useAnimeById.mockReturnValue({
+      data: {
+        data: {
+          ...anime,
+          type: "Movie",
+          title: "Kimi no Na wa.",
+        },
+      },
+      isLoading: false,
+    });
+
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: {
+        tmdbId: 299534,
+        mediaType: "movie",
+        posterUrl: null,
+        backdropUrl: null,
+        trailerYoutubeId: null,
+        matchedTitle: "Kimi no Na wa.",
+        seasonNumber: null,
+        seasonName: null,
+        matchConfidence: "high",
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderPage();
+
+    const vidplusTab = screen.getByRole("tab", { name: "VidPlus" });
+    activateTab(vidplusTab);
+
+    await waitFor(() => {
+      expect(vidplusTab).toHaveAttribute("data-state", "active");
+    });
+
+    const vidplusIframe = await screen.findByTitle("Kimi no Na wa. - VidPlus");
+    expect(vidplusIframe).toHaveAttribute(
+      "src",
+      expect.stringContaining("https://player.vidplus.to/embed/movie/299534?autoplay=true"),
     );
   });
 
@@ -446,6 +510,7 @@ describe("EpisodeWatch", () => {
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/145139?color=00D0FF"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/145139/1"));
+    expect(screen.queryByRole("tab", { name: "VidPlus" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Videasy" })).not.toBeInTheDocument();
   });
 
@@ -498,6 +563,7 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
+    expect(screen.queryByRole("tab", { name: "VidPlus" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Videasy" })).not.toBeInTheDocument();
 
     await waitFor(() => {
