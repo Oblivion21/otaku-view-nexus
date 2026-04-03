@@ -753,33 +753,31 @@ export default function EpisodeWatch() {
                           <span className="w-10 shrink-0 text-center text-base font-bold self-start">
                             {ep.episode_number}
                           </span>
-                          <div className="min-w-0 flex-1 space-y-1.5">
-                            <span className="block text-sm line-clamp-1">
-                              {ep.title || `الحلقة ${ep.episode_number}`}
-                            </span>
-                            {(ep.scoreLabel || ep.filler) && (
-                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
-                                {ep.scoreLabel && (
-                                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 ${
-                                    isCurrentEpisode
-                                      ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground"
-                                      : "border-amber-400/30 bg-amber-400/10 text-amber-300"
-                                  }`}>
-                                    {ep.scoreLabel}
-                                  </span>
-                                )}
-                                {ep.filler && (
-                                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 ${
-                                    isCurrentEpisode
-                                      ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground"
-                                      : "border-slate-400/30 bg-slate-400/10 text-slate-300"
-                                  }`}>
-                                    فلر
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
+                          <span className="min-w-0 flex-1 text-sm line-clamp-1">
+                            {ep.title || `الحلقة ${ep.episode_number}`}
+                          </span>
+                          {(ep.scoreLabel || ep.filler) && (
+                            <div className="shrink-0 flex flex-wrap items-center justify-end gap-2 self-center">
+                              {ep.filler && (
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                                  isCurrentEpisode
+                                    ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground"
+                                    : "border-slate-400/30 bg-slate-400/10 text-slate-300"
+                                }`}>
+                                  Filler
+                                </span>
+                              )}
+                              {ep.scoreLabel && (
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                                  isCurrentEpisode
+                                    ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground"
+                                    : "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                                }`}>
+                                  {ep.scoreLabel}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </Link>
                       );
                     })}

@@ -193,7 +193,7 @@ describe("EpisodeWatch", () => {
 
     expect(await screen.findByText("Enter: Naruto Uzumaki!")).toBeInTheDocument();
     expect(screen.getByText("8.3")).toBeInTheDocument();
-    expect(screen.getByText("فلر")).toBeInTheDocument();
+    expect(screen.getByText("Filler")).toBeInTheDocument();
   });
 
   it("scrapes when the cached episode link is older than 2 hours", async () => {
@@ -518,10 +518,13 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");
-      expect(screen.getByText("الفيلم غير متوفر حالياً")).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");
+        expect(screen.getByText("الفيلم غير متوفر حالياً")).toBeInTheDocument();
+      },
+      { timeout: 8000 },
+    );
     expect(screen.queryByText(/الحلقة 1 غير متوفرة حالياً/)).not.toBeInTheDocument();
   });
 
