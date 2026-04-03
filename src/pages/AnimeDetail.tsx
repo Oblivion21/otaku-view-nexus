@@ -51,6 +51,8 @@ function formatEpisodeScoreLabel(score: number | null | undefined) {
   return normalizedScore.toFixed(1);
 }
 
+const HIDDEN_RELATION_TYPES = new Set(["Character", "Other"]);
+
 export default function AnimeDetail() {
   const { id } = useParams<{ id: string }>();
   const animeId = Number(id);
@@ -263,6 +265,7 @@ export default function AnimeDetail() {
     };
   });
   const relatedGroups = (relations?.data || [])
+    .filter((group) => !HIDDEN_RELATION_TYPES.has(group.relation))
     .map((group) => {
       const animeEntries = dedupeRelationEntries(group.entry.filter((entry) => entry.type === "anime"));
       return {
