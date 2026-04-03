@@ -87,7 +87,7 @@ function EpisodePreviewCard({ item }: { item: EpisodePreviewRailItem }) {
           </div>
         ) : null}
         {item.badges?.length ? (
-          <div className="absolute bottom-3 right-3 flex flex-wrap gap-1.5">
+          <div className="absolute right-3 top-3 flex max-w-[60%] flex-wrap justify-end gap-1.5">
             {item.badges.slice(0, 3).map((badge) => (
               <Badge
                 key={`${item.episodeNumber}-${badge}`}

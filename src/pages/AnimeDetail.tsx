@@ -266,11 +266,11 @@ export default function AnimeDetail() {
     }
 
     if (episode.tags?.includes("filler")) {
-      badges.push("فلر");
+      badges.push("Filler");
     }
 
-    if (episode.filler && !badges.includes("فلر")) {
-      badges.push("فلر");
+    if (episode.filler && !badges.includes("Filler")) {
+      badges.push("Filler");
     }
 
     if (episode.tags?.includes("special")) {

@@ -183,4 +183,30 @@ describe("EpisodePreviewRail", () => {
 
     expect(handleReachEnd).toHaveBeenCalledTimes(1);
   });
+
+  it("renders filler badges in English at the top-right of the preview image", () => {
+    render(
+      <MemoryRouter>
+        <EpisodePreviewRail
+          title="Latest Episodes"
+          items={[
+            {
+              episodeNumber: 6,
+              title: "Valentine Murder Case",
+              href: "/watch/235/6",
+              imageUrl: "https://image.tmdb.org/t/p/w780/ep6.jpg",
+              badges: ["Filler"],
+            },
+          ]}
+          emptyMessage="Nothing here"
+          headerActionHref="/anime/235"
+          headerActionLabel="View all"
+        />
+      </MemoryRouter>,
+    );
+
+    const badge = screen.getByText("Filler");
+    expect(badge).toBeInTheDocument();
+    expect(badge.parentElement).toHaveClass("right-3", "top-3");
+  });
 });
