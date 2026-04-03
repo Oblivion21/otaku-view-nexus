@@ -532,6 +532,7 @@ describe("EpisodeWatch", () => {
       "tmdb-trailer-1",
       null,
       null,
+      null,
     );
   });
 });

@@ -6,6 +6,7 @@ export function getTrailerYoutubeId(
   tmdbYoutubeId: string | null | undefined,
   jikanYoutubeId: string | null,
   embedUrl?: string | null,
+  trailerUrl?: string | null,
 ): string | null {
   if (tmdbYoutubeId) {
     return tmdbYoutubeId;
@@ -19,6 +20,26 @@ export function getTrailerYoutubeId(
     const match = embedUrl.match(/embed\/([a-zA-Z0-9_-]+)/);
     if (match && match[1]) {
       return match[1];
+    }
+  }
+
+  if (trailerUrl) {
+    try {
+      const url = new URL(trailerUrl);
+
+      if (url.hostname.includes("youtu.be")) {
+        const shortId = url.pathname.split("/").filter(Boolean)[0];
+        if (shortId) {
+          return shortId;
+        }
+      }
+
+      const watchId = url.searchParams.get("v");
+      if (watchId) {
+        return watchId;
+      }
+    } catch {
+      return null;
     }
   }
 

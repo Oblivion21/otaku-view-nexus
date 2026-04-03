@@ -220,6 +220,7 @@ export default function AnimeDetail() {
     tmdbArtwork?.trailerYoutubeId,
     anime.trailer?.youtube_id || null,
     anime.trailer?.embed_url || null,
+    anime.trailer?.url || null,
   );
   const bannerImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "banner");
   const posterImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");

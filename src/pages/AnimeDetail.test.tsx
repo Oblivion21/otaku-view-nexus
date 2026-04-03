@@ -241,6 +241,7 @@ describe("AnimeDetail", () => {
       "tmdb-trailer-1",
       null,
       null,
+      null,
     );
     expect(screen.getByAltText("Naruto")).toHaveAttribute(
       "src",
@@ -294,6 +295,7 @@ describe("AnimeDetail", () => {
       null,
       "jikan-trailer-7",
       "https://www.youtube.com/embed/jikan-trailer-7",
+      "https://www.youtube.com/watch?v=jikan-trailer-7",
     );
     expect(screen.getByTitle("Trailer jikan-trailer-7")).toBeInTheDocument();
   });

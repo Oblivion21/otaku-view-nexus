@@ -415,6 +415,7 @@ export default function EpisodeWatch() {
     tmdbArtwork?.trailerYoutubeId,
     anime.trailer?.youtube_id || null,
     anime.trailer?.embed_url || null,
+    anime.trailer?.url || null,
   );
 
   const renderVideoPlayer = (
