@@ -8,7 +8,6 @@ const corsHeaders = {
 const TMDB_API_URL = 'https://api.themoviedb.org/3'
 const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/'
 const DEFAULT_STILL_SIZE = 'w780'
-const MAX_EPISODE_STILLS = 24
 
 type TmdbMediaType = 'movie' | 'tv'
 
@@ -86,7 +85,7 @@ function parseEpisodeNumbers(value: unknown) {
         .map((entry) => Number(entry))
         .filter((entry) => Number.isInteger(entry) && entry > 0),
     ),
-  ).slice(0, MAX_EPISODE_STILLS)
+  )
 }
 
 function isValidRequestBody(value: unknown): value is EpisodeStillPayload {

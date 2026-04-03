@@ -133,6 +133,35 @@ describe("getAnimeEpisodePreviewImages", () => {
       source: "tmdb",
     });
   });
+
+  it("requests and resolves episode preview images beyond episode 24", async () => {
+    supabaseMocks.invoke.mockResolvedValue({
+      data: {
+        results: {
+          "25": { stillUrl: "https://image.tmdb.org/t/p/w780/episode-25.jpg" },
+        },
+      },
+      error: null,
+    });
+    jikanMocks.getAnimeVideoEpisodes.mockResolvedValue([]);
+
+    const result = await getAnimeEpisodePreviewImages(20, artwork, Array.from({ length: 30 }, (_, index) => index + 1));
+
+    expect(supabaseMocks.invoke).toHaveBeenCalledWith(
+      "tmdb-episode-stills",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          episodeNumbers: Array.from({ length: 30 }, (_, index) => index + 1),
+        }),
+      }),
+    );
+    expect(result.get(25)).toEqual({
+      episodeNumber: 25,
+      imageUrl: "https://image.tmdb.org/t/p/w780/episode-25.jpg",
+      fallbackImageUrl: null,
+      source: "tmdb",
+    });
+  });
 });
 
 describe("getMultipleAnimeTmdbArtwork", () => {
