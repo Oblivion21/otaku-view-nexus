@@ -6,6 +6,7 @@ import type { JikanAnime } from "@/lib/jikan";
 import type { EpisodePreviewRailItem } from "@/components/EpisodePreviewRail";
 
 const hookMocks = vi.hoisted(() => ({
+  useAnimeAniListMedia: vi.fn(),
   useAnimeById: vi.fn(),
   useAnimeEpisodes: vi.fn(),
   useAnimeRecommendations: vi.fn(),
@@ -162,6 +163,10 @@ describe("AnimeDetail", () => {
       data: { data: anime },
       isLoading: false,
     });
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
+      data: null,
+      isLoading: false,
+    });
     hookMocks.useAnimeEpisodes.mockReturnValue({
       data: { data: [] },
       isLoading: false,
@@ -184,6 +189,7 @@ describe("AnimeDetail", () => {
     });
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
+      isLoading: false,
     });
     hookMocks.useAnimeEpisodePreviewImages.mockReturnValue({
       data: new Map(),
@@ -210,6 +216,7 @@ describe("AnimeDetail", () => {
         seasonName: null,
         matchConfidence: "high",
       },
+      isLoading: false,
     });
     hookMocks.useAnimeEpisodes.mockReturnValue({
       data: {
@@ -285,6 +292,7 @@ describe("AnimeDetail", () => {
         seasonName: null,
         matchConfidence: "high",
       },
+      isLoading: false,
     });
     trailerFallbackMocks.getTrailerYoutubeId.mockImplementation((tmdbId, jikanId) => tmdbId || jikanId || null);
 
@@ -361,6 +369,7 @@ describe("AnimeDetail", () => {
         seasonName: null,
         matchConfidence: "high",
       },
+      isLoading: false,
     });
     hookMocks.useAnimeEpisodePreviewImages.mockReturnValue({
       data: new Map([
@@ -380,6 +389,7 @@ describe("AnimeDetail", () => {
   it("falls back to Jikan artwork when TMDB is missing", async () => {
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
+      isLoading: false,
     });
     hookMocks.useMultipleAnimeTmdbArtwork.mockReturnValue({
       data: new Map(),
@@ -413,6 +423,7 @@ describe("AnimeDetail", () => {
     });
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
+      isLoading: false,
     });
     hookMocks.useMultipleAnimeTmdbArtwork.mockReturnValue({
       data: new Map(),
@@ -459,6 +470,7 @@ describe("AnimeDetail", () => {
     });
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
+      isLoading: false,
     });
     supabaseMocks.getAnimeEpisodes.mockResolvedValue([
       {
@@ -507,8 +519,13 @@ describe("AnimeDetail", () => {
       data: { data: movieAnime },
       isLoading: false,
     });
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
+      data: null,
+      isLoading: false,
+    });
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
+      isLoading: false,
     });
     supabaseMocks.getAnimeEpisodes.mockResolvedValue([
       {
@@ -552,8 +569,13 @@ describe("AnimeDetail", () => {
       data: { data: movieAnime },
       isLoading: false,
     });
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
+      data: null,
+      isLoading: false,
+    });
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
+      isLoading: false,
     });
     supabaseMocks.getAnimeEpisodes.mockResolvedValue([
       {
@@ -584,9 +606,103 @@ describe("AnimeDetail", () => {
     expect(screen.queryByRole("link", { name: "شاهد الفيلم" })).not.toBeInTheDocument();
   });
 
+  it("renders the movie watch button when a released movie only has main-player metadata", async () => {
+    const movieAnime: JikanAnime = {
+      ...anime,
+      mal_id: 33161,
+      title: "Koe no Katachi",
+      type: "Movie",
+      episodes: 1,
+      status: "Finished Airing",
+      aired: { from: "2016-09-17", to: null, string: "2016" },
+    };
+
+    hookMocks.useAnimeById.mockReturnValue({
+      data: { data: movieAnime },
+      isLoading: false,
+    });
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: {
+        tmdbId: 378064,
+        mediaType: "movie",
+        posterUrl: null,
+        backdropUrl: null,
+        trailerYoutubeId: null,
+        matchedTitle: "Koe no Katachi",
+        seasonNumber: null,
+        seasonName: null,
+        matchConfidence: "high",
+      },
+      isLoading: false,
+    });
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
+      data: null,
+      isLoading: false,
+    });
+    supabaseMocks.getAnimeEpisodes.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={["/anime/33161"]}>
+        <Routes>
+          <Route path="/anime/:id" element={<AnimeDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Koe no Katachi" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "شاهد الفيلم" })).toHaveAttribute("href", "/watch/33161/1");
+    expect(screen.queryByRole("button", { name: "غير متوفر حالياً" })).not.toBeInTheDocument();
+  });
+
+  it("renders the watch button for tv specials when episode data exists", async () => {
+    const specialAnime: JikanAnime = {
+      ...anime,
+      mal_id: 10431,
+      title: "Magic Kaito",
+      type: "TV Special",
+      episodes: 12,
+      status: "Finished Airing",
+      aired: { from: "2010-04-17", to: "2012-12-29", string: "2010-2012" },
+    };
+
+    hookMocks.useAnimeById.mockReturnValue({
+      data: { data: specialAnime },
+      isLoading: false,
+    });
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: {
+        data: [
+          {
+            mal_id: 1,
+            title: "Episode 1",
+            title_japanese: null,
+            title_romanji: null,
+            aired: null,
+            filler: false,
+            recap: false,
+          },
+        ],
+      },
+      isLoading: false,
+    });
+    supabaseMocks.getAnimeEpisodes.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={["/anime/10431"]}>
+        <Routes>
+          <Route path="/anime/:id" element={<AnimeDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Magic Kaito" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "شاهد الحلقة 1" })).toBeInTheDocument();
+  });
+
   it("does not render the episode watch button when a series has no actual episode data", async () => {
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
+      isLoading: false,
     });
     hookMocks.useAnimeEpisodes.mockReturnValue({
       data: { data: [] },
@@ -604,6 +720,7 @@ describe("AnimeDetail", () => {
   it("dedupes recommendation cards and shows the full-episodes CTA for series", async () => {
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
       data: null,
+      isLoading: false,
     });
     hookMocks.useAnimeEpisodes.mockReturnValue({
       data: {

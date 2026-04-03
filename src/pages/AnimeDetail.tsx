@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import ContentRail from "@/components/ContentRail";
 import EpisodePreviewRail from "@/components/EpisodePreviewRail";
-import { useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeRelations, useAnimeTmdbArtwork, useAnimeEpisodePreviewImages, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { useAnimeAniListMedia, useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeRelations, useAnimeTmdbArtwork, useAnimeEpisodePreviewImages, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
 import { TrailerBanner } from "@/components/TrailerBanner";
@@ -63,8 +63,9 @@ export default function AnimeDetail() {
   const [loadedSupabaseEpisodes, setLoadedSupabaseEpisodes] = useState(false);
   const isDetectiveConan = animeId === 235; // Detective Conan MAL ID
   const anime = data?.data;
-  const { data: tmdbArtwork } = useAnimeTmdbArtwork(anime);
-  const isSeriesType = anime?.type === "TV" || anime?.type === "OVA" || anime?.type === "ONA" || anime?.type === "Special";
+  const { data: tmdbArtwork, isLoading: loadingTmdbArtwork } = useAnimeTmdbArtwork(anime);
+  const { data: aniListMedia, isLoading: loadingAniListMedia } = useAnimeAniListMedia(anime, Boolean(anime));
+  const isSeriesType = anime?.type === "TV" || anime?.type === "OVA" || anime?.type === "ONA" || anime?.type === "Special" || anime?.type === "TV Special";
   const isMovie = anime?.type === "Movie";
   const dedupedSupabaseEpisodes = dedupeSupabaseEpisodes(supabaseEpisodes)
     .sort((a, b) => a.episode_number - b.episode_number);
@@ -74,9 +75,18 @@ export default function AnimeDetail() {
   const supabaseEpisodeMap = new Map(
     dedupedSupabaseEpisodes.map((ep) => [ep.episode_number, ep])
   );
-  const movieEpisode = supabaseEpisodeMap.get(1) ?? null;
+  const firstPlayableSupabaseEpisode = dedupedSupabaseEpisodes.find((ep) => hasPlayableEpisodeData(ep)) ?? null;
+  const firstSupabaseEpisode = dedupedSupabaseEpisodes[0] ?? null;
+  const preferredMovieEpisodeNumber = firstPlayableSupabaseEpisode?.episode_number ?? firstSupabaseEpisode?.episode_number ?? 1;
+  const hasMovieMainPlayer = Boolean(
+    (tmdbArtwork?.tmdbId && tmdbArtwork.mediaType === "movie")
+    || aniListMedia?.id,
+  );
   const canWatchMovie = Boolean(
-    anime && isMovie && loadedSupabaseEpisodes && hasAnimeAlreadyAired(anime) && hasPlayableEpisodeData(movieEpisode),
+    anime
+    && isMovie
+    && hasAnimeAlreadyAired(anime)
+    && (hasMovieMainPlayer || hasPlayableEpisodeData(firstPlayableSupabaseEpisode)),
   );
   const canWatchSeries = Boolean(anime && isSeriesType && (hasSupabaseEpisodes || hasPublicEpisodes));
   const rawEpisodeRailItems = hasPublicEpisodes
@@ -368,10 +378,10 @@ export default function AnimeDetail() {
               )}
               {canWatchMovie && (
                 <Button asChild>
-                  <Link to={`/watch/${anime.mal_id}/1`}>شاهد الفيلم</Link>
+                  <Link to={`/watch/${anime.mal_id}/${preferredMovieEpisodeNumber}`}>شاهد الفيلم</Link>
                 </Button>
               )}
-              {isMovie && loadedSupabaseEpisodes && !canWatchMovie && (
+              {isMovie && loadedSupabaseEpisodes && !loadingTmdbArtwork && !loadingAniListMedia && !canWatchMovie && (
                 <Button disabled variant="secondary">
                   غير متوفر حالياً
                 </Button>
