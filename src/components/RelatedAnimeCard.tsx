@@ -73,7 +73,12 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
         <h3 className="text-sm font-semibold line-clamp-2 leading-tight group-hover:text-primary transition-colors">
           {name}
         </h3>
-        <div className="mt-1.5">
+        <div className="mt-1.5 space-y-1.5">
+          {anime?.year && (
+            <p className="text-[11px] text-muted-foreground">
+              {anime.year}
+            </p>
+          )}
           <Badge variant="outline" className="text-[10px]">{relationLabel}</Badge>
         </div>
       </div>
