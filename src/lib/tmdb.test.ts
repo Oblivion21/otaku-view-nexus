@@ -134,3 +134,56 @@ describe("getAnimeEpisodePreviewImages", () => {
     });
   });
 });
+
+describe("getMultipleAnimeTmdbArtwork", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("retries a timed-out artwork request on the next call instead of caching null forever", async () => {
+    vi.resetModules();
+    const { getMultipleAnimeTmdbArtwork } = await import("@/lib/tmdb");
+
+    supabaseMocks.invoke
+      .mockRejectedValueOnce(new Error("TMDB artwork request timed out"))
+      .mockResolvedValueOnce({
+        data: {
+          results: {
+            "1": {
+              tmdbId: 10,
+              mediaType: "tv",
+              posterUrl: "https://image.tmdb.org/t/p/w780/naruto.jpg",
+              backdropUrl: null,
+              trailerYoutubeId: null,
+              matchedTitle: "Naruto",
+              seasonNumber: 1,
+              seasonName: "Season 1",
+              matchConfidence: "high",
+            },
+          },
+        },
+        error: null,
+      });
+
+    const anime = [{
+      mal_id: 1,
+      title: "Naruto",
+      title_english: "Naruto",
+      title_japanese: "ナルト",
+      type: "TV",
+      year: 2002,
+      aired: { from: "2002-10-03" },
+    }];
+
+    await expect(getMultipleAnimeTmdbArtwork(anime)).resolves.toEqual(new Map());
+    const retriedResult = await getMultipleAnimeTmdbArtwork(anime);
+
+    expect(supabaseMocks.invoke).toHaveBeenCalledTimes(2);
+    expect(retriedResult.get(1)).toEqual(
+      expect.objectContaining({
+        tmdbId: 10,
+        posterUrl: "https://image.tmdb.org/t/p/w780/naruto.jpg",
+      }),
+    );
+  });
+});

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAnimeById, useAnimeTmdbArtwork } from "@/hooks/useAnime";
 import { Badge } from "@/components/ui/badge";
@@ -14,14 +15,48 @@ interface RelatedAnimeCardProps {
 }
 
 export default function RelatedAnimeCard({ mal_id, name, relationLabel }: RelatedAnimeCardProps) {
-  const { data, isLoading, isError } = useAnimeById(mal_id, {
-    retry: 0,
+  const {
+    data,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+    failureCount,
+  } = useAnimeById(mal_id, {
+    retry: 3,
     staleTime: 24 * 60 * 60 * 1000,
   });
   const anime = data?.data;
   const { data: tmdbArtwork, isLoading: loadingTmdbArtwork } = useAnimeTmdbArtwork(anime);
 
-  if (isError || (!isLoading && !anime)) {
+  useEffect(() => {
+    if (anime || !isError) {
+      return undefined;
+    }
+
+    const retryDelayMs = Math.min(Math.max(failureCount, 1) * 2000, 10000);
+    const timeoutId = window.setTimeout(() => {
+      void refetch();
+    }, retryDelayMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [anime, failureCount, isError, refetch]);
+
+  if (!anime && (isLoading || isFetching || isError)) {
+    return (
+      <div className="group block rounded-lg overflow-hidden bg-card border border-border">
+        <div className="relative aspect-[3/4] overflow-hidden">
+          <Skeleton className="w-full h-full" />
+        </div>
+        <div className="p-2.5 space-y-2">
+          <Skeleton className="h-4 w-4/5" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!anime) {
     return null;
   }
 

@@ -141,7 +141,7 @@ export async function getMultipleAnimeTmdbArtwork(animeList: AnimeArtworkLookup[
       .catch((error) => {
         console.error("Failed to fetch TMDB artwork via Supabase function:", error);
         uncachedAnime.forEach((anime) => {
-          artworkCache.set(anime.mal_id, Promise.resolve(null));
+          artworkCache.delete(anime.mal_id);
         });
         return new Map<number, TmdbAnimeArtwork>();
       });
