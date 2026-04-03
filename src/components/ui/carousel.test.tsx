@@ -70,4 +70,17 @@ describe("ui Carousel", () => {
       expect(screen.getByRole("button", { name: "Previous slide" })).toBeInTheDocument();
     });
   });
+
+  it("uses right-side spacing classes for RTL horizontal tracks", () => {
+    render(
+      <Carousel dir="rtl">
+        <CarouselContent data-testid="content">
+          <CarouselItem data-testid="item">First</CarouselItem>
+        </CarouselContent>
+      </Carousel>,
+    );
+
+    expect(screen.getByTestId("content")).toHaveClass("-mr-4");
+    expect(screen.getByTestId("item")).toHaveClass("pr-4");
+  });
 });
