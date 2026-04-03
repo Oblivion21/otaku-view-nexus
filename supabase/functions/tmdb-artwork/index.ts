@@ -105,6 +105,12 @@ type TrailerCandidate = {
   score: number
 }
 
+type TrailerRequest = {
+  path: string
+  sourcePriority: number
+  language?: string
+}
+
 let configurationPromise: Promise<TmdbConfigurationResponse['images']> | null = null
 const artworkCache = new Map<number, Promise<TmdbAnimeArtwork | null>>()
 let missingTokenLogged = false
@@ -606,46 +612,66 @@ async function getPreferredTrailerYoutubeId(
   tmdbId: number,
   seasonNumber: number | null,
 ) {
-  const videoRequests: Array<Promise<TmdbVideosResponse>> = []
-  const priorities: number[] = []
+  const trailerRequests: TrailerRequest[] = []
 
   if (mediaType === 'tv' && seasonNumber !== null) {
-    videoRequests.push(
-      fetchTmdb<TmdbVideosResponse>(`/tv/${tmdbId}/season/${seasonNumber}/videos`, {
-        language: 'en-US',
-      }),
-    )
-    priorities.push(40)
+    trailerRequests.push({
+      path: `/tv/${tmdbId}/season/${seasonNumber}/videos`,
+      sourcePriority: 40,
+    })
   }
 
-  videoRequests.push(
-    fetchTmdb<TmdbVideosResponse>(`/${mediaType}/${tmdbId}/videos`, {
-      language: 'en-US',
-    }),
-  )
-  priorities.push(0)
-
-  const settled = await Promise.allSettled(videoRequests)
-  const candidates: TrailerCandidate[] = []
-
-  settled.forEach((result, index) => {
-    if (result.status !== 'fulfilled') {
-      return
-    }
-
-    const sourcePriority = priorities[index] ?? 0
-    const videos = Array.isArray(result.value.results) ? result.value.results : []
-
-    videos.forEach((video) => {
-      const candidate = scoreVideoResult(video, sourcePriority)
-      if (candidate) {
-        candidates.push(candidate)
-      }
-    })
+  trailerRequests.push({
+    path: `/${mediaType}/${tmdbId}/videos`,
+    sourcePriority: 0,
   })
 
-  candidates.sort((a, b) => b.score - a.score)
-  return candidates[0]?.youtubeId || null
+  const languagePasses: Array<{ language?: string; priorityBoost: number }> = [
+    { priorityBoost: 20 },
+    { language: 'en-US', priorityBoost: 10 },
+    { language: 'ja-JP', priorityBoost: 5 },
+  ]
+
+  const bestCandidates = new Map<string, TrailerCandidate>()
+
+  for (const pass of languagePasses) {
+    const settled = await Promise.allSettled(
+      trailerRequests.map((request) =>
+        fetchTmdb<TmdbVideosResponse>(
+          request.path,
+          pass.language ? { language: pass.language } : {},
+        ),
+      ),
+    )
+
+    settled.forEach((result, index) => {
+      if (result.status !== 'fulfilled') {
+        return
+      }
+
+      const request = trailerRequests[index]
+      const sourcePriority = (request?.sourcePriority ?? 0) + pass.priorityBoost
+      const videos = Array.isArray(result.value.results) ? result.value.results : []
+
+      videos.forEach((video) => {
+        const candidate = scoreVideoResult(video, sourcePriority)
+        if (!candidate) {
+          return
+        }
+
+        const currentBest = bestCandidates.get(candidate.youtubeId)
+        if (!currentBest || candidate.score > currentBest.score) {
+          bestCandidates.set(candidate.youtubeId, candidate)
+        }
+      })
+    })
+
+    if (bestCandidates.size > 0) {
+      break
+    }
+  }
+
+  return Array.from(bestCandidates.values()).sort((a, b) => b.score - a.score)[0]?.youtubeId || null
 }
 
 async function loadAnimeArtwork(anime: AnimeArtworkLookup): Promise<TmdbAnimeArtwork | null> {
