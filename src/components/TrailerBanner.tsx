@@ -25,6 +25,7 @@ declare global {
 }
 
 let youtubeIframeApiPromise: Promise<Window["YT"]> | null = null;
+const PLAYER_READY_TIMEOUT_MS = 3000;
 
 function loadYoutubeIframeApi() {
   if (typeof window === "undefined") {
@@ -166,8 +167,27 @@ export function TrailerBanner({
   // Enhanced URL parameters for better quality and control (desktop/tablet only)
   const origin = typeof window !== "undefined" ? encodeURIComponent(window.location.origin) : "";
   const embedUrl = activeYoutubeId
-    ? `https://www.youtube.com/embed/${activeYoutubeId}?autoplay=1&mute=1&controls=0&showinfo=0&modestbranding=1&rel=0&playsinline=1&disablekb=1&fs=0&iv_load_policy=3&loop=1&playlist=${activeYoutubeId}&origin=${origin}&enablejsapi=1`
+    ? `https://www.youtube-nocookie.com/embed/${activeYoutubeId}?autoplay=1&mute=1&controls=0&showinfo=0&modestbranding=1&rel=0&playsinline=1&disablekb=1&fs=0&iv_load_policy=3&loop=1&playlist=${activeYoutubeId}&origin=${origin}&enablejsapi=1`
     : null;
+
+  useEffect(() => {
+    if (isMobile || isLoaded || hasError || !activeYoutubeId) {
+      return;
+    }
+
+    const hasFallback = candidateIndex + 1 < candidateYoutubeIds.length;
+    if (!hasFallback) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setCandidateIndex((currentIndex) => currentIndex + 1);
+    }, PLAYER_READY_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeYoutubeId, candidateIndex, candidateYoutubeIds.length, hasError, isLoaded, isMobile]);
 
   const handleIframeLoad = () => {
     setIsLoaded(true);
@@ -205,6 +225,7 @@ export function TrailerBanner({
       {!isMobile && !hasError && embedUrl && (
         <div className="absolute inset-0 overflow-hidden">
           <iframe
+            key={activeYoutubeId}
             ref={iframeRef}
             src={embedUrl}
             allow="autoplay; encrypted-media"

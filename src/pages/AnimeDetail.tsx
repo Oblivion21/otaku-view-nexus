@@ -229,13 +229,15 @@ export default function AnimeDetail() {
     : [];
 
   // TMDB is the primary trailer source; Jikan/MAL only fills gaps.
-  const trailerYoutubeId = getTrailerYoutubeId(
-    tmdbArtwork?.trailerYoutubeId,
-    anime.trailer?.youtube_id || null,
-    anime.trailer?.embed_url || null,
-    anime.trailer?.url || null,
-  );
-  const fallbackTrailerYoutubeId = tmdbArtwork?.trailerYoutubeId
+  const trailerYoutubeId = loadingTmdbArtwork
+    ? null
+    : getTrailerYoutubeId(
+        tmdbArtwork?.trailerYoutubeId,
+        anime.trailer?.youtube_id || null,
+        anime.trailer?.embed_url || null,
+        anime.trailer?.url || null,
+      );
+  const fallbackTrailerYoutubeId = !loadingTmdbArtwork && tmdbArtwork?.trailerYoutubeId
     ? getTrailerYoutubeId(
         null,
         anime.trailer?.youtube_id || null,
