@@ -220,7 +220,7 @@ describe("AnimeDetail", () => {
             title_japanese: null,
             title_romanji: null,
             aired: null,
-            score: 9.4,
+            score: 4.7,
             filler: false,
             recap: false,
           },

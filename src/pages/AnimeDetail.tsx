@@ -42,6 +42,15 @@ function hasAnimeAlreadyAired(anime: Pick<JikanAnime, "status" | "aired">) {
   return parsedAiredFrom <= Date.now();
 }
 
+function formatEpisodeScoreLabel(score: number | null | undefined) {
+  if (typeof score !== "number" || Number.isNaN(score) || score <= 0) {
+    return null;
+  }
+
+  const normalizedScore = score <= 5 ? score * 2 : score;
+  return normalizedScore.toFixed(1);
+}
+
 export default function AnimeDetail() {
   const { id } = useParams<{ id: string }>();
   const animeId = Number(id);
@@ -76,7 +85,7 @@ export default function AnimeDetail() {
         return {
           episodeNumber: ep.mal_id,
           title: ep.title || `الحلقة ${ep.mal_id}`,
-          scoreLabel: typeof ep.score === "number" ? ep.score.toFixed(1) : null,
+          scoreLabel: formatEpisodeScoreLabel(ep.score),
           styleTarget: dbEpisode || { category: null, tags: [] },
         };
       })

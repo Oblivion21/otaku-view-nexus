@@ -6,7 +6,7 @@ const corsHeaders = {
 }
 
 const TMDB_API_URL = 'https://api.themoviedb.org/3'
-const TMDB_IMAGE_FALLBACK_BASE_URL = 'https://image.tmdb.org/t/p/'
+const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/'
 const DEFAULT_STILL_SIZE = 'w780'
 const MAX_EPISODE_STILLS = 24
 
@@ -16,13 +16,6 @@ type EpisodeStillResponse = {
   still_path?: string | null
 }
 
-type TmdbConfigurationResponse = {
-  images: {
-    secure_base_url: string
-    still_sizes: string[]
-  }
-}
-
 type EpisodeStillPayload = {
   tmdbId?: unknown
   mediaType?: unknown
@@ -30,7 +23,6 @@ type EpisodeStillPayload = {
   episodeNumbers?: unknown
 }
 
-let configurationPromise: Promise<TmdbConfigurationResponse['images']> | null = null
 let missingTokenLogged = false
 
 function jsonResponse(data: object, status = 200) {
@@ -75,31 +67,12 @@ async function fetchTmdb<T>(
   return response.json()
 }
 
-async function getTmdbConfiguration() {
-  if (!configurationPromise) {
-    configurationPromise = fetchTmdb<TmdbConfigurationResponse>('/configuration')
-      .then((response) => response.images)
-      .catch((error) => {
-        configurationPromise = null
-        throw error
-      })
-  }
-
-  return configurationPromise
-}
-
-async function buildStillUrl(filePath: string | null | undefined) {
+function buildStillUrl(filePath: string | null | undefined) {
   if (!filePath) {
     return null
   }
 
-  try {
-    const config = await getTmdbConfiguration()
-    const baseUrl = config.secure_base_url || TMDB_IMAGE_FALLBACK_BASE_URL
-    return `${baseUrl}${DEFAULT_STILL_SIZE}${filePath}`
-  } catch {
-    return `${TMDB_IMAGE_FALLBACK_BASE_URL}${DEFAULT_STILL_SIZE}${filePath}`
-  }
+  return `${TMDB_IMAGE_BASE_URL}${DEFAULT_STILL_SIZE}${filePath}`
 }
 
 function parseEpisodeNumbers(value: unknown) {
@@ -138,17 +111,12 @@ async function getEpisodeStill(tmdbId: number, seasonNumber: number, episodeNumb
   try {
     const response = await fetchTmdb<EpisodeStillResponse>(
       `/tv/${tmdbId}/season/${seasonNumber}/episode/${episodeNumber}`,
-      { language: 'en-US' },
     )
     return {
       episodeNumber,
-      stillUrl: await buildStillUrl(response.still_path),
+      stillUrl: buildStillUrl(response.still_path),
     }
-  } catch (error) {
-    console.warn(
-      `[tmdb-episode-stills] Failed to load still for tmdb=${tmdbId} season=${seasonNumber} episode=${episodeNumber}:`,
-      error,
-    )
+  } catch {
     return {
       episodeNumber,
       stillUrl: null,
