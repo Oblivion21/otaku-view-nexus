@@ -39,8 +39,9 @@ function ScrollToTop() {
 }
 
 const App = () => {
-  const [isUnlocked, setIsUnlocked] = useState(false);
-  const [authChecked, setAuthChecked] = useState(false);
+  const initialStoredToken = typeof window !== "undefined" ? getStoredSiteAccessToken() : null;
+  const [isUnlocked, setIsUnlocked] = useState(Boolean(initialStoredToken));
+  const [authChecked, setAuthChecked] = useState(!initialStoredToken);
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [isMaintenance, setIsMaintenance] = useState(false);
@@ -108,14 +109,6 @@ const App = () => {
     setIsSubmittingPassword(false);
   }
 
-  if (!authChecked || loadingMaintenance) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900">
-        <div className="text-white text-lg">Loading...</div>
-      </div>
-    );
-  }
-
   if (!isUnlocked) {
     return (
       <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.2),_transparent_45%),linear-gradient(180deg,_hsl(222_47%_6%),_hsl(222_47%_4%))] px-4 py-10">
@@ -156,7 +149,7 @@ const App = () => {
     );
   }
 
-  if (isMaintenance) {
+  if (authChecked && !loadingMaintenance && isMaintenance) {
     return <Maintenance />;
   }
 
