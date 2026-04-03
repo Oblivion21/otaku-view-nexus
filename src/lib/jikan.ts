@@ -396,6 +396,38 @@ export async function getAnimeEpisodes(id: number, page = 1) {
   return fetchJikan<JikanEpisode[]>(`/anime/${id}/episodes?page=${page}`);
 }
 
+export async function getAllAnimeEpisodes(id: number) {
+  const allEpisodes: JikanEpisode[] = [];
+  let currentPage = 1;
+  let lastPagination: JikanPagination | undefined;
+
+  for (;;) {
+    const response = await getAnimeEpisodes(id, currentPage);
+    allEpisodes.push(...response.data);
+    lastPagination = response.pagination;
+
+    if (!response.pagination?.has_next_page) {
+      break;
+    }
+
+    currentPage += 1;
+
+    // Defensive guard against infinite pagination loops from an upstream API bug.
+    if (currentPage > 100) {
+      break;
+    }
+  }
+
+  return {
+    data: allEpisodes,
+    pagination: {
+      last_visible_page: lastPagination?.last_visible_page ?? currentPage,
+      has_next_page: false,
+      current_page: lastPagination?.current_page ?? currentPage,
+    },
+  };
+}
+
 export async function getAnimeVideoEpisodes(id: number) {
   const response = await fetchJikan<JikanVideoEpisodesPayload>(`/anime/${id}/videos`);
   const episodes = Array.isArray(response.data?.episodes) ? response.data.episodes : [];

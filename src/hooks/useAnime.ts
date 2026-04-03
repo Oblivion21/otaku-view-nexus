@@ -4,6 +4,7 @@ import {
   getSeasonNow,
   getAnimeById,
   getAnimeEpisodes,
+  getAllAnimeEpisodes,
   searchAnime,
   getGenres,
   getAnimeByGenre,
@@ -174,6 +175,15 @@ export function useAnimeEpisodes(id: number, page = 1) {
   return useQuery({
     queryKey: ["anime-episodes", id, page],
     queryFn: () => getAnimeEpisodes(id, page),
+    enabled: !!id,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useAllAnimeEpisodes(id: number) {
+  return useQuery({
+    queryKey: ["anime-episodes-all", id],
+    queryFn: () => getAllAnimeEpisodes(id),
     enabled: !!id,
     staleTime: 10 * 60 * 1000,
   });

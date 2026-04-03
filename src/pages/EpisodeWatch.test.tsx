@@ -4,7 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const hookMocks = vi.hoisted(() => ({
   useAnimeById: vi.fn(),
-  useAnimeEpisodes: vi.fn(),
+  useAllAnimeEpisodes: vi.fn(),
   useAnimeAniListMedia: vi.fn(),
   useAnimeTmdbArtwork: vi.fn(),
 }));
@@ -75,7 +75,7 @@ describe("EpisodeWatch", () => {
       data: { data: anime },
       isLoading: false,
     });
-    hookMocks.useAnimeEpisodes.mockReturnValue({
+    hookMocks.useAllAnimeEpisodes.mockReturnValue({
       data: { data: [{ mal_id: 1, title: "Episode 1" }] },
     });
     hookMocks.useAnimeAniListMedia.mockReturnValue({
@@ -175,7 +175,7 @@ describe("EpisodeWatch", () => {
   });
 
   it("shows episode score and filler label in the episode list", async () => {
-    hookMocks.useAnimeEpisodes.mockReturnValue({
+    hookMocks.useAllAnimeEpisodes.mockReturnValue({
       data: {
         data: [
           {
@@ -194,6 +194,24 @@ describe("EpisodeWatch", () => {
     expect(await screen.findByText("Enter: Naruto Uzumaki!")).toBeInTheDocument();
     expect(screen.getByText("8.3")).toBeInTheDocument();
     expect(screen.getByText("Filler")).toBeInTheDocument();
+  });
+
+  it("shows the full episode count when more than 100 episodes are available", async () => {
+    hookMocks.useAllAnimeEpisodes.mockReturnValue({
+      data: {
+        data: Array.from({ length: 120 }, (_, index) => ({
+          mal_id: index + 1,
+          title: `Episode ${index + 1}`,
+          filler: false,
+          recap: false,
+        })),
+      },
+    });
+
+    renderPage("/watch/235/1");
+
+    expect(await screen.findByText("120 من 120")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Episode 120/i })).toBeInTheDocument();
   });
 
   it("scrapes when the cached episode link is older than 2 hours", async () => {

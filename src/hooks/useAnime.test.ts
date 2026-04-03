@@ -5,7 +5,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: vi.fn((options) => options),
 }));
 
-import { useSearchAnime } from "./useAnime";
+import { useAllAnimeEpisodes, useSearchAnime } from "./useAnime";
 
 describe("useSearchAnime", () => {
   beforeEach(() => {
@@ -57,6 +57,23 @@ describe("useSearchAnime", () => {
 
     expect(useQuery).toHaveBeenCalledWith(
       expect.objectContaining({
+        enabled: true,
+      }),
+    );
+  });
+});
+
+describe("useAllAnimeEpisodes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("uses a dedicated full-list query key", () => {
+    useAllAnimeEpisodes(235);
+
+    expect(useQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: ["anime-episodes-all", 235],
         enabled: true,
       }),
     );

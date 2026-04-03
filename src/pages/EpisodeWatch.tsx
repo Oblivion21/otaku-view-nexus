@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAnimeAniListMedia, useAnimeById, useAnimeEpisodes, useAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { useAllAnimeEpisodes, useAnimeAniListMedia, useAnimeById, useAnimeTmdbArtwork } from "@/hooks/useAnime";
 import { isBlockedAnime } from "@/lib/jikan";
 import { buildEpisodeDataFromScrape } from "@/lib/episodePlayback";
 import { getAnimeDetailPath } from "@/lib/animeRoutes";
@@ -102,7 +102,7 @@ export default function EpisodeWatch() {
 
   const { data: animeData, isLoading } = useAnimeById(animeId);
   const anime = animeData?.data;
-  const { data: episodes } = useAnimeEpisodes(animeId);
+  const { data: episodes } = useAllAnimeEpisodes(animeId);
   const isMovie = anime?.type === "Movie";
   const {
     data: tmdbArtwork,

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  getAllAnimeEpisodes,
   getAnimeVideoEpisodes,
   getAnimeRecommendations,
   getGenres,
@@ -376,5 +377,49 @@ describe("jikan genre filtering", () => {
       "Detective Conan Special",
       "Detective Conan Movie 01",
     ]);
+  });
+
+  it("fetches and merges every Jikan episode page for full episode lists", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [
+            { mal_id: 1, title: "Episode 1", filler: false, recap: false },
+            { mal_id: 100, title: "Episode 100", filler: false, recap: false },
+          ],
+          pagination: {
+            last_visible_page: 2,
+            has_next_page: true,
+            current_page: 1,
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [
+            { mal_id: 101, title: "Episode 101", filler: false, recap: false },
+            { mal_id: 150, title: "Episode 150", filler: false, recap: false },
+          ],
+          pagination: {
+            last_visible_page: 2,
+            has_next_page: false,
+            current_page: 2,
+          },
+        }),
+      } as Response);
+
+    const result = await getAllAnimeEpisodes(235);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/anime/235/episodes?page=1");
+    expect(String(fetchMock.mock.calls[1][0])).toContain("/anime/235/episodes?page=2");
+    expect(result.data.map((episode) => episode.mal_id)).toEqual([1, 100, 101, 150]);
+    expect(result.pagination).toEqual({
+      last_visible_page: 2,
+      has_next_page: false,
+      current_page: 2,
+    });
   });
 });
