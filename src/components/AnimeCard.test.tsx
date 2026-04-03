@@ -66,14 +66,11 @@ describe("AnimeCard", () => {
     expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
   });
 
-  it("falls back to Jikan artwork when no parent artwork url is provided", () => {
+  it("renders nothing when no resolved artwork url is provided", () => {
     renderCard(null);
 
-    expect(screen.getByAltText("Naruto")).toHaveAttribute(
-      "src",
-      expect.stringContaining("jikan.example.com/naruto-large.webp"),
-    );
-    expect(screen.queryByLabelText("Naruto artwork placeholder")).not.toBeInTheDocument();
+    expect(screen.queryByAltText("Naruto")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it("shows the anime rating instead of the episode count", () => {
@@ -104,7 +101,7 @@ describe("AnimeCard", () => {
     expect(screen.getByText("2002")).toBeInTheDocument();
   });
 
-  it("renders nothing when no artwork url is available from TMDB or Jikan", () => {
+  it("renders nothing when no artwork url is available from the parent", () => {
     const animeWithoutArtwork: JikanAnime = {
       ...anime,
       images: {

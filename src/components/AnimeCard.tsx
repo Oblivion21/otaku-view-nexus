@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import type { JikanAnime } from "@/lib/jikan";
 import { GENRE_AR, TYPE_MAP, getVisibleGenres } from "@/lib/jikan";
 import { getAnimeDetailPath } from "@/lib/animeRoutes";
-import { resolveTitleArtworkUrl } from "@/lib/titleArtwork";
 
 interface AnimeCardProps {
   anime: JikanAnime;
@@ -22,7 +21,7 @@ function getReleaseYear(anime: JikanAnime) {
 }
 
 export default function AnimeCard({ anime, artworkUrl = null }: AnimeCardProps) {
-  const resolvedArtworkUrl = artworkUrl || resolveTitleArtworkUrl(null, anime, "poster");
+  const resolvedArtworkUrl = artworkUrl;
   const releaseYear = getReleaseYear(anime);
 
   if (!resolvedArtworkUrl) {
