@@ -340,6 +340,19 @@ describe("AnimeDetail", () => {
     expect(screen.getByTestId("episode-preview-1")).toHaveAttribute("data-score-label", "9.4");
   });
 
+  it("does not render Jikan banner or poster artwork while TMDB artwork is still loading", async () => {
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: null,
+      isLoading: true,
+    });
+
+    const { container } = renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+    expect(screen.queryByAltText("Naruto")).not.toBeInTheDocument();
+    expect(container.querySelector('[style*="jikan.example.com"]')).toBeNull();
+  });
+
   it("falls back to the Jikan trailer for the background banner when TMDB has no trailer", async () => {
     hookMocks.useAnimeById.mockReturnValue({
       data: {

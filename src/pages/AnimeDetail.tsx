@@ -14,7 +14,7 @@ import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, getVisibleGenres, isB
 import { dedupeAnimeList, dedupeJikanEpisodes, dedupeRelationEntries, dedupeSupabaseEpisodes } from "@/lib/listDeduping";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
-import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import { hasAnyTitleArtwork, resolveTitleArtworkUrl, resolveTmdbTitleArtworkUrl } from "@/lib/titleArtwork";
 import { getAnimeIdFromRouteParam } from "@/lib/animeRoutes";
 import { useState, useEffect } from "react";
 
@@ -305,8 +305,14 @@ export default function AnimeDetail() {
         anime.trailer?.url || null,
       )
     : null;
-  const bannerImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "banner");
-  const posterImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
+  const tmdbBannerImage = resolveTmdbTitleArtworkUrl(tmdbArtwork, "banner");
+  const tmdbPosterImage = resolveTmdbTitleArtworkUrl(tmdbArtwork, "poster");
+  const bannerImage = loadingTmdbArtwork
+    ? null
+    : tmdbBannerImage || resolveTitleArtworkUrl(null, anime, "banner");
+  const posterImage = loadingTmdbArtwork
+    ? null
+    : tmdbPosterImage || resolveTitleArtworkUrl(null, anime, "poster");
   const episodeSeriesFallbackImage = bannerImage || posterImage;
   const episodeRailItems = rawEpisodeRailItems.map((item) => {
     const style = getEpisodeStyle(item.styleTarget);
