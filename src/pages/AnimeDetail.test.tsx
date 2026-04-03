@@ -80,6 +80,7 @@ vi.mock("@/components/EpisodePreviewRail", () => ({
           data-testid={`episode-preview-${item.episodeNumber}`}
           data-image-url={item.imageUrl || ""}
           data-score-label={item.scoreLabel || ""}
+          data-badges={(item.badges || []).join(",")}
         >
           {item.title}
         </div>
@@ -424,6 +425,38 @@ describe("AnimeDetail", () => {
     expect(screen.getByTestId("episode-preview-1")).toHaveAttribute(
       "data-image-url",
       expect.stringContaining("video-thumb-1.jpg"),
+    );
+  });
+
+  it("labels Jikan filler episodes with a filler badge", async () => {
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: {
+        data: [
+          {
+            mal_id: 97,
+            title: "Kidnapped! Naruto's Hot Spring Adventure!",
+            title_japanese: null,
+            title_romanji: null,
+            aired: null,
+            filler: true,
+            recap: false,
+          },
+        ],
+      },
+      isLoading: false,
+    });
+    hookMocks.useAnimeEpisodePreviewImages.mockReturnValue({
+      data: new Map([
+        [97, { episodeNumber: 97, imageUrl: "https://cdn.jikan.moe/video-thumb-97.jpg", source: "jikan" }],
+      ]),
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+    expect(screen.getByTestId("episode-preview-97")).toHaveAttribute(
+      "data-badges",
+      expect.stringContaining("فلر"),
     );
   });
 

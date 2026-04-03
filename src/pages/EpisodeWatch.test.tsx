@@ -174,6 +174,28 @@ describe("EpisodeWatch", () => {
     expect(supabaseMocks.scrapeAnime3rbEpisode).not.toHaveBeenCalled();
   });
 
+  it("shows episode score and filler label in the episode list", async () => {
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: {
+        data: [
+          {
+            mal_id: 1,
+            title: "Enter: Naruto Uzumaki!",
+            score: 4.13,
+            filler: true,
+            recap: false,
+          },
+        ],
+      },
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Enter: Naruto Uzumaki!")).toBeInTheDocument();
+    expect(screen.getByText("8.3")).toBeInTheDocument();
+    expect(screen.getByText("فلر")).toBeInTheDocument();
+  });
+
   it("scrapes when the cached episode link is older than 2 hours", async () => {
     const staleScrapedAt = new Date(Date.now() - ((2 * 60 * 60 * 1000) + 60_000)).toISOString();
 

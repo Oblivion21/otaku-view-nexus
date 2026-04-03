@@ -82,6 +82,15 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
+function formatEpisodeScoreLabel(score: number | null | undefined) {
+  if (typeof score !== "number" || Number.isNaN(score) || score <= 0) {
+    return null;
+  }
+
+  const normalizedScore = score <= 5 ? score * 2 : score;
+  return normalizedScore.toFixed(1);
+}
+
 type PlayerTab = "main" | "backup";
 type MainPlayerStatus = "idle" | "loading" | "ready" | "unavailable" | "error";
 
@@ -134,6 +143,8 @@ export default function EpisodeWatch() {
           id: dbEpisode?.id || `jikan-${ep.mal_id}`,
           episode_number: ep.mal_id,
           title: ep.title || `الحلقة ${ep.mal_id}`,
+          scoreLabel: formatEpisodeScoreLabel(ep.score),
+          filler: ep.filler || dbEpisode?.tags?.includes("filler") || false,
           category: dbEpisode?.category ?? null,
           tags: dbEpisode?.tags ?? [],
         };
@@ -142,6 +153,8 @@ export default function EpisodeWatch() {
         id: ep.id,
         episode_number: ep.episode_number,
         title: `الحلقة ${ep.episode_number}`,
+        scoreLabel: null,
+        filler: ep.tags?.includes("filler") ?? false,
         category: ep.category ?? null,
         tags: ep.tags ?? [],
       }));
@@ -737,12 +750,36 @@ export default function EpisodeWatch() {
                               : `${style.background} ${style.border} hover:border-primary/50 hover:bg-secondary/40`
                           }`}
                         >
-                          <span className="w-10 shrink-0 text-center text-base font-bold">
+                          <span className="w-10 shrink-0 text-center text-base font-bold self-start">
                             {ep.episode_number}
                           </span>
-                          <span className="min-w-0 flex-1 text-sm line-clamp-1">
-                            {ep.title || `الحلقة ${ep.episode_number}`}
-                          </span>
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            <span className="block text-sm line-clamp-1">
+                              {ep.title || `الحلقة ${ep.episode_number}`}
+                            </span>
+                            {(ep.scoreLabel || ep.filler) && (
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                                {ep.scoreLabel && (
+                                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 ${
+                                    isCurrentEpisode
+                                      ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground"
+                                      : "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                                  }`}>
+                                    {ep.scoreLabel}
+                                  </span>
+                                )}
+                                {ep.filler && (
+                                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 ${
+                                    isCurrentEpisode
+                                      ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground"
+                                      : "border-slate-400/30 bg-slate-400/10 text-slate-300"
+                                  }`}>
+                                    فلر
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </Link>
                       );
                     })}

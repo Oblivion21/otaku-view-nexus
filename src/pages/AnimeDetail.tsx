@@ -18,6 +18,12 @@ import { hasAnyTitleArtwork, resolveTitleArtworkUrl, resolveTmdbTitleArtworkUrl 
 import { getAnimeIdFromRouteParam } from "@/lib/animeRoutes";
 import { useState, useEffect } from "react";
 
+type EpisodeBadgeSource = {
+  category?: AnimeEpisode["category"] | null;
+  tags?: AnimeEpisode["tags"] | null;
+  filler?: boolean;
+};
+
 function hasPlayableEpisodeData(episode: Pick<AnimeEpisode, "video_sources" | "video_url"> | null | undefined) {
   return Boolean(
     episode?.video_url ||
@@ -107,14 +113,22 @@ export default function AnimeDetail() {
           episodeNumber: ep.mal_id,
           title: ep.title || `الحلقة ${ep.mal_id}`,
           scoreLabel: formatEpisodeScoreLabel(ep.score),
-          styleTarget: dbEpisode || { category: null, tags: [] },
+          styleTarget: {
+            category: dbEpisode?.category ?? null,
+            tags: dbEpisode?.tags ?? [],
+            filler: ep.filler,
+          },
         };
       })
     : visibleSupabaseEpisodes.map((ep) => ({
         episodeNumber: ep.episode_number,
         title: `الحلقة ${ep.episode_number}`,
         scoreLabel: null,
-        styleTarget: ep,
+        styleTarget: {
+          category: ep.category ?? null,
+          tags: ep.tags ?? [],
+          filler: false,
+        },
       }));
   const episodeNumbers = rawEpisodeRailItems.map((item) => item.episodeNumber);
   const { data: episodePreviewImageMap } = useAnimeEpisodePreviewImages(
@@ -214,7 +228,7 @@ export default function AnimeDetail() {
   }
 
   // Get episode styling based on category and tags (Detective Conan only)
-  function getEpisodeStyle(episode: Pick<AnimeEpisode, "category" | "tags">) {
+  function getEpisodeStyle(episode: Pick<EpisodeBadgeSource, "category" | "tags">) {
     if (!isDetectiveConan) {
       return {
         background: 'bg-card',
@@ -242,7 +256,7 @@ export default function AnimeDetail() {
     return { background, border };
   }
 
-  function getEpisodeBadges(episode: Pick<AnimeEpisode, "category" | "tags">) {
+  function getEpisodeBadges(episode: EpisodeBadgeSource) {
     const badges: string[] = [];
 
     if (episode.category === "main_story") {
@@ -252,6 +266,10 @@ export default function AnimeDetail() {
     }
 
     if (episode.tags?.includes("filler")) {
+      badges.push("فلر");
+    }
+
+    if (episode.filler && !badges.includes("فلر")) {
       badges.push("فلر");
     }
 
