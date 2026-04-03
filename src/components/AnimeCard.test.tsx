@@ -83,6 +83,27 @@ describe("AnimeCard", () => {
     expect(screen.queryByText("220 حلقة")).not.toBeInTheDocument();
   });
 
+  it("shows the release year on the card", () => {
+    renderCard("https://image.tmdb.org/t/p/w780/naruto-poster.jpg");
+
+    expect(screen.getByText("2002")).toBeInTheDocument();
+  });
+
+  it("falls back to the aired year when year is missing", () => {
+    const animeWithoutYear: JikanAnime = {
+      ...anime,
+      year: null,
+    };
+
+    render(
+      <MemoryRouter>
+        <AnimeCard anime={animeWithoutYear} artworkUrl="https://image.tmdb.org/t/p/w780/naruto-poster.jpg" />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("2002")).toBeInTheDocument();
+  });
+
   it("renders nothing when no artwork url is available from TMDB or Jikan", () => {
     const animeWithoutArtwork: JikanAnime = {
       ...anime,

@@ -10,7 +10,7 @@ import { useAnimeAniListMedia, useAnimeById, useAnimeEpisodes, useAnimeRecommend
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
 import { TrailerBanner } from "@/components/TrailerBanner";
-import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, getVisibleGenres, isBlockedAnime, type JikanAnime } from "@/lib/jikan";
+import { STATUS_MAP, TYPE_MAP, GENRE_AR, RELATION_TYPE_AR, getVisibleGenres, isBlockedAnime, type JikanAnime, type JikanEpisode } from "@/lib/jikan";
 import { dedupeAnimeList, dedupeJikanEpisodes, dedupeRelationEntries, dedupeSupabaseEpisodes } from "@/lib/listDeduping";
 import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
@@ -58,7 +58,11 @@ export default function AnimeDetail() {
   const { id } = useParams<{ id: string }>();
   const animeId = getAnimeIdFromRouteParam(id) ?? 0;
   const { data, isLoading } = useAnimeById(animeId);
-  const { data: episodes, isLoading: loadingEp } = useAnimeEpisodes(animeId, 1);
+  const [episodePage, setEpisodePage] = useState(1);
+  const [visibleEpisodeCount, setVisibleEpisodeCount] = useState(24);
+  const [loadedPublicEpisodePages, setLoadedPublicEpisodePages] = useState<number[]>([]);
+  const [publicEpisodes, setPublicEpisodes] = useState<JikanEpisode[]>([]);
+  const { data: episodes, isLoading: loadingEp, isFetching: fetchingEp } = useAnimeEpisodes(animeId, episodePage);
   const { data: recommendations, isLoading: loadingRec } = useAnimeRecommendations(animeId);
   const { data: characters, isLoading: loadingChars } = useAnimeCharacters(animeId);
   const { data: relations, isLoading: loadingRelations } = useAnimeRelations(animeId);
@@ -72,9 +76,11 @@ export default function AnimeDetail() {
   const isMovie = anime?.type === "Movie";
   const dedupedSupabaseEpisodes = dedupeSupabaseEpisodes(supabaseEpisodes)
     .sort((a, b) => a.episode_number - b.episode_number);
-  const dedupedPublicEpisodes = dedupeJikanEpisodes(episodes?.data);
+  const dedupedPublicEpisodes = dedupeJikanEpisodes(publicEpisodes);
   const hasSupabaseEpisodes = dedupedSupabaseEpisodes.length > 0;
   const hasPublicEpisodes = dedupedPublicEpisodes.length > 0;
+  const hasMorePublicEpisodePages = Boolean(episodes?.pagination?.has_next_page);
+  const loadingMoreEpisodes = Boolean(fetchingEp && episodePage > 1);
   const supabaseEpisodeMap = new Map(
     dedupedSupabaseEpisodes.map((ep) => [ep.episode_number, ep])
   );
@@ -92,8 +98,10 @@ export default function AnimeDetail() {
     && (hasMovieMainPlayer || hasPlayableEpisodeData(firstPlayableSupabaseEpisode)),
   );
   const canWatchSeries = Boolean(anime && isSeriesType && (hasSupabaseEpisodes || hasPublicEpisodes));
+  const visiblePublicEpisodes = dedupedPublicEpisodes.slice(0, visibleEpisodeCount);
+  const visibleSupabaseEpisodes = dedupedSupabaseEpisodes.slice(0, visibleEpisodeCount);
   const rawEpisodeRailItems = hasPublicEpisodes
-    ? dedupedPublicEpisodes.slice(0, 24).map((ep) => {
+    ? visiblePublicEpisodes.map((ep) => {
         const dbEpisode = supabaseEpisodeMap.get(ep.mal_id);
         return {
           episodeNumber: ep.mal_id,
@@ -102,7 +110,7 @@ export default function AnimeDetail() {
           styleTarget: dbEpisode || { category: null, tags: [] },
         };
       })
-    : dedupedSupabaseEpisodes.slice(0, 24).map((ep) => ({
+    : visibleSupabaseEpisodes.map((ep) => ({
         episodeNumber: ep.episode_number,
         title: `الحلقة ${ep.episode_number}`,
         scoreLabel: null,
@@ -155,6 +163,55 @@ export default function AnimeDetail() {
       fetchSupabaseEpisodes();
     }
   }, [animeId]);
+
+  useEffect(() => {
+    setEpisodePage(1);
+    setVisibleEpisodeCount(24);
+    setLoadedPublicEpisodePages([]);
+    setPublicEpisodes([]);
+  }, [animeId]);
+
+  useEffect(() => {
+    if (!episodes) {
+      return;
+    }
+
+    const currentPage = episodes?.pagination?.current_page ?? episodePage;
+    const pageEpisodes = episodes?.data ?? [];
+
+    if (loadedPublicEpisodePages.includes(currentPage)) {
+      return;
+    }
+
+    setLoadedPublicEpisodePages((pages) => [...pages, currentPage]);
+    setPublicEpisodes((existingEpisodes) => (
+      currentPage === 1
+        ? dedupeJikanEpisodes(pageEpisodes)
+        : dedupeJikanEpisodes([...existingEpisodes, ...pageEpisodes])
+    ));
+  }, [episodePage, episodes, loadedPublicEpisodePages]);
+
+  function loadMoreEpisodes() {
+    if (hasPublicEpisodes) {
+      if (visibleEpisodeCount < dedupedPublicEpisodes.length) {
+        setVisibleEpisodeCount((count) => count + 24);
+        return;
+      }
+
+      if (hasMorePublicEpisodePages) {
+        setVisibleEpisodeCount((count) => count + 24);
+        setEpisodePage((currentPage) => (
+          currentPage > loadedPublicEpisodePages.length ? currentPage : currentPage + 1
+        ));
+      }
+
+      return;
+    }
+
+    if (visibleEpisodeCount < dedupedSupabaseEpisodes.length) {
+      setVisibleEpisodeCount((count) => count + 24);
+    }
+  }
 
   // Get episode styling based on category and tags (Detective Conan only)
   function getEpisodeStyle(episode: Pick<AnimeEpisode, "category" | "tags">) {
@@ -407,10 +464,12 @@ export default function AnimeDetail() {
           <EpisodePreviewRail
             title="قائمة الحلقات"
             loading={loadingEp && !hasSupabaseEpisodes}
+            loadingMore={loadingMoreEpisodes}
             items={episodeRailItems}
             emptyMessage="لا توجد حلقات متاحة"
             headerActionHref={`/watch/${anime.mal_id}/1`}
             headerActionLabel="عرض كل الحلقات"
+            onReachEnd={loadMoreEpisodes}
             accentLegend={isDetectiveConan && hasSupabaseEpisodes ? (
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <Badge variant="secondary" className="bg-green-500/15 text-green-100 border-green-500/30">القصة الرئيسية</Badge>

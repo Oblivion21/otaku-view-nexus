@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JikanAnime } from "@/lib/jikan";
@@ -46,6 +46,8 @@ type MockEpisodePreviewRailProps = {
   emptyMessage: string;
   headerActionHref: string;
   headerActionLabel: string;
+  loadingMore?: boolean;
+  onReachEnd?: () => void;
 };
 
 type MockAnimeCardProps = {
@@ -66,10 +68,12 @@ vi.mock("@/components/ContentRail", () => ({
   ),
 }));
 vi.mock("@/components/EpisodePreviewRail", () => ({
-  default: ({ title, items, emptyMessage, headerActionHref, headerActionLabel }: MockEpisodePreviewRailProps) => (
+  default: ({ title, items, emptyMessage, headerActionHref, headerActionLabel, loadingMore, onReachEnd }: MockEpisodePreviewRailProps) => (
     <section data-testid="episode-preview-rail">
       <div>{title}</div>
       <a href={headerActionHref}>{headerActionLabel}</a>
+      <button type="button" onClick={onReachEnd}>Load more episodes</button>
+      {loadingMore ? <div>Loading more episodes</div> : null}
       {items?.length ? items.map((item) => (
         <div
           key={item.episodeNumber}
@@ -208,6 +212,69 @@ describe("AnimeDetail", () => {
 
     expect(hookMocks.useAnimeById).toHaveBeenCalledWith(1);
     expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+  });
+
+  it("loads 24 more episodes when the user reaches the end of the rail", async () => {
+    hookMocks.useAnimeEpisodes.mockImplementation((_animeId: number, page = 1) => {
+      if (page === 1) {
+        return {
+          data: {
+            data: Array.from({ length: 24 }, (_, index) => ({
+              mal_id: index + 1,
+              title: `Episode ${index + 1}`,
+              title_japanese: null,
+              title_romanji: null,
+              aired: null,
+              score: null,
+              filler: false,
+              recap: false,
+            })),
+            pagination: {
+              current_page: 1,
+              has_next_page: true,
+              last_visible_page: 2,
+            },
+          },
+          isLoading: false,
+          isFetching: false,
+        };
+      }
+
+      return {
+        data: {
+          data: Array.from({ length: 24 }, (_, index) => ({
+            mal_id: index + 25,
+            title: `Episode ${index + 25}`,
+            title_japanese: null,
+            title_romanji: null,
+            aired: null,
+            score: null,
+            filler: false,
+            recap: false,
+          })),
+          pagination: {
+            current_page: 2,
+            has_next_page: false,
+            last_visible_page: 2,
+          },
+        },
+        isLoading: false,
+        isFetching: false,
+      };
+    });
+
+    renderPage();
+
+    expect(screen.getByTestId("episode-preview-24")).toBeInTheDocument();
+    expect(screen.queryByTestId("episode-preview-25")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more episodes" }));
+
+    await waitFor(() => {
+      expect(hookMocks.useAnimeEpisodes).toHaveBeenCalledWith(1, 2);
+    });
+    expect(await screen.findByTestId("episode-preview-25")).toBeInTheDocument();
+    expect(screen.getByTestId("episode-preview-48")).toBeInTheDocument();
   });
 
   it("uses TMDB banner and poster artwork on the detail page, recommendations, and episode previews", async () => {

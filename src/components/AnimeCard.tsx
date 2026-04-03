@@ -11,8 +11,19 @@ interface AnimeCardProps {
   artworkUrl?: string | null;
 }
 
+function getReleaseYear(anime: JikanAnime) {
+  if (anime.year) {
+    return anime.year;
+  }
+
+  const airedYear = anime.aired?.from?.slice(0, 4);
+  const parsedYear = airedYear ? Number(airedYear) : Number.NaN;
+  return Number.isFinite(parsedYear) ? parsedYear : null;
+}
+
 export default function AnimeCard({ anime, artworkUrl = null }: AnimeCardProps) {
   const resolvedArtworkUrl = artworkUrl || resolveTitleArtworkUrl(null, anime, "poster");
+  const releaseYear = getReleaseYear(anime);
 
   if (!resolvedArtworkUrl) {
     return null;
@@ -62,12 +73,19 @@ export default function AnimeCard({ anime, artworkUrl = null }: AnimeCardProps) 
         <h3 className="text-sm font-semibold line-clamp-2 leading-tight group-hover:text-primary transition-colors">
           {anime.title}
         </h3>
-        <div className="flex flex-wrap gap-1 mt-1.5">
+        <div className="mt-1.5 space-y-1.5">
+          {releaseYear && (
+            <p className="text-[11px] text-muted-foreground">
+              {releaseYear}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-1">
           {getVisibleGenres(anime).slice(0, 2).map((g) => (
             <span key={g.mal_id} className="text-[10px] text-muted-foreground bg-secondary rounded px-1.5 py-0.5">
               {GENRE_AR[g.name] || g.name}
             </span>
           ))}
+          </div>
         </div>
       </div>
     </Link>

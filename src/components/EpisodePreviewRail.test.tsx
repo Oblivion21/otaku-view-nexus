@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,17 +7,27 @@ const carouselMocks = vi.hoisted(() => ({
   carouselSpy: vi.fn(),
   previousSpy: vi.fn(),
   nextSpy: vi.fn(),
+  api: {
+    on: vi.fn(),
+    off: vi.fn(),
+    scrollSnapList: vi.fn(() => [0, 1, 2, 3]),
+    selectedScrollSnap: vi.fn(() => 2),
+  },
 }));
 
 type MockCarouselProps = {
   children?: ReactNode;
   dir?: string;
   className?: string;
+  setApi?: (api: typeof carouselMocks.api) => void;
 };
 
 vi.mock("@/components/ui/carousel", () => ({
   Carousel: ({ children, ...props }: MockCarouselProps) => {
     carouselMocks.carouselSpy(props);
+    useEffect(() => {
+      props.setApi?.(carouselMocks.api);
+    }, [props.setApi]);
     return (
       <div data-testid="episode-carousel" dir={props.dir} className={props.className}>
         {children}
@@ -41,6 +51,8 @@ import EpisodePreviewRail from "@/components/EpisodePreviewRail";
 describe("EpisodePreviewRail", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    carouselMocks.api.scrollSnapList.mockReturnValue([0, 1, 2, 3]);
+    carouselMocks.api.selectedScrollSnap.mockReturnValue(2);
   });
 
   it("keeps the episode rail RTL without hardcoded arrow positions", () => {
@@ -139,5 +151,36 @@ describe("EpisodePreviewRail", () => {
       "src",
       expect.stringContaining("cdn.jikan.moe/episode-4.jpg"),
     );
+  });
+
+  it("requests more episodes when the user reaches the end of the loaded rail", () => {
+    const handleReachEnd = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <EpisodePreviewRail
+          title="Latest Episodes"
+          items={[
+            {
+              episodeNumber: 1,
+              title: "Episode 1",
+              href: "/watch/1/1",
+              imageUrl: "https://image.tmdb.org/t/p/w780/ep1.jpg",
+            },
+          ]}
+          emptyMessage="Nothing here"
+          headerActionHref="/anime/1"
+          headerActionLabel="View all"
+          onReachEnd={handleReachEnd}
+        />
+      </MemoryRouter>,
+    );
+
+    const selectHandler = carouselMocks.api.on.mock.calls.find(([eventName]) => eventName === "select")?.[1];
+
+    expect(selectHandler).toBeTypeOf("function");
+    selectHandler?.();
+
+    expect(handleReachEnd).toHaveBeenCalledTimes(1);
   });
 });

@@ -10,6 +10,7 @@ import {
   CarouselItem,
   CarouselNext,
   CarouselPrevious,
+  type CarouselApi,
 } from "@/components/ui/carousel";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,8 @@ interface EpisodePreviewRailProps {
   headerActionHref: string;
   headerActionLabel: string;
   accentLegend?: ReactNode;
+  loadingMore?: boolean;
+  onReachEnd?: () => void;
 }
 
 function EpisodePreviewCard({ item }: { item: EpisodePreviewRailItem }) {
@@ -117,7 +120,36 @@ export default function EpisodePreviewRail({
   headerActionHref,
   headerActionLabel,
   accentLegend,
+  loadingMore = false,
+  onReachEnd,
 }: EpisodePreviewRailProps) {
+  const [carouselApi, setCarouselApi] = useState<CarouselApi>();
+
+  useEffect(() => {
+    if (!carouselApi || !onReachEnd || items.length === 0) {
+      return undefined;
+    }
+
+    const handleSelect = () => {
+      const snapCount = carouselApi.scrollSnapList().length;
+      if (snapCount === 0) {
+        return;
+      }
+
+      if (carouselApi.selectedScrollSnap() >= snapCount - 2) {
+        onReachEnd();
+      }
+    };
+
+    carouselApi.on("select", handleSelect);
+    carouselApi.on("reInit", handleSelect);
+
+    return () => {
+      carouselApi.off("select", handleSelect);
+      carouselApi.off("reInit", handleSelect);
+    };
+  }, [carouselApi, items.length, onReachEnd]);
+
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -155,6 +187,7 @@ export default function EpisodePreviewRail({
         <Carousel
           dir="rtl"
           opts={{ align: "start", containScroll: "trimSnaps", dragFree: true }}
+          setApi={setCarouselApi}
           className="px-12 sm:px-14"
         >
           <CarouselContent>
@@ -166,6 +199,17 @@ export default function EpisodePreviewRail({
                 <EpisodePreviewCard item={item} />
               </CarouselItem>
             ))}
+            {loadingMore ? (
+              <CarouselItem className="basis-[74%] sm:basis-[52%] lg:basis-[31%] xl:basis-[24%]">
+                <div className="overflow-hidden rounded-2xl border border-border bg-card/90">
+                  <Skeleton className="aspect-video w-full rounded-none" />
+                  <div className="space-y-2.5 p-3">
+                    <Skeleton className="h-3.5 w-20" />
+                    <Skeleton className="h-5 w-4/5" />
+                  </div>
+                </div>
+              </CarouselItem>
+            ) : null}
           </CarouselContent>
           <CarouselPrevious className="h-11 w-11 border-border bg-card/95 text-foreground hover:bg-card" />
           <CarouselNext className="h-11 w-11 border-border bg-card/95 text-foreground hover:bg-card" />
