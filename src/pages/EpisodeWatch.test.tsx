@@ -126,10 +126,6 @@ describe("EpisodeWatch", () => {
 
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/21/1"));
-    expect(mainIframe).toHaveAttribute(
-      "sandbox",
-      "allow-scripts allow-same-origin allow-forms allow-presentation",
-    );
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("color=00D0FF"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("nextEpisode="));

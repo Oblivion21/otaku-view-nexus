@@ -57,8 +57,6 @@ function isDirectPlayableUrl(url: string): boolean {
 }
 
 const SCRAPE_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
-const VIDEASY_IFRAME_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-presentation";
-
 function isScrapeCacheFresh(scrapedAt: string | null | undefined): boolean {
   if (!scrapedAt) return false;
   const parsed = Date.parse(scrapedAt);
@@ -471,7 +469,6 @@ export default function EpisodeWatch() {
             src={mainPlayerUrl}
             title={`${anime.title} - Main Player`}
             className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
-            sandbox={VIDEASY_IFRAME_SANDBOX}
             allowFullScreen
             allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
             onLoad={() => setMainPlayerFrameLoaded(true)}
