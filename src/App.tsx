@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, useLocation, useNavigationType } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
 import { isMaintenanceMode } from "@/lib/supabase";
 import {
   clearStoredSiteAccessToken,
@@ -27,13 +27,74 @@ import NotFound from "./pages/NotFound";
 import Maintenance from "./pages/Maintenance";
 
 const queryClient = new QueryClient();
+const SCROLL_STORAGE_KEY = "animezero:scroll-positions";
 
-function ScrollToTop() {
-  const { pathname } = useLocation();
+function getScrollStorage() {
+  if (typeof window === "undefined") {
+    return {} as Record<string, number>;
+  }
+
+  try {
+    const stored = window.sessionStorage.getItem(SCROLL_STORAGE_KEY);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored) as Record<string, number>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveScrollPosition(routeKey: string, scrollY: number) {
+  if (typeof window === "undefined") return;
+
+  const scrollPositions = getScrollStorage();
+  scrollPositions[routeKey] = Math.max(0, Math.floor(scrollY));
+  window.sessionStorage.setItem(SCROLL_STORAGE_KEY, JSON.stringify(scrollPositions));
+}
+
+function getRouteScrollKey(location: ReturnType<typeof useLocation>) {
+  return `${location.pathname}${location.search}${location.hash}`;
+}
+
+export function ScrollRestoration() {
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const routeKey = getRouteScrollKey(location);
+  const isFirstRender = useRef(true);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "auto" });
-  }, [pathname]);
+    const previousValue = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+
+    return () => {
+      window.history.scrollRestoration = previousValue;
+    };
+  }, []);
+
+  useEffect(() => {
+    const saveCurrentPosition = () => saveScrollPosition(routeKey, window.scrollY);
+
+    window.addEventListener("pagehide", saveCurrentPosition);
+    window.addEventListener("beforeunload", saveCurrentPosition);
+
+    return () => {
+      saveCurrentPosition();
+      window.removeEventListener("pagehide", saveCurrentPosition);
+      window.removeEventListener("beforeunload", saveCurrentPosition);
+    };
+  }, [routeKey]);
+
+  useEffect(() => {
+    const savedPosition = getScrollStorage()[routeKey];
+    const shouldRestoreScroll = isFirstRender.current || navigationType === "POP";
+
+    window.scrollTo({
+      top: shouldRestoreScroll ? (savedPosition ?? 0) : 0,
+      behavior: "auto",
+    });
+
+    isFirstRender.current = false;
+  }, [navigationType, routeKey]);
 
   return null;
 }
@@ -159,7 +220,7 @@ const App = () => {
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <ScrollToTop />
+          <ScrollRestoration />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/browse" element={<Browse />} />

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { BrowserRouter, Link, Route, Routes, useNavigate } from "react-router-dom";
+import { BrowserRouter, Link, MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const siteAuthMocks = vi.hoisted(() => ({
@@ -28,7 +28,7 @@ vi.mock("./pages/Upcoming", () => ({ default: () => <div>Upcoming Page</div> }))
 vi.mock("./pages/NotFound", () => ({ default: () => <div>Not Found</div> }));
 vi.mock("./pages/Maintenance", () => ({ default: () => <div>Maintenance Page</div> }));
 
-import App from "./App";
+import App, { ScrollRestoration } from "./App";
 
 function NavigationHome() {
   const navigate = useNavigate();
@@ -160,5 +160,82 @@ describe("App navigation", () => {
     await waitFor(() => {
       expect(screen.getByText("Home Page")).toBeInTheDocument();
     });
+  });
+});
+
+describe("Scroll restoration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.sessionStorage.clear();
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
+    window.scrollTo = vi.fn();
+  });
+
+  it("restores the saved scroll position on initial load", () => {
+    window.sessionStorage.setItem(
+      "animezero:scroll-positions",
+      JSON.stringify({
+        "/browse": 420,
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/browse"]}>
+        <ScrollRestoration />
+        <Routes>
+          <Route path="/browse" element={<div>Browse Page</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 420, behavior: "auto" });
+  });
+
+  it("scrolls to the top on forward navigation and saves the previous route position", async () => {
+    function ScrollHarness() {
+      const navigate = useNavigate();
+
+      return (
+        <>
+          <ScrollRestoration />
+          <button type="button" onClick={() => navigate("/browse")}>
+            Go Browse
+          </button>
+          <Routes>
+            <Route path="/" element={<div>Home</div>} />
+            <Route path="/browse" element={<div>Browse</div>} />
+          </Routes>
+        </>
+      );
+    }
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <ScrollHarness />
+      </MemoryRouter>,
+    );
+
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      writable: true,
+      value: 350,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Go Browse" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Browse")).toBeInTheDocument();
+    });
+
+    expect(window.scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "auto" });
+    expect(JSON.parse(window.sessionStorage.getItem("animezero:scroll-positions") || "{}")).toEqual(
+      expect.objectContaining({
+        "/": 350,
+      }),
+    );
   });
 });
