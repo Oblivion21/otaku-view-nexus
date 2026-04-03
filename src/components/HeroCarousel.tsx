@@ -20,15 +20,21 @@ interface AnimeWithBanner {
 export default function HeroCarousel() {
   const navigate = useNavigate();
   const { data: defaultData, isLoading: defaultLoading } = useTopAnime(1, "airing");
-  const { data: featuredCarouselItems } = useFeaturedCarousel();
+  const {
+    data: featuredCarouselItems,
+    isLoading: featuredLoading,
+    error: featuredError,
+  } = useFeaturedCarousel();
   const [items, setItems] = useState<AnimeWithBanner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [current, setCurrent] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
+  const [featuredUnavailable, setFeaturedUnavailable] = useState(false);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
   const activeSourceRef = useRef<"none" | "default" | "featured">("none");
   const activeItemsKeyRef = useRef("");
+  const dedupedFeaturedItems = dedupeAnimeList(featuredCarouselItems);
 
   function getAnimeIdsKey(animeList: FeaturedCarouselAnime[]): string {
     return animeList.map((anime) => anime.mal_id).join(",");
@@ -89,6 +95,12 @@ export default function HeroCarousel() {
 
   useEffect(() => {
     const fallbackAnime = dedupeAnimeList(defaultData?.data?.slice(0, 5) ?? []);
+    const canUseFallback = !featuredLoading
+      && (Boolean(featuredError) || dedupedFeaturedItems.length === 0 || featuredUnavailable);
+
+    if (!canUseFallback) {
+      return;
+    }
 
     if (fallbackAnime.length > 0 && activeSourceRef.current !== "featured") {
       showCarouselItems(fallbackAnime, "default");
@@ -100,18 +112,77 @@ export default function HeroCarousel() {
       setItems([]);
       setIsLoading(false);
     }
-  }, [defaultData, defaultLoading]);
+  }, [
+    defaultData,
+    defaultLoading,
+    featuredCarouselItems,
+    featuredError,
+    featuredLoading,
+    featuredUnavailable,
+  ]);
 
   useEffect(() => {
-    const dedupedFeaturedItems = dedupeAnimeList(featuredCarouselItems);
-
-    if (!dedupedFeaturedItems.length) {
+    if (featuredLoading) {
       return;
     }
 
-    showCarouselItems(dedupedFeaturedItems, "featured");
-    void hydrateCarouselItems(dedupedFeaturedItems, "featured");
-  }, [featuredCarouselItems]);
+    if (!dedupedFeaturedItems.length) {
+      setFeaturedUnavailable(false);
+      return;
+    }
+
+    setFeaturedUnavailable(false);
+
+    const immediateItems = buildCarouselItems(dedupedFeaturedItems);
+    if (immediateItems.length > 0) {
+      showCarouselItems(dedupedFeaturedItems, "featured");
+      void hydrateCarouselItems(dedupedFeaturedItems, "featured");
+      return;
+    }
+
+    const itemsKey = `featured:${getAnimeIdsKey(dedupedFeaturedItems)}`;
+    activeSourceRef.current = "featured";
+    activeItemsKeyRef.current = itemsKey;
+    setItems([]);
+    setIsLoading(true);
+
+    void (async () => {
+      try {
+        const artworkMap = await getMultipleAnimeTmdbArtwork(dedupedFeaturedItems);
+
+        if (
+          activeSourceRef.current !== "featured"
+          || activeItemsKeyRef.current !== itemsKey
+        ) {
+          return;
+        }
+
+        const hydratedItems = buildCarouselItems(dedupedFeaturedItems, artworkMap);
+        if (hydratedItems.length > 0) {
+          setItems(hydratedItems);
+          setIsLoading(false);
+          return;
+        }
+
+        activeSourceRef.current = "none";
+        activeItemsKeyRef.current = "";
+        setFeaturedUnavailable(true);
+      } catch (error) {
+        console.error("Error hydrating featured carousel artwork:", error);
+
+        if (
+          activeSourceRef.current !== "featured"
+          || activeItemsKeyRef.current !== itemsKey
+        ) {
+          return;
+        }
+
+        activeSourceRef.current = "none";
+        activeItemsKeyRef.current = "";
+        setFeaturedUnavailable(true);
+      }
+    })();
+  }, [featuredCarouselItems, featuredLoading]);
 
   useEffect(() => {
     if (!items.length) return;

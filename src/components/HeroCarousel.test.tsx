@@ -109,7 +109,7 @@ describe("HeroCarousel", () => {
     expect(screen.queryByText("220 حلقة")).not.toBeInTheDocument();
   });
 
-  it("renders fallback hero data while featured payload is still pending", async () => {
+  it("waits for the featured payload instead of showing fallback hero data while pending", () => {
     tmdbMocks.getMultipleAnimeTmdbArtwork.mockResolvedValue(new Map());
     hookMocks.useFeaturedCarousel.mockReturnValue({
       data: undefined,
@@ -119,9 +119,8 @@ describe("HeroCarousel", () => {
 
     renderCarousel();
 
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Naruto" })).toBeInTheDocument();
-    });
+    expect(screen.queryByRole("heading", { name: "Naruto" })).not.toBeInTheDocument();
+    expect(tmdbMocks.getMultipleAnimeTmdbArtwork).not.toHaveBeenCalled();
   });
 
   it("swaps to featured carousel items when the payload resolves", async () => {
