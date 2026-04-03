@@ -132,7 +132,7 @@ export default function EpisodePreviewRail({
       {loading ? (
         <Carousel
           dir="rtl"
-          opts={{ align: "start", containScroll: "trimSnaps" }}
+          opts={{ align: "start", containScroll: "trimSnaps", dragFree: true }}
           className="px-12 sm:px-14"
         >
           <CarouselContent>
@@ -154,7 +154,7 @@ export default function EpisodePreviewRail({
       ) : items.length > 0 ? (
         <Carousel
           dir="rtl"
-          opts={{ align: "start", containScroll: "trimSnaps" }}
+          opts={{ align: "start", containScroll: "trimSnaps", dragFree: true }}
           className="px-12 sm:px-14"
         >
           <CarouselContent>
