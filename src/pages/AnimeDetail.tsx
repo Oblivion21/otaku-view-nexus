@@ -119,7 +119,10 @@ export default function AnimeDetail() {
       .slice(0, 12);
   })();
   const recommendationAnime = dedupeAnimeList(recommendationItems.map((rec) => rec.entry as JikanAnime));
-  const { data: recommendationArtworkMap } = useMultipleAnimeTmdbArtwork(recommendationAnime);
+  const {
+    data: recommendationArtworkMap,
+    isLoading: loadingRecommendationArtwork,
+  } = useMultipleAnimeTmdbArtwork(recommendationAnime);
   const visibleRecommendationItems = recommendationItems.filter((rec) =>
     hasAnyTitleArtwork(rec.entry as JikanAnime, recommendationArtworkMap?.get(rec.entry.mal_id)),
   );
@@ -508,7 +511,7 @@ export default function AnimeDetail() {
         <div className="mt-10 space-y-4">
           <ContentRail
             title="أنمي مشابه"
-            loading={loadingRec}
+            loading={loadingRec || (recommendationAnime.length > 0 && loadingRecommendationArtwork)}
             items={visibleRecommendationItems}
             emptyMessage="لا توجد توصيات متاحة"
             renderItem={(rec, index) => (

@@ -42,8 +42,9 @@ export default function Upcoming() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
   const upcomingAnime = dedupeAnimeList(data?.data);
-  const { data: artworkMap } = useMultipleAnimeTmdbArtwork(upcomingAnime);
+  const { data: artworkMap, isLoading: loadingArtworkMap } = useMultipleAnimeTmdbArtwork(upcomingAnime);
   const visibleUpcomingAnime = upcomingAnime.filter((anime: any) => hasAnyTitleArtwork(anime, artworkMap?.get(anime.mal_id)));
+  const isResolvingArtwork = upcomingAnime.length > 0 && loadingArtworkMap;
 
   const hasNextPage = data?.pagination?.has_next_page;
   const totalPages = data?.pagination?.last_visible_page || 1;
@@ -63,7 +64,7 @@ export default function Upcoming() {
         </div>
 
         {/* Anime List */}
-        {isLoading ? (
+        {isLoading || isResolvingArtwork ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {Array.from({ length: 24 }).map((_, i) => (
               <Skeleton key={i} className="aspect-[2/3] rounded-lg" />

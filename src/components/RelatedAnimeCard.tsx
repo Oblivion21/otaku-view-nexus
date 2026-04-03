@@ -15,14 +15,15 @@ interface RelatedAnimeCardProps {
 export default function RelatedAnimeCard({ mal_id, name, relationLabel }: RelatedAnimeCardProps) {
   const { data, isLoading } = useAnimeById(mal_id);
   const anime = data?.data;
-  const { data: tmdbArtwork } = useAnimeTmdbArtwork(anime);
+  const { data: tmdbArtwork, isLoading: loadingTmdbArtwork } = useAnimeTmdbArtwork(anime);
 
   if (anime && isBlockedAnime(anime)) {
     return null;
   }
 
-  const imageUrl = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
-  const shouldHide = Boolean(anime && !isLoading && !hasAnyTitleArtwork(anime, tmdbArtwork));
+  const isArtworkPending = Boolean(anime && loadingTmdbArtwork);
+  const imageUrl = isArtworkPending ? null : resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
+  const shouldHide = Boolean(anime && !isLoading && !loadingTmdbArtwork && !hasAnyTitleArtwork(anime, tmdbArtwork));
 
   if (shouldHide) {
     return null;
@@ -34,7 +35,7 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
       className="group block rounded-lg overflow-hidden bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5"
     >
       <div className="relative aspect-[3/4] overflow-hidden">
-        {isLoading ? (
+        {isLoading || isArtworkPending ? (
           <Skeleton className="w-full h-full" />
         ) : imageUrl ? (
           <img

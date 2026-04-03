@@ -44,7 +44,10 @@ export default function VoiceActorDetail() {
     year: null,
     aired: null,
   }));
-  const { data: voiceAnimeArtworkMap } = useMultipleAnimeTmdbArtwork(voiceAnimeArtworkLookup, voices.length > 0);
+  const {
+    data: voiceAnimeArtworkMap,
+    isLoading: loadingVoiceAnimeArtwork,
+  } = useMultipleAnimeTmdbArtwork(voiceAnimeArtworkLookup, voices.length > 0);
 
   return (
     <Layout>
@@ -118,16 +121,20 @@ export default function VoiceActorDetail() {
                 >
                   {/* Anime side */}
                   <div className="flex items-center gap-3 flex-1 p-3 min-w-0">
-                    <img
-                      src={resolveTitleArtworkUrl(
-                        voiceAnimeArtworkMap?.get(voice.anime.mal_id),
-                        voice.anime,
-                        "poster",
-                      ) || ""}
-                      alt={voice.anime.title}
-                      className="w-16 h-20 rounded object-cover shrink-0"
-                      loading="lazy"
-                    />
+                    {loadingVoiceAnimeArtwork ? (
+                      <Skeleton className="w-16 h-20 rounded shrink-0" />
+                    ) : (
+                      <img
+                        src={resolveTitleArtworkUrl(
+                          voiceAnimeArtworkMap?.get(voice.anime.mal_id),
+                          voice.anime,
+                          "poster",
+                        ) || ""}
+                        alt={voice.anime.title}
+                        className="w-16 h-20 rounded object-cover shrink-0"
+                        loading="lazy"
+                      />
+                    )}
                     <div className="min-w-0">
                       <p className="text-xs font-semibold line-clamp-2 mb-1">{voice.anime.title}</p>
                       <Badge variant={voice.role === "Main" ? "default" : "secondary"} className="text-[10px]">

@@ -30,8 +30,9 @@ export default function SearchPage() {
 
   const { data, isLoading } = useSearchAnime(query, page);
   const dedupedAnime = dedupeAnimeList(data?.data);
-  const { data: artworkMap } = useMultipleAnimeTmdbArtwork(dedupedAnime);
+  const { data: artworkMap, isLoading: loadingArtworkMap } = useMultipleAnimeTmdbArtwork(dedupedAnime);
   const visibleAnime = dedupedAnime.filter((anime) => hasAnyTitleArtwork(anime, artworkMap?.get(anime.mal_id)));
+  const isResolvingArtwork = query.length >= 2 && dedupedAnime.length > 0 && loadingArtworkMap;
 
   return (
     <Layout>
@@ -45,9 +46,9 @@ export default function SearchPage() {
         ) : (
           <>
             <AnimeGrid
-              title={isLoading ? "جارٍ البحث..." : `${visibleAnime.length} نتيجة`}
+              title={isLoading || isResolvingArtwork ? "جارٍ البحث..." : `${visibleAnime.length} نتيجة`}
               anime={visibleAnime}
-              isLoading={isLoading}
+              isLoading={isLoading || isResolvingArtwork}
               artworkMap={artworkMap}
             />
             <div className="flex justify-center gap-3">

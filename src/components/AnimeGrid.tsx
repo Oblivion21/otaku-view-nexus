@@ -15,14 +15,18 @@ interface AnimeGridProps {
 
 export default function AnimeGrid({ title, anime, isLoading, artworkMap: artworkMapOverride }: AnimeGridProps) {
   const dedupedAnime = dedupeAnimeList(anime);
-  const { data: fetchedArtworkMap } = useMultipleAnimeTmdbArtwork(dedupedAnime, !artworkMapOverride);
+  const {
+    data: fetchedArtworkMap,
+    isLoading: loadingArtworkMap,
+  } = useMultipleAnimeTmdbArtwork(dedupedAnime, !artworkMapOverride);
   const artworkMap = artworkMapOverride ?? fetchedArtworkMap;
+  const isResolvingArtwork = !artworkMapOverride && dedupedAnime.length > 0 && loadingArtworkMap;
   const visibleAnime = dedupedAnime.filter((entry) => hasAnyTitleArtwork(entry, artworkMap?.get(entry.mal_id)));
 
   return (
     <section className="space-y-4">
       <h2 className="text-xl font-bold border-r-4 border-primary pr-3">{title}</h2>
-      {isLoading ? (
+      {isLoading || isResolvingArtwork ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {Array.from({ length: 12 }).map((_, i) => (
             <div key={i} className="space-y-2">
