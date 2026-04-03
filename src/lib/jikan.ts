@@ -121,6 +121,140 @@ type GenreLike = {
   name: string;
 };
 
+function normalizeSearchText(value: string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/['’"`~!@#$%^&*()_+\-=[\]{};:/\\|,.<>?]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getAnimeSearchTitles(anime: Pick<JikanAnime, "title" | "title_english" | "title_japanese">) {
+  return [anime.title, anime.title_english, anime.title_japanese]
+    .filter((title): title is string => Boolean(title?.trim()))
+    .map((title) => title.trim());
+}
+
+function getAnimeTypePriority(type: JikanAnime["type"]) {
+  switch ((type || "").toLowerCase()) {
+    case "tv":
+      return 40;
+    case "tv special":
+      return 12;
+    case "movie":
+      return -10;
+    case "special":
+      return -16;
+    case "ova":
+      return -18;
+    case "ona":
+      return -20;
+    case "music":
+      return -24;
+    default:
+      return 0;
+  }
+}
+
+function scoreAnimeSearchResult(anime: JikanAnime, query: string) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) {
+    return 0;
+  }
+
+  const titles = getAnimeSearchTitles(anime);
+  const normalizedTitles = titles.map(normalizeSearchText);
+  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
+  const longestTitleLength = Math.max(...normalizedTitles.map((title) => title.length), 0);
+  let score = 0;
+
+  if (normalizedTitles.some((title) => title === normalizedQuery)) {
+    score += 240;
+  }
+
+  if (normalizedTitles.some((title) => title.startsWith(normalizedQuery))) {
+    score += 120;
+  }
+
+  if (normalizedTitles.some((title) => title.includes(normalizedQuery))) {
+    score += 80;
+  }
+
+  score += queryTokens.reduce(
+    (total, token) => total + (normalizedTitles.some((title) => title.includes(token)) ? 18 : 0),
+    0,
+  );
+
+  score += getAnimeTypePriority(anime.type);
+
+  const sequelPenaltyPatterns = [
+    /\bmovie\b/,
+    /\bfilm\b/,
+    /\bspecial\b/,
+    /\bova\b/,
+    /\bona\b/,
+    /\brecap\b/,
+    /\bsummary\b/,
+    /\bseason\b/,
+    /\bpart\b/,
+    /\bchapter\b/,
+    /\bepisode of\b/,
+    /\bsp\b/,
+  ];
+
+  normalizedTitles.forEach((title) => {
+    sequelPenaltyPatterns.forEach((pattern) => {
+      if (pattern.test(title)) {
+        score -= 14;
+      }
+    });
+  });
+
+  if (anime.episodes && anime.episodes > 12) {
+    score += Math.min(anime.episodes / 8, 24);
+  }
+
+  if (anime.popularity) {
+    score += Math.max(60 - anime.popularity / 20, 0);
+  }
+
+  if (anime.rank) {
+    score += Math.max(35 - anime.rank / 15, 0);
+  }
+
+  if (longestTitleLength > normalizedQuery.length + 24) {
+    score -= 8;
+  }
+
+  return score;
+}
+
+function rerankAnimeSearchResults(animeList: JikanAnime[], query: string) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) {
+    return animeList;
+  }
+
+  return [...animeList].sort((leftAnime, rightAnime) => {
+    const scoreDiff = scoreAnimeSearchResult(rightAnime, normalizedQuery) - scoreAnimeSearchResult(leftAnime, normalizedQuery);
+    if (scoreDiff !== 0) {
+      return scoreDiff;
+    }
+
+    const popularityDiff = (leftAnime.popularity ?? Number.MAX_SAFE_INTEGER) - (rightAnime.popularity ?? Number.MAX_SAFE_INTEGER);
+    if (popularityDiff !== 0) {
+      return popularityDiff;
+    }
+
+    return leftAnime.mal_id - rightAnime.mal_id;
+  });
+}
+
 async function fetchJikan<T>(endpoint: string): Promise<JikanResponse<T>> {
   const res = await fetch(`${BASE_URL}${endpoint}`);
   if (!res.ok) throw new Error(`Jikan API error: ${res.status}`);
@@ -290,7 +424,11 @@ export async function searchAnime(filters: AnimeSearchFilters = {}) {
   if (normalized.orderBy && normalized.sort) params.set("sort", normalized.sort);
 
   const response = await fetchJikan<JikanAnime[]>(`/anime?${params.toString()}`);
-  return { ...response, data: filterAnimeList(response.data) };
+  const filteredAnime = filterAnimeList(response.data);
+  return {
+    ...response,
+    data: normalized.query ? rerankAnimeSearchResults(filteredAnime, normalized.query) : filteredAnime,
+  };
 }
 
 export async function getAnimeByGenre(genreId: number, page = 1) {

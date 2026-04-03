@@ -324,4 +324,57 @@ describe("jikan genre filtering", () => {
     expect(requestedUrl.searchParams.get("max_score")).toBe("9");
     expect(requestedUrl.searchParams.get("sort")).toBeNull();
   });
+
+  it("prioritizes the main TV series ahead of franchise side entries for query searches", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            ...baseAnime,
+            mal_id: 3,
+            title: "Detective Conan Movie 01",
+            title_english: "Detective Conan Movie 01",
+            type: "Movie",
+            popularity: 800,
+            episodes: 1,
+            genres: [{ mal_id: 1, name: "Mystery" }],
+          },
+          {
+            ...baseAnime,
+            mal_id: 2,
+            title: "Detective Conan Special",
+            title_english: "Detective Conan Special",
+            type: "Special",
+            popularity: 500,
+            episodes: 1,
+            genres: [{ mal_id: 1, name: "Mystery" }],
+          },
+          {
+            ...baseAnime,
+            mal_id: 1,
+            title: "Detective Conan",
+            title_english: "Detective Conan",
+            type: "TV",
+            popularity: 45,
+            episodes: 1100,
+            genres: [{ mal_id: 1, name: "Mystery" }],
+          },
+        ],
+        pagination: {
+          last_visible_page: 1,
+          has_next_page: false,
+          current_page: 1,
+        },
+      }),
+    } as Response);
+
+    const result = await searchAnime({ query: "conan" });
+
+    expect(result.data.map((anime) => anime.title)).toEqual([
+      "Detective Conan",
+      "Detective Conan Special",
+      "Detective Conan Movie 01",
+    ]);
+  });
 });
