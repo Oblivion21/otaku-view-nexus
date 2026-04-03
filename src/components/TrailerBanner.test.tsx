@@ -17,7 +17,7 @@ describe("TrailerBanner", () => {
     expect(iframe).toHaveAttribute("src", expect.stringContaining("/embed/abc123xyz?"));
     expect(iframe).toHaveAttribute("src", expect.stringContaining("loop=1"));
     expect(iframe).toHaveAttribute("src", expect.stringContaining("playlist=abc123xyz"));
+    expect(iframe).toHaveAttribute("src", expect.stringContaining("enablejsapi=1"));
     expect(iframe).not.toHaveAttribute("src", expect.stringContaining("start="));
-    expect(iframe).not.toHaveAttribute("src", expect.stringContaining("enablejsapi=1"));
   });
 });

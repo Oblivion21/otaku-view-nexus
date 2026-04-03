@@ -222,6 +222,14 @@ export default function AnimeDetail() {
     anime.trailer?.embed_url || null,
     anime.trailer?.url || null,
   );
+  const fallbackTrailerYoutubeId = tmdbArtwork?.trailerYoutubeId
+    ? getTrailerYoutubeId(
+        null,
+        anime.trailer?.youtube_id || null,
+        anime.trailer?.embed_url || null,
+        anime.trailer?.url || null,
+      )
+    : null;
   const bannerImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "banner");
   const posterImage = resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
   const episodeSeriesFallbackImage = bannerImage || posterImage;
@@ -256,6 +264,7 @@ export default function AnimeDetail() {
       {trailerYoutubeId ? (
         <TrailerBanner
           youtubeId={trailerYoutubeId}
+          fallbackYoutubeId={fallbackTrailerYoutubeId}
           posterUrl={bannerImage}
           title={anime.title}
           height="400px"
