@@ -30,6 +30,7 @@ export default function Schedule() {
   const { data, isLoading } = useQuery({
     queryKey: ["schedule", selectedDay.value],
     queryFn: () => fetchSchedule(selectedDay.value),
+    placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
   const scheduledAnime = dedupeAnimeList(data?.data);

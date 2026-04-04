@@ -60,16 +60,20 @@ export default function AnimeDetail() {
   const [visibleEpisodeCount, setVisibleEpisodeCount] = useState(24);
   const [loadedPublicEpisodePages, setLoadedPublicEpisodePages] = useState<number[]>([]);
   const [publicEpisodes, setPublicEpisodes] = useState<JikanEpisode[]>([]);
+  const [secondaryLoadStage, setSecondaryLoadStage] = useState(0);
   const { data: episodes, isLoading: loadingEp, isFetching: fetchingEp } = useAnimeEpisodes(animeId, episodePage);
-  const { data: recommendations, isLoading: loadingRec } = useAnimeRecommendations(animeId);
-  const { data: characters, isLoading: loadingChars } = useAnimeCharacters(animeId);
-  const { data: relations, isLoading: loadingRelations } = useAnimeRelations(animeId);
   const [supabaseEpisodes, setSupabaseEpisodes] = useState<AnimeEpisode[]>([]);
   const [loadedSupabaseEpisodes, setLoadedSupabaseEpisodes] = useState(false);
   const isDetectiveConan = animeId === 235; // Detective Conan MAL ID
   const anime = data?.data;
   const { data: tmdbArtwork, isLoading: loadingTmdbArtwork } = useAnimeTmdbArtwork(anime);
   const { data: aniListMedia, isLoading: loadingAniListMedia } = useAnimeAniListMedia(anime, Boolean(anime));
+  const shouldLoadCharacters = secondaryLoadStage >= 1;
+  const shouldLoadRelations = secondaryLoadStage >= 2;
+  const shouldLoadRecommendations = secondaryLoadStage >= 3;
+  const { data: recommendations, isLoading: loadingRec } = useAnimeRecommendations(animeId, shouldLoadRecommendations);
+  const { data: characters, isLoading: loadingChars } = useAnimeCharacters(animeId, shouldLoadCharacters);
+  const { data: relations, isLoading: loadingRelations } = useAnimeRelations(animeId, shouldLoadRelations);
   const isSeriesType = anime?.type === "TV" || anime?.type === "OVA" || anime?.type === "ONA" || anime?.type === "Special" || anime?.type === "TV Special";
   const isMovie = anime?.type === "Movie";
   const dedupedSupabaseEpisodes = dedupeSupabaseEpisodes(supabaseEpisodes)
@@ -154,7 +158,7 @@ export default function AnimeDetail() {
   const {
     data: recommendationArtworkMap,
     isLoading: loadingRecommendationArtwork,
-  } = useMultipleAnimeTmdbArtwork(recommendationAnime);
+  } = useMultipleAnimeTmdbArtwork(recommendationAnime, shouldLoadRecommendations);
   const visibleRecommendationItems = recommendationItems.filter((rec) =>
     hasAnyTitleArtwork(rec.entry as JikanAnime, recommendationArtworkMap?.get(rec.entry.mal_id)),
   );
@@ -180,7 +184,30 @@ export default function AnimeDetail() {
     setVisibleEpisodeCount(24);
     setLoadedPublicEpisodePages([]);
     setPublicEpisodes([]);
+    setSecondaryLoadStage(0);
   }, [animeId]);
+
+  useEffect(() => {
+    if (!anime) {
+      return;
+    }
+
+    const charactersTimeout = window.setTimeout(() => {
+      setSecondaryLoadStage((stage) => Math.max(stage, 1));
+    }, 150);
+    const relationsTimeout = window.setTimeout(() => {
+      setSecondaryLoadStage((stage) => Math.max(stage, 2));
+    }, 325);
+    const recommendationsTimeout = window.setTimeout(() => {
+      setSecondaryLoadStage((stage) => Math.max(stage, 3));
+    }, 500);
+
+    return () => {
+      window.clearTimeout(charactersTimeout);
+      window.clearTimeout(relationsTimeout);
+      window.clearTimeout(recommendationsTimeout);
+    };
+  }, [anime]);
 
   useEffect(() => {
     if (!episodes) {
@@ -371,6 +398,15 @@ export default function AnimeDetail() {
       ) : (
         <div className="relative h-[clamp(260px,56vw,400px)] overflow-hidden">
           {bannerImage ? (
+            <img
+              src={bannerImage}
+              alt=""
+              aria-hidden="true"
+              className="hidden"
+              loading="eager"
+            />
+          ) : null}
+          {bannerImage ? (
             <div
               className="absolute inset-0 bg-cover bg-center"
               style={{ backgroundImage: `url(${bannerImage})` }}
@@ -388,6 +424,7 @@ export default function AnimeDetail() {
               src={posterImage}
               alt={anime.title}
               className="w-36 shrink-0 rounded-lg border border-border object-cover shadow-xl aspect-[2/3] sm:w-44 md:w-48"
+              loading="eager"
             />
           ) : null}
 
@@ -511,7 +548,7 @@ export default function AnimeDetail() {
         <div className="mt-10 space-y-4">
           <h2 className="text-xl font-bold border-r-4 border-primary pr-3">الشخصيات والممثلين الصوتيين</h2>
 
-          {loadingChars ? (
+          {!shouldLoadCharacters || loadingChars ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-24 rounded-lg" />
@@ -574,7 +611,7 @@ export default function AnimeDetail() {
         {/* Related Seasons & Movies */}
         <div className="mt-10 space-y-4">
           <h2 className="text-xl font-bold border-r-4 border-primary pr-3">المواسم والأفلام المرتبطة</h2>
-          {loadingRelations ? (
+          {!shouldLoadRelations || loadingRelations ? (
             <ContentRail
               title="تحميل الأعمال المرتبطة"
               loading
@@ -611,7 +648,7 @@ export default function AnimeDetail() {
         <div className="mt-10 space-y-4">
           <ContentRail
             title="أنمي مشابه"
-            loading={loadingRec || (recommendationAnime.length > 0 && loadingRecommendationArtwork)}
+            loading={!shouldLoadRecommendations || loadingRec || (recommendationAnime.length > 0 && loadingRecommendationArtwork)}
             items={visibleRecommendationItems}
             emptyMessage="لا توجد توصيات متاحة"
             renderItem={(rec, index) => (

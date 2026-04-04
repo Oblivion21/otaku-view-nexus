@@ -39,6 +39,7 @@ export default function Upcoming() {
   const { data, isLoading } = useQuery({
     queryKey: ["upcoming", page],
     queryFn: () => fetchUpcoming(page),
+    placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
   const upcomingAnime = dedupeAnimeList(data?.data);

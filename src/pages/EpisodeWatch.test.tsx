@@ -138,6 +138,10 @@ describe("EpisodeWatch", () => {
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://vidplays.fun/embed/anime/21/1/sub"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=true"));
+    expect(mainIframe).toHaveAttribute(
+      "sandbox",
+      "allow-scripts allow-same-origin allow-forms allow-presentation",
+    );
     expect(screen.getByRole("link", { name: /الحلقة السابقة/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /الحلقة التالية/ })).toBeInTheDocument();
 

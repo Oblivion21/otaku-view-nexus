@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAllAnimeEpisodes, useAnimeAniListMedia, useAnimeById, useAnimeEpisodeImdbRatings, useAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { useSectionVisibility } from "@/hooks/useSectionVisibility";
 import { isBlockedAnime } from "@/lib/jikan";
 import { buildEpisodeDataFromScrape } from "@/lib/episodePlayback";
 import { getAnimeDetailPath } from "@/lib/animeRoutes";
@@ -87,6 +88,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 type PlayerTab = "main" | "backup" | "vidplays" | "vidplus";
 type MainPlayerStatus = "idle" | "loading" | "ready" | "unavailable" | "error";
+const MAIN_PLAYER_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-presentation";
 
 export default function EpisodeWatch() {
   const { id, episode } = useParams<{ id: string; episode: string }>();
@@ -96,7 +98,8 @@ export default function EpisodeWatch() {
 
   const { data: animeData, isLoading } = useAnimeById(animeId);
   const anime = animeData?.data;
-  const { data: episodes } = useAllAnimeEpisodes(animeId);
+  const { ref: episodeListSectionRef, isVisible: episodeListSectionVisible } = useSectionVisibility();
+  const { data: episodes } = useAllAnimeEpisodes(animeId, episodeListSectionVisible);
   const isMovie = anime?.type === "Movie";
   const {
     data: tmdbArtwork,
@@ -157,7 +160,7 @@ export default function EpisodeWatch() {
   const { data: episodeImdbRatingMap } = useAnimeEpisodeImdbRatings(
     tmdbArtwork,
     episodeNumbers,
-    !isTrailer && !isMovie,
+    episodeListSectionVisible && !isTrailer && !isMovie,
   );
   const filteredEpisodes = displayEpisodes.filter((ep) => {
     const query = episodeSearchQuery.trim().toLowerCase();
@@ -560,6 +563,7 @@ export default function EpisodeWatch() {
           className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
           allowFullScreen
           allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+          sandbox={MAIN_PLAYER_SANDBOX}
         />
       </div>
     );
@@ -814,7 +818,7 @@ export default function EpisodeWatch() {
         </div>
 
         {!isTrailer && !isMovie && (
-          <div className="max-w-4xl mx-auto">
+          <div ref={episodeListSectionRef} className="max-w-4xl mx-auto">
             <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -834,7 +838,13 @@ export default function EpisodeWatch() {
                 </div>
               </div>
 
-              {displayEpisodes.length > 0 ? (
+              {!episodeListSectionVisible ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 8 }).map((_, index) => (
+                    <Skeleton key={index} className="h-14 rounded-lg" />
+                  ))}
+                </div>
+              ) : displayEpisodes.length > 0 ? (
                 <ScrollArea className="h-72 rounded-lg border border-border/70">
                   <div className="space-y-2 p-2">
                     {filteredEpisodes.map((ep) => {

@@ -4,196 +4,29 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import TitleArtworkPlaceholder from "@/components/TitleArtworkPlaceholder";
-import { useFeaturedCarousel, useTopAnime } from "@/hooks/useAnime";
 import { GENRE_AR, getVisibleGenres } from "@/lib/jikan";
 import { getAnimeDetailPath } from "@/lib/animeRoutes";
-import { dedupeAnimeList } from "@/lib/listDeduping";
 import type { FeaturedCarouselAnime } from "@/lib/featuredCarousel";
-import { getMultipleAnimeTmdbArtwork, type TmdbAnimeArtwork } from "@/lib/tmdb";
-import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
-import { formatTenPointScoreLabel, resolvePreferredScore } from "@/lib/scores";
-import { useState, useEffect, useRef } from "react";
+import { formatTenPointScoreLabel } from "@/lib/scores";
+import { useEffect, useRef, useState } from "react";
 
-interface AnimeWithBanner {
-  anime: FeaturedCarouselAnime
-  bannerImage: string | null
-  artwork: TmdbAnimeArtwork | null
+export interface HeroCarouselItem {
+  anime: FeaturedCarouselAnime;
+  bannerImage: string | null;
+  scoreValue?: number | null;
 }
 
-export default function HeroCarousel() {
+type HeroCarouselProps = {
+  items: HeroCarouselItem[];
+  isLoading?: boolean;
+};
+
+export default function HeroCarousel({ items, isLoading = false }: HeroCarouselProps) {
   const navigate = useNavigate();
-  const { data: defaultData, isLoading: defaultLoading } = useTopAnime(1, "airing");
-  const {
-    data: featuredCarouselItems,
-    isLoading: featuredLoading,
-    error: featuredError,
-  } = useFeaturedCarousel();
-  const [items, setItems] = useState<AnimeWithBanner[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [current, setCurrent] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
-  const [featuredUnavailable, setFeaturedUnavailable] = useState(false);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
-  const activeSourceRef = useRef<"none" | "default" | "featured">("none");
-  const activeItemsKeyRef = useRef("");
-  const dedupedFeaturedItems = dedupeAnimeList(featuredCarouselItems);
-
-  function getAnimeIdsKey(animeList: FeaturedCarouselAnime[]): string {
-    return animeList.map((anime) => anime.mal_id).join(",");
-  }
-
-  function buildCarouselItems(
-    animeList: FeaturedCarouselAnime[],
-    artworkMap = new Map<number, TmdbAnimeArtwork>(),
-  ): AnimeWithBanner[] {
-    return animeList
-      .filter((anime) => hasAnyTitleArtwork(anime, artworkMap.get(anime.mal_id)))
-      .map((anime) => {
-        const artwork = artworkMap.get(anime.mal_id);
-
-        return {
-          anime,
-          bannerImage: resolveTitleArtworkUrl(artwork, anime, "banner"),
-          artwork: artwork ?? null,
-        };
-      });
-  }
-
-  async function resolveCarouselItems(animeList: FeaturedCarouselAnime[], source: "default" | "featured") {
-    const itemsKey = `${source}:${getAnimeIdsKey(animeList)}`;
-
-    try {
-      const artworkMap = await getMultipleAnimeTmdbArtwork(animeList);
-
-      if (
-        activeSourceRef.current !== source ||
-        activeItemsKeyRef.current !== itemsKey
-      ) {
-        return false;
-      }
-
-      const hydratedItems = buildCarouselItems(animeList, artworkMap);
-      if (hydratedItems.length > 0) {
-        setItems(hydratedItems);
-        setCurrent(0);
-        setIsLoading(false);
-        return true;
-      }
-
-      const fallbackItems = buildCarouselItems(animeList);
-      if (fallbackItems.length > 0) {
-        setItems(fallbackItems);
-        setCurrent(0);
-        setIsLoading(false);
-        return true;
-      }
-
-      setItems([]);
-      setCurrent(0);
-      setIsLoading(false);
-      return false;
-    } catch (error) {
-      console.error("Error hydrating carousel artwork:", error);
-      if (
-        activeSourceRef.current !== source ||
-        activeItemsKeyRef.current !== itemsKey
-      ) {
-        return false;
-      }
-
-      const fallbackItems = buildCarouselItems(animeList);
-      if (fallbackItems.length > 0) {
-        setItems(fallbackItems);
-        setCurrent(0);
-        setIsLoading(false);
-        return true;
-      }
-
-      setItems([]);
-      setCurrent(0);
-      setIsLoading(false);
-      return false;
-    }
-  }
-
-  useEffect(() => {
-    const fallbackAnime = dedupeAnimeList(defaultData?.data?.slice(0, 5) ?? []);
-    const canUseFallback = !featuredLoading
-      && (Boolean(featuredError) || dedupedFeaturedItems.length === 0 || featuredUnavailable);
-
-    if (!canUseFallback) {
-      return;
-    }
-
-    if (fallbackAnime.length > 0 && activeSourceRef.current !== "featured") {
-      activeSourceRef.current = "default";
-      activeItemsKeyRef.current = `default:${getAnimeIdsKey(fallbackAnime)}`;
-      setItems([]);
-      setCurrent(0);
-      setIsLoading(true);
-      void resolveCarouselItems(fallbackAnime, "default");
-      return;
-    }
-
-    if (!defaultLoading && fallbackAnime.length === 0 && activeSourceRef.current === "none") {
-      setItems([]);
-      setIsLoading(false);
-    }
-  }, [
-    defaultData,
-    defaultLoading,
-    featuredCarouselItems,
-    featuredError,
-    featuredLoading,
-    featuredUnavailable,
-  ]);
-
-  useEffect(() => {
-    if (featuredLoading) {
-      return;
-    }
-
-    if (!dedupedFeaturedItems.length) {
-      setFeaturedUnavailable(false);
-      return;
-    }
-
-    setFeaturedUnavailable(false);
-
-    const itemsKey = `featured:${getAnimeIdsKey(dedupedFeaturedItems)}`;
-    activeSourceRef.current = "featured";
-    activeItemsKeyRef.current = itemsKey;
-    setItems([]);
-    setCurrent(0);
-    setIsLoading(true);
-
-    void (async () => {
-      try {
-        const resolved = await resolveCarouselItems(dedupedFeaturedItems, "featured");
-        if (resolved) {
-          return;
-        }
-
-        activeSourceRef.current = "none";
-        activeItemsKeyRef.current = "";
-        setFeaturedUnavailable(true);
-      } catch (error) {
-        console.error("Error hydrating featured carousel artwork:", error);
-
-        if (
-          activeSourceRef.current !== "featured"
-          || activeItemsKeyRef.current !== itemsKey
-        ) {
-          return;
-        }
-
-        activeSourceRef.current = "none";
-        activeItemsKeyRef.current = "";
-        setFeaturedUnavailable(true);
-      }
-    })();
-  }, [featuredCarouselItems, featuredLoading]);
 
   useEffect(() => {
     if (!items.length) return;
@@ -216,6 +49,12 @@ export default function HeroCarousel() {
     }, 6000);
     return () => clearInterval(timer);
   }, [items.length, isAutoPlaying]);
+
+  useEffect(() => {
+    if (current >= items.length) {
+      setCurrent(0);
+    }
+  }, [current, items.length]);
 
   const goToNext = () => {
     setIsAutoPlaying(false);
@@ -257,8 +96,8 @@ export default function HeroCarousel() {
 
   if (items.length === 0) return null;
 
-  const { anime, bannerImage, artwork } = items[current];
-  const displayScore = formatTenPointScoreLabel(resolvePreferredScore(artwork?.imdbRating, anime.score));
+  const { anime, bannerImage, scoreValue } = items[current];
+  const displayScore = formatTenPointScoreLabel(scoreValue ?? anime.score);
 
   return (
     <div
@@ -277,6 +116,16 @@ export default function HeroCarousel() {
       tabIndex={0}
       aria-label={`افتح صفحة ${anime.title}`}
     >
+      {bannerImage ? (
+        <img
+          src={bannerImage}
+          alt=""
+          aria-hidden="true"
+          className="hidden"
+          loading="eager"
+        />
+      ) : null}
+
       {/* Background image */}
       {bannerImage ? (
         <div

@@ -29,10 +29,16 @@ import { getAnimeEpisodeImdbRatings } from "@/lib/tmdb";
 import type { AnimeArtworkLookup } from "@/lib/tmdb";
 import { getFeaturedCarouselItems } from "@/lib/featuredCarousel";
 
-export function useTopAnime(page = 1, filter?: string) {
+type QueryToggleOptions = {
+  enabled?: boolean;
+};
+
+export function useTopAnime(page = 1, filter?: string, options?: QueryToggleOptions) {
   return useQuery({
     queryKey: ["top-anime", page, filter],
     queryFn: () => getTopAnime(page, filter),
+    enabled: options?.enabled ?? true,
+    placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -45,10 +51,12 @@ export function useFeaturedCarousel() {
   });
 }
 
-export function useSeasonNow(page = 1) {
+export function useSeasonNow(page = 1, options?: QueryToggleOptions) {
   return useQuery({
     queryKey: ["season-now", page],
     queryFn: () => getSeasonNow(page),
+    enabled: options?.enabled ?? true,
+    placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -94,6 +102,7 @@ export function useMultipleAnimeTmdbArtwork(
     queryKey: ["multiple-anime-tmdb-artwork", malIds],
     queryFn: () => getMultipleAnimeTmdbArtwork(animeList || []),
     enabled: enabled && malIds.length > 0,
+    placeholderData: (previousData) => previousData,
     staleTime: 24 * 60 * 60 * 1000,
   });
 }
@@ -212,11 +221,12 @@ export function useAnimeEpisodes(id: number, page = 1) {
   });
 }
 
-export function useAllAnimeEpisodes(id: number) {
+export function useAllAnimeEpisodes(id: number, enabled = true) {
   return useQuery({
     queryKey: ["anime-episodes-all", id],
     queryFn: () => getAllAnimeEpisodes(id),
-    enabled: !!id,
+    enabled: enabled && !!id,
+    placeholderData: (previousData) => previousData,
     staleTime: 10 * 60 * 1000,
   });
 }
@@ -232,6 +242,7 @@ export function useSearchAnime(filters: AnimeSearchFilters) {
         ...normalizedFilters,
         query: undefined,
       })),
+    placeholderData: (previousData) => previousData,
     staleTime: 3 * 60 * 1000,
   });
 }
@@ -244,55 +255,58 @@ export function useGenres() {
   });
 }
 
-export function useAnimeByGenre(genreId: number, page = 1) {
+export function useAnimeByGenre(genreId: number, page = 1, options?: QueryToggleOptions) {
   return useQuery({
     queryKey: ["anime-genre", genreId, page],
     queryFn: () => getAnimeByGenre(genreId, page),
-    enabled: !!genreId,
+    enabled: (options?.enabled ?? true) && !!genreId,
+    placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
   });
 }
 
-export function useTopMovies(page = 1) {
+export function useTopMovies(page = 1, options?: QueryToggleOptions) {
   return useQuery({
     queryKey: ["top-movies", page],
     queryFn: () => getTopMovies(page),
+    enabled: options?.enabled ?? true,
+    placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
   });
 }
 
-export function useAnimeRecommendations(id: number) {
+export function useAnimeRecommendations(id: number, enabled = true) {
   return useQuery({
     queryKey: ["anime-recommendations", id],
     queryFn: () => getAnimeRecommendations(id),
-    enabled: !!id,
+    enabled: enabled && !!id,
     staleTime: 10 * 60 * 1000,
   });
 }
 
-export function useAnimeCharacters(id: number) {
+export function useAnimeCharacters(id: number, enabled = true) {
   return useQuery({
     queryKey: ["anime-characters", id],
     queryFn: () => getAnimeCharacters(id),
-    enabled: !!id,
+    enabled: enabled && !!id,
     staleTime: 10 * 60 * 1000,
   });
 }
 
-export function useAnimeThemes(id: number) {
+export function useAnimeThemes(id: number, enabled = true) {
   return useQuery({
     queryKey: ["anime-themes", id],
     queryFn: () => getAnimeThemes(id),
-    enabled: !!id,
+    enabled: enabled && !!id,
     staleTime: 10 * 60 * 1000,
   });
 }
 
-export function useAnimeRelations(id: number) {
+export function useAnimeRelations(id: number, enabled = true) {
   return useQuery({
     queryKey: ["anime-relations", id],
     queryFn: () => getAnimeRelations(id),
-    enabled: !!id,
+    enabled: enabled && !!id,
     staleTime: 10 * 60 * 1000,
   });
 }

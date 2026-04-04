@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation, useNavigationType } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { isMaintenanceMode } from "@/lib/supabase";
 import {
   clearStoredSiteAccessToken,
@@ -16,18 +16,41 @@ import {
   verifySiteAccess,
 } from "@/lib/site-auth";
 import Index from "./pages/Index";
-import Browse from "./pages/Browse";
-import AnimeDetail from "./pages/AnimeDetail";
-import EpisodeWatch from "./pages/EpisodeWatch";
-import SearchPage from "./pages/SearchPage";
-import VoiceActorDetail from "./pages/VoiceActorDetail";
-import Schedule from "./pages/Schedule";
-import Upcoming from "./pages/Upcoming";
-import NotFound from "./pages/NotFound";
-import Maintenance from "./pages/Maintenance";
+const Browse = lazy(() => import("./pages/Browse"));
+const AnimeDetail = lazy(() => import("./pages/AnimeDetail"));
+const EpisodeWatch = lazy(() => import("./pages/EpisodeWatch"));
+const SearchPage = lazy(() => import("./pages/SearchPage"));
+const VoiceActorDetail = lazy(() => import("./pages/VoiceActorDetail"));
+const Schedule = lazy(() => import("./pages/Schedule"));
+const Upcoming = lazy(() => import("./pages/Upcoming"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const Maintenance = lazy(() => import("./pages/Maintenance"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 2,
+    },
+  },
+});
 const SCROLL_STORAGE_KEY = "animezero:scroll-positions";
+
+function PageRouteFallback() {
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="container py-8 space-y-4">
+        <div className="h-12 w-48 rounded-lg bg-muted/40 animate-pulse" />
+        <div className="aspect-video w-full rounded-xl bg-muted/30 animate-pulse" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="h-32 rounded-xl bg-muted/30 animate-pulse" />
+          <div className="h-32 rounded-xl bg-muted/30 animate-pulse" />
+          <div className="h-32 rounded-xl bg-muted/30 animate-pulse" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function getScrollStorage() {
   if (typeof window === "undefined") {
@@ -211,7 +234,11 @@ const App = () => {
   }
 
   if (authChecked && !loadingMaintenance && isMaintenance) {
-    return <Maintenance />;
+    return (
+      <Suspense fallback={<PageRouteFallback />}>
+        <Maintenance />
+      </Suspense>
+    );
   }
 
   return (
@@ -223,14 +250,14 @@ const App = () => {
           <ScrollRestoration />
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/browse" element={<Browse />} />
-            <Route path="/anime/:id" element={<AnimeDetail />} />
-            <Route path="/watch/:id/:episode" element={<EpisodeWatch />} />
-            <Route path="/search" element={<SearchPage />} />
-            <Route path="/person/:id" element={<VoiceActorDetail />} />
-            <Route path="/schedule" element={<Schedule />} />
-            <Route path="/upcoming" element={<Upcoming />} />
-            <Route path="*" element={<NotFound />} />
+            <Route path="/browse" element={<Suspense fallback={<PageRouteFallback />}><Browse /></Suspense>} />
+            <Route path="/anime/:id" element={<Suspense fallback={<PageRouteFallback />}><AnimeDetail /></Suspense>} />
+            <Route path="/watch/:id/:episode" element={<Suspense fallback={<PageRouteFallback />}><EpisodeWatch /></Suspense>} />
+            <Route path="/search" element={<Suspense fallback={<PageRouteFallback />}><SearchPage /></Suspense>} />
+            <Route path="/person/:id" element={<Suspense fallback={<PageRouteFallback />}><VoiceActorDetail /></Suspense>} />
+            <Route path="/schedule" element={<Suspense fallback={<PageRouteFallback />}><Schedule /></Suspense>} />
+            <Route path="/upcoming" element={<Suspense fallback={<PageRouteFallback />}><Upcoming /></Suspense>} />
+            <Route path="*" element={<Suspense fallback={<PageRouteFallback />}><NotFound /></Suspense>} />
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
