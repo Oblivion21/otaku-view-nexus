@@ -335,10 +335,6 @@ export default function HeroCarousel() {
             <p className="text-sm text-muted-foreground drop-shadow">{anime.title_japanese}</p>
           )}
 
-          <p className="text-sm text-muted-foreground line-clamp-3 drop-shadow">
-            {anime.synopsis}
-          </p>
-
           <div className="flex items-center gap-3">
             <Button asChild>
               <Link
