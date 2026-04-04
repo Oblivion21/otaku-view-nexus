@@ -74,10 +74,19 @@ describe("vidplus helpers", () => {
     expect(buildVidplusTvEmbedUrl(null, 1, 1)).toBeNull();
   });
 
-  it("resolves anime content through AniList when available", () => {
+  it("resolves anime series through tmdb tv when available", () => {
+    expect(resolveVidplusPlayerUrl(tvArtwork, baseMedia, "TV", 7)).toBe(
+      "https://player.vidplus.to/embed/tv/66732/1/7?autoplay=true",
+    );
+  });
+
+  it("falls back to AniList anime embeds for series when tmdb tv metadata is unavailable", () => {
     expect(resolveVidplusPlayerUrl(null, baseMedia, "TV", 7)).toBe(
       "https://player.vidplus.to/embed/anime/172463/7?autoplay=true&dub=false",
     );
+  });
+
+  it("resolves anime movies through AniList when available", () => {
     expect(resolveVidplusPlayerUrl(movieArtwork, baseMedia, "Movie", 1)).toBe(
       "https://player.vidplus.to/embed/anime/172463/1?autoplay=true&dub=false",
     );

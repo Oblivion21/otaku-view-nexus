@@ -96,14 +96,19 @@ export function resolveVidplusPlayerUrl(
   episodeNumber: number,
   options?: VidplusOptions,
 ) {
-  const animeUrl = buildVidplusAnimeEmbedUrl(media, episodeNumber, options);
-  if (animeUrl) {
-    return animeUrl;
-  }
-
   if (animeType === "Movie") {
+    const animeUrl = buildVidplusAnimeEmbedUrl(media, episodeNumber, options);
+    if (animeUrl) {
+      return animeUrl;
+    }
+
     return buildVidplusMovieEmbedUrl(artwork, options);
   }
 
-  return buildVidplusTvEmbedUrl(artwork, artwork?.seasonNumber ?? null, episodeNumber, options);
+  const tvUrl = buildVidplusTvEmbedUrl(artwork, artwork?.seasonNumber ?? null, episodeNumber, options);
+  if (tvUrl) {
+    return tvUrl;
+  }
+
+  return buildVidplusAnimeEmbedUrl(media, episodeNumber, options);
 }
