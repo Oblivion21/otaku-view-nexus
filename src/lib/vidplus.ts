@@ -8,6 +8,16 @@ type VidplusServer = string;
 type VidplusOptions = {
   autoplay?: boolean;
   dub?: boolean;
+  title?: boolean;
+  chromecast?: boolean;
+  episodeList?: boolean;
+  serverIcon?: boolean;
+  pip?: boolean;
+  nextButton?: boolean;
+  poster?: boolean;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
+  iconColor?: string | null;
   server?: VidplusServer | null;
 };
 
@@ -20,6 +30,26 @@ function buildVidplusParams(options: VidplusOptions = {}) {
 
   if (typeof options.dub === "boolean") {
     params.set("dub", String(options.dub));
+  }
+
+  params.set("title", String(options.title ?? true));
+  params.set("chromecast", String(options.chromecast ?? true));
+  params.set("episodelist", String(options.episodeList ?? false));
+  params.set("servericon", String(options.serverIcon ?? true));
+  params.set("pip", String(options.pip ?? true));
+  params.set("nextbutton", String(options.nextButton ?? false));
+  params.set("poster", String(options.poster ?? true));
+
+  if (options.primaryColor ?? "07D0FF") {
+    params.set("primarycolor", options.primaryColor ?? "07D0FF");
+  }
+
+  if (options.secondaryColor ?? "FFFFFF") {
+    params.set("secondarycolor", options.secondaryColor ?? "FFFFFF");
+  }
+
+  if (options.iconColor ?? "FFFFFF") {
+    params.set("iconcolor", options.iconColor ?? "FFFFFF");
   }
 
   if (options.server) {

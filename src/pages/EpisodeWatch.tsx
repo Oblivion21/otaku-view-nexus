@@ -89,6 +89,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 type PlayerTab = "main" | "backup" | "vidplays" | "vidplus";
 type MainPlayerStatus = "idle" | "loading" | "ready" | "unavailable" | "error";
 const MAIN_PLAYER_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-presentation";
+const SECOND_PLAYER_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-presentation";
 
 export default function EpisodeWatch() {
   const { id, episode } = useParams<{ id: string; episode: string }>();
@@ -591,6 +592,7 @@ export default function EpisodeWatch() {
           className="episode-watch-player-media absolute inset-0 w-full h-full outline-none focus:outline-none focus-visible:outline-none"
           allowFullScreen
           allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+          sandbox={SECOND_PLAYER_SANDBOX}
         />
       </div>
     );

@@ -176,6 +176,14 @@ describe("EpisodeWatch", () => {
       "src",
       expect.stringContaining("https://player.vidplus.to/embed/anime/21/1?autoplay=true&dub=false"),
     );
+    expect(vidplusIframe).toHaveAttribute(
+      "src",
+      expect.stringContaining("title=true&chromecast=true&episodelist=false&servericon=true&pip=true&nextbutton=false&poster=true&primarycolor=07D0FF&secondarycolor=FFFFFF&iconcolor=FFFFFF"),
+    );
+    expect(vidplusIframe).toHaveAttribute(
+      "sandbox",
+      "allow-scripts allow-same-origin allow-forms allow-presentation",
+    );
   });
 
   it("does not scrape when a fresh cached episode link already exists", async () => {
@@ -471,6 +479,10 @@ describe("EpisodeWatch", () => {
     expect(vidplusIframe).toHaveAttribute(
       "src",
       expect.stringContaining("https://player.vidplus.to/embed/anime/21/1?autoplay=true&dub=false"),
+    );
+    expect(vidplusIframe).toHaveAttribute(
+      "src",
+      expect.stringContaining("title=true&chromecast=true&episodelist=false&servericon=true&pip=true&nextbutton=false&poster=true&primarycolor=07D0FF&secondarycolor=FFFFFF&iconcolor=FFFFFF"),
     );
   });
 

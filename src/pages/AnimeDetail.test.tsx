@@ -569,7 +569,7 @@ describe("AnimeDetail", () => {
     expect(container.querySelector("img[src*='jikan.example.com']")).toBeNull();
   });
 
-  it("does not render the episode list section on movie pages", async () => {
+  it("keeps the movie page free of episode rails while allowing the watch CTA when movie metadata exists", async () => {
     const movieAnime: JikanAnime = {
       ...anime,
       mal_id: 32281,
@@ -628,10 +628,8 @@ describe("AnimeDetail", () => {
 
     expect(await screen.findByRole("heading", { name: "Kimi no Na wa." })).toBeInTheDocument();
     expect(screen.queryByText("1 حلقة")).not.toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "غير متوفر حالياً" })).toBeDisabled();
-    });
-    expect(screen.queryByRole("link", { name: "شاهد الفيلم" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "شاهد الفيلم" })).toHaveAttribute("href", "/watch/32281/1");
+    expect(screen.queryByRole("button", { name: "غير متوفر حالياً" })).not.toBeInTheDocument();
     expect(screen.queryByText("قائمة الحلقات")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "الحلقة 1" })).not.toBeInTheDocument();
   });
@@ -738,6 +736,68 @@ describe("AnimeDetail", () => {
     expect(screen.queryByRole("link", { name: "شاهد الفيلم" })).not.toBeInTheDocument();
   });
 
+  it("trusts a past air date even if the upstream status is still not yet aired", async () => {
+    const releasedAnime: JikanAnime = {
+      ...anime,
+      mal_id: 62568,
+      title: "Dr. Stone: Science Future Part 3",
+      status: "Not yet aired",
+      aired: { from: "2026-04-02", to: null, string: "Apr 2, 2026" },
+    };
+    const tmdbArtwork = {
+      tmdbId: 91011,
+      mediaType: "tv" as const,
+      posterUrl: "https://image.tmdb.org/t/p/w780/dr-stone-poster.jpg",
+      backdropUrl: "https://image.tmdb.org/t/p/original/dr-stone-backdrop.jpg",
+      trailerYoutubeId: null,
+      matchedTitle: "Dr. Stone: Science Future Part 3",
+      seasonNumber: 1,
+      seasonName: null,
+      matchConfidence: "high" as const,
+    };
+
+    hookMocks.useAnimeById.mockReturnValue({
+      data: { data: releasedAnime },
+      isLoading: false,
+    });
+    hookMocks.useAnimeTmdbArtwork.mockReturnValue({
+      data: tmdbArtwork,
+      isLoading: false,
+    });
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: { data: [] },
+      isLoading: false,
+      isFetching: false,
+    });
+    hookMocks.useAnimeEpisodePreviewImages.mockReturnValue({
+      data: new Map([
+        [1, {
+          episodeNumber: 1,
+          imageUrl: "https://image.tmdb.org/t/p/w780/dr-stone-ep-1.jpg",
+          fallbackImageUrl: null,
+          imdbRating: 8.3,
+          source: "tmdb",
+        }],
+      ]),
+    });
+    hookMocks.useAnimeEpisodeImdbRatings.mockReturnValue({
+      data: new Map([[1, 8.3]]),
+    });
+    supabaseMocks.getAnimeEpisodes.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={["/anime/62568"]}>
+        <Routes>
+          <Route path="/anime/:id" element={<AnimeDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Dr. Stone: Science Future Part 3" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "شاهد الحلقة 1" })).toHaveAttribute("href", "/watch/62568/1");
+    expect(screen.getByTestId("episode-preview-1")).toBeInTheDocument();
+  });
+
   it("renders the movie watch button when a released movie only has main-player metadata", async () => {
     const movieAnime: JikanAnime = {
       ...anime,
@@ -831,20 +891,166 @@ describe("AnimeDetail", () => {
     expect(screen.getByRole("link", { name: "شاهد الحلقة 1" })).toBeInTheDocument();
   });
 
-  it("does not render the episode watch button when a series has no actual episode data", async () => {
+  it("renders the first episode CTA and preview rail when a released series only has first-card metadata", async () => {
+    const releasedAnime: JikanAnime = {
+      ...anime,
+      mal_id: 62568,
+      title: "Dr. Stone: Science Future Part 3",
+      status: "Currently Airing",
+      aired: { from: "2026-04-02", to: null, string: "Apr 2, 2026" },
+    };
+    const tmdbArtwork = {
+      tmdbId: 91011,
+      mediaType: "tv" as const,
+      posterUrl: "https://image.tmdb.org/t/p/w780/dr-stone-poster.jpg",
+      backdropUrl: "https://image.tmdb.org/t/p/original/dr-stone-backdrop.jpg",
+      trailerYoutubeId: null,
+      matchedTitle: "Dr. Stone: Science Future Part 3",
+      seasonNumber: 1,
+      seasonName: null,
+      matchConfidence: "high" as const,
+    };
+
+    hookMocks.useAnimeById.mockReturnValue({
+      data: { data: releasedAnime },
+      isLoading: false,
+    });
     hookMocks.useAnimeTmdbArtwork.mockReturnValue({
-      data: null,
+      data: tmdbArtwork,
       isLoading: false,
     });
     hookMocks.useAnimeEpisodes.mockReturnValue({
       data: { data: [] },
       isLoading: false,
+      isFetching: false,
+    });
+    hookMocks.useAnimeEpisodePreviewImages.mockReturnValue({
+      data: new Map([
+        [1, {
+          episodeNumber: 1,
+          imageUrl: "https://image.tmdb.org/t/p/w780/dr-stone-ep-1.jpg",
+          fallbackImageUrl: null,
+          imdbRating: 8.3,
+          source: "tmdb",
+        }],
+      ]),
+    });
+    hookMocks.useAnimeEpisodeImdbRatings.mockReturnValue({
+      data: new Map([[1, 8.3]]),
     });
     supabaseMocks.getAnimeEpisodes.mockResolvedValue([]);
 
-    renderPage();
+    render(
+      <MemoryRouter initialEntries={["/anime/62568"]}>
+        <Routes>
+          <Route path="/anime/:id" element={<AnimeDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
 
-    expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Dr. Stone: Science Future Part 3" })).toBeInTheDocument();
+    expect(hookMocks.useAnimeEpisodePreviewImages).toHaveBeenCalledWith(62568, tmdbArtwork, [1], true);
+    expect(screen.getByRole("link", { name: "شاهد الحلقة 1" })).toHaveAttribute("href", "/watch/62568/1");
+    expect(screen.getByTestId("episode-preview-1")).toHaveAttribute(
+      "data-image-url",
+      expect.stringContaining("dr-stone-ep-1.jpg"),
+    );
+    expect(screen.getByTestId("episode-preview-1")).toHaveAttribute("data-score-label", "8.3");
+    expect(screen.getByRole("link", { name: "عرض كل الحلقات" })).toHaveAttribute("href", "/watch/62568/1");
+  });
+
+  it("renders the first episode CTA when a released series only has AniList playback metadata", async () => {
+    const releasedAnime: JikanAnime = {
+      ...anime,
+      mal_id: 62568,
+      title: "Dr. Stone: Science Future Part 3",
+      status: "Currently Airing",
+      aired: { from: "2026-04-02", to: null, string: "Apr 2, 2026" },
+    };
+
+    hookMocks.useAnimeById.mockReturnValue({
+      data: { data: releasedAnime },
+      isLoading: false,
+    });
+    hookMocks.useAnimeAniListMedia.mockReturnValue({
+      data: {
+        id: 199221,
+        idMal: 62568,
+        format: "TV",
+        title: {
+          romaji: "Dr. STONE: SCIENCE FUTURE Part 3",
+          english: "Dr. STONE SCIENCE FUTURE Cour 3",
+          native: "Dr.STONE SCIENCE FUTURE 3クール",
+        },
+        bannerImage: null,
+        coverImage: {
+          extraLarge: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/199221.jpg",
+          large: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/199221.jpg",
+          color: null,
+        },
+      },
+      isLoading: false,
+    });
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: { data: [] },
+      isLoading: false,
+      isFetching: false,
+    });
+    hookMocks.useAnimeEpisodePreviewImages.mockReturnValue({
+      data: new Map(),
+    });
+    hookMocks.useAnimeEpisodeImdbRatings.mockReturnValue({
+      data: new Map(),
+    });
+    supabaseMocks.getAnimeEpisodes.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={["/anime/62568"]}>
+        <Routes>
+          <Route path="/anime/:id" element={<AnimeDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Dr. Stone: Science Future Part 3" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "شاهد الحلقة 1" })).toHaveAttribute("href", "/watch/62568/1");
+    expect(screen.getByTestId("episode-preview-1")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "عرض كل الحلقات" })).toHaveAttribute("href", "/watch/62568/1");
+  });
+
+  it("does not render the episode watch button until one day passes from the tv release date", async () => {
+    const withinFirstDayAnime: JikanAnime = {
+      ...anime,
+      mal_id: 62568,
+      title: "Dr. Stone: Science Future Part 3",
+      status: "Currently Airing",
+      aired: {
+        from: new Date(Date.now() - (12 * 60 * 60 * 1000)).toISOString(),
+        to: null,
+        string: "Today",
+      },
+    };
+
+    hookMocks.useAnimeById.mockReturnValue({
+      data: { data: withinFirstDayAnime },
+      isLoading: false,
+    });
+    hookMocks.useAnimeEpisodes.mockReturnValue({
+      data: { data: [] },
+      isLoading: false,
+      isFetching: false,
+    });
+    supabaseMocks.getAnimeEpisodes.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={["/anime/62568"]}>
+        <Routes>
+          <Route path="/anime/:id" element={<AnimeDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Dr. Stone: Science Future Part 3" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "شاهد الحلقة 1" })).not.toBeInTheDocument();
     expect(screen.queryByText("قائمة الحلقات")).not.toBeInTheDocument();
   });
@@ -892,5 +1098,63 @@ describe("AnimeDetail", () => {
     expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "عرض كل الحلقات" })).toBeInTheDocument();
     expect(screen.getAllByTestId("recommendation-2")).toHaveLength(1);
+  });
+
+  it("falls back to the main season recommendations when the current season has none", async () => {
+    const fallbackRecommendation = {
+      entry: {
+        ...anime,
+        mal_id: 5,
+        title: "Fullmetal Alchemist: Brotherhood",
+      },
+      votes: 240,
+    };
+
+    hookMocks.useAnimeRelations.mockReturnValue({
+      data: {
+        data: [
+          {
+            relation: "Prequel",
+            entry: [
+              { mal_id: 10, type: "anime", name: "Dr. Stone: Stone Wars", url: "https://example.com/10" },
+              { mal_id: 9, type: "anime", name: "Dr. Stone", url: "https://example.com/9" },
+            ],
+          },
+        ],
+      },
+      isLoading: false,
+    });
+    hookMocks.useAnimeRecommendations.mockImplementation((id: number) => {
+      if (id === 1) {
+        return {
+          data: { data: [] },
+          isLoading: false,
+        };
+      }
+
+      if (id === 9) {
+        return {
+          data: { data: [fallbackRecommendation] },
+          isLoading: false,
+        };
+      }
+
+      return {
+        data: { data: [] },
+        isLoading: false,
+      };
+    });
+    hookMocks.useMultipleAnimeTmdbArtwork.mockReturnValue({
+      data: new Map([
+        [5, { posterUrl: "https://image.tmdb.org/t/p/w780/fmab-poster.jpg", backdropUrl: null }],
+      ]),
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(hookMocks.useAnimeRecommendations).toHaveBeenCalledWith(9, true);
+    });
+    expect(await screen.findByTestId("recommendation-5")).toBeInTheDocument();
   });
 });

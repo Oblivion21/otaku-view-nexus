@@ -116,6 +116,28 @@ const ALLOWED_GENRE_NAMES = new Set([
   "Suspense",
 ]);
 
+const EXPANDABLE_RELATION_TYPES = new Set(["Prequel", "Sequel"]);
+const MAX_RELATION_CHAIN_DEPTH = 6;
+const MAX_RELATION_CHAIN_ENTRIES = 12;
+const JIKAN_MAX_RETRIES = 2;
+
+function isRetryableJikanStatus(status: number) {
+  return status === 429 || status >= 500;
+}
+
+function getJikanRetryDelayMs(retryAfterHeader: string | null, attempt: number) {
+  const retryAfterSeconds = Number(retryAfterHeader);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+    return retryAfterSeconds * 1000;
+  }
+
+  return Math.min(400 * (attempt + 1), 1500);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 type GenreLike = {
   mal_id: number;
   name: string;
@@ -256,9 +278,32 @@ function rerankAnimeSearchResults(animeList: JikanAnime[], query: string) {
 }
 
 async function fetchJikan<T>(endpoint: string): Promise<JikanResponse<T>> {
-  const res = await fetch(`${BASE_URL}${endpoint}`);
-  if (!res.ok) throw new Error(`Jikan API error: ${res.status}`);
-  return res.json();
+  const url = `${BASE_URL}${endpoint}`;
+
+  for (let attempt = 0; attempt <= JIKAN_MAX_RETRIES; attempt += 1) {
+    try {
+      const res = await fetch(url);
+
+      if (res.ok) {
+        return res.json();
+      }
+
+      if (attempt < JIKAN_MAX_RETRIES && isRetryableJikanStatus(res.status)) {
+        await sleep(getJikanRetryDelayMs(res.headers.get("Retry-After"), attempt));
+        continue;
+      }
+
+      throw new Error(`Jikan API error: ${res.status}`);
+    } catch (error) {
+      if (attempt >= JIKAN_MAX_RETRIES) {
+        throw error;
+      }
+
+      await sleep(getJikanRetryDelayMs(null, attempt));
+    }
+  }
+
+  throw new Error("Jikan API error: exhausted retries");
 }
 
 function parsePositiveInt(value: unknown) {
@@ -530,8 +575,80 @@ export interface JikanRelationEntry {
   entry: { mal_id: number; type: string; name: string; url: string }[];
 }
 
+async function expandRelationChain(
+  seedEntries: JikanRelationEntry["entry"],
+  relationType: string,
+): Promise<JikanRelationEntry["entry"]> {
+  const animeSeedEntries = seedEntries.filter((entry) => entry.type === "anime");
+  if (animeSeedEntries.length === 0) {
+    return animeSeedEntries;
+  }
+
+  const expandedEntries = [...animeSeedEntries];
+  const visited = new Set(animeSeedEntries.map((entry) => entry.mal_id));
+  const queue = animeSeedEntries.map((entry) => ({
+    entry,
+    depth: 1,
+  }));
+
+  while (queue.length > 0 && expandedEntries.length < MAX_RELATION_CHAIN_ENTRIES) {
+    const current = queue.shift();
+    if (!current || current.depth > MAX_RELATION_CHAIN_DEPTH) {
+      continue;
+    }
+
+    try {
+      const response = await fetchJikan<JikanRelationEntry[]>(`/anime/${current.entry.mal_id}/relations`);
+      const nextGroup = response.data.find((group) => group.relation === relationType);
+      const nextEntries = nextGroup?.entry.filter((entry) => entry.type === "anime") ?? [];
+
+      for (const nextEntry of nextEntries) {
+        if (visited.has(nextEntry.mal_id)) {
+          continue;
+        }
+
+        visited.add(nextEntry.mal_id);
+        expandedEntries.push(nextEntry);
+
+        if (expandedEntries.length >= MAX_RELATION_CHAIN_ENTRIES) {
+          break;
+        }
+
+        queue.push({
+          entry: nextEntry,
+          depth: current.depth + 1,
+        });
+      }
+    } catch (error) {
+      console.error(`Failed to expand ${relationType} relations for anime ${current.entry.mal_id}:`, error);
+    }
+  }
+
+  return expandedEntries;
+}
+
 export async function getAnimeRelations(id: number) {
-  return fetchJikan<JikanRelationEntry[]>(`/anime/${id}/relations`);
+  const response = await fetchJikan<JikanRelationEntry[]>(`/anime/${id}/relations`);
+  const expandedRelations = await Promise.all(
+    response.data.map(async (group) => {
+      if (!EXPANDABLE_RELATION_TYPES.has(group.relation)) {
+        return group;
+      }
+
+      const nonAnimeEntries = group.entry.filter((entry) => entry.type !== "anime");
+      const expandedAnimeEntries = await expandRelationChain(group.entry, group.relation);
+
+      return {
+        ...group,
+        entry: [...expandedAnimeEntries, ...nonAnimeEntries],
+      };
+    }),
+  );
+
+  return {
+    ...response,
+    data: expandedRelations,
+  };
 }
 
 export const RELATION_TYPE_AR: Record<string, string> = {

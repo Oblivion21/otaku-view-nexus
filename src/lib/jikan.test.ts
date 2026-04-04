@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getAllAnimeEpisodes,
+  getAnimeRelations,
   getAnimeVideoEpisodes,
   getAnimeRecommendations,
   getGenres,
@@ -106,6 +107,38 @@ describe("jikan genre filtering", () => {
     const result = await getTopAnime();
 
     expect(result.data).toHaveLength(1);
+    expect(result.data[0].title).toBe("Allowed Anime");
+  });
+
+  it("retries retryable Jikan responses before succeeding", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        headers: new Headers({ "Retry-After": "0" }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [
+            {
+              ...baseAnime,
+              mal_id: 1,
+              title: "Allowed Anime",
+              genres: [{ mal_id: 1, name: "Action" }],
+            },
+          ],
+          pagination: {
+            last_visible_page: 1,
+            has_next_page: false,
+            current_page: 1,
+          },
+        }),
+      } as Response);
+
+    const result = await getTopAnime();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.data[0].title).toBe("Allowed Anime");
   });
 
@@ -227,6 +260,98 @@ describe("jikan genre filtering", () => {
           genres: [],
         },
         votes: 42,
+      },
+    ]);
+  });
+
+  it("expands sequel and prequel relation chains beyond the immediate neighbor", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+
+      if (url.endsWith("/anime/200/relations")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: [
+              {
+                relation: "Prequel",
+                entry: [{ mal_id: 100, type: "anime", name: "Season 1", url: "https://example.com/100" }],
+              },
+              {
+                relation: "Sequel",
+                entry: [{ mal_id: 300, type: "anime", name: "Season 3", url: "https://example.com/300" }],
+              },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.endsWith("/anime/100/relations")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: [
+              {
+                relation: "Prequel",
+                entry: [{ mal_id: 90, type: "anime", name: "Season 0", url: "https://example.com/90" }],
+              },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.endsWith("/anime/90/relations")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: [],
+          }),
+        } as Response;
+      }
+
+      if (url.endsWith("/anime/300/relations")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: [
+              {
+                relation: "Sequel",
+                entry: [{ mal_id: 400, type: "anime", name: "Season 4", url: "https://example.com/400" }],
+              },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.endsWith("/anime/400/relations")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: [],
+          }),
+        } as Response;
+      }
+
+      throw new Error(`Unexpected Jikan request in test: ${url}`);
+    });
+
+    const result = await getAnimeRelations(200);
+
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(result.data).toEqual([
+      {
+        relation: "Prequel",
+        entry: [
+          { mal_id: 100, type: "anime", name: "Season 1", url: "https://example.com/100" },
+          { mal_id: 90, type: "anime", name: "Season 0", url: "https://example.com/90" },
+        ],
+      },
+      {
+        relation: "Sequel",
+        entry: [
+          { mal_id: 300, type: "anime", name: "Season 3", url: "https://example.com/300" },
+          { mal_id: 400, type: "anime", name: "Season 4", url: "https://example.com/400" },
+        ],
       },
     ]);
   });

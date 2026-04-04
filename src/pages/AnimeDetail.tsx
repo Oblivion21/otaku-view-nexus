@@ -32,25 +32,37 @@ function hasPlayableEpisodeData(episode: Pick<AnimeEpisode, "video_sources" | "v
   );
 }
 
-function hasAnimeAlreadyAired(anime: Pick<JikanAnime, "status" | "aired">) {
-  if (anime.status === "Not yet aired") {
-    return false;
-  }
-
+function hasAnimeReleaseDelayElapsed(
+  anime: Pick<JikanAnime, "status" | "aired">,
+  delayMs = 0,
+) {
   const airedFrom = anime.aired?.from;
-  if (!airedFrom) {
-    return true;
+  if (airedFrom) {
+    const parsedAiredFrom = Date.parse(airedFrom);
+    if (!Number.isNaN(parsedAiredFrom)) {
+      return parsedAiredFrom + delayMs <= Date.now();
+    }
   }
 
-  const parsedAiredFrom = Date.parse(airedFrom);
-  if (Number.isNaN(parsedAiredFrom)) {
-    return true;
-  }
-
-  return parsedAiredFrom <= Date.now();
+  return delayMs === 0 && anime.status !== "Not yet aired";
 }
 
 const HIDDEN_RELATION_TYPES = new Set(["Character", "Other"]);
+const SERIES_RELEASE_DELAY_MS = 24 * 60 * 60 * 1000;
+
+function getFallbackRecommendationSourceId(relationsData: Awaited<ReturnType<typeof useAnimeRelations>>["data"]) {
+  const relationGroups = relationsData?.data ?? [];
+  const prequelGroup = relationGroups.find((group) => group.relation === "Prequel");
+  const prequelAnimeEntries = prequelGroup?.entry.filter((entry) => entry.type === "anime") ?? [];
+
+  if (prequelAnimeEntries.length > 0) {
+    return prequelAnimeEntries[prequelAnimeEntries.length - 1].mal_id;
+  }
+
+  const parentStoryGroup = relationGroups.find((group) => group.relation === "Parent Story");
+  const parentStoryEntry = parentStoryGroup?.entry.find((entry) => entry.type === "anime");
+  return parentStoryEntry?.mal_id ?? null;
+}
 
 export default function AnimeDetail() {
   const { id } = useParams<{ id: string }>();
@@ -74,6 +86,34 @@ export default function AnimeDetail() {
   const { data: recommendations, isLoading: loadingRec } = useAnimeRecommendations(animeId, shouldLoadRecommendations);
   const { data: characters, isLoading: loadingChars } = useAnimeCharacters(animeId, shouldLoadCharacters);
   const { data: relations, isLoading: loadingRelations } = useAnimeRelations(animeId, shouldLoadRelations);
+  const fallbackRecommendationSourceId = getFallbackRecommendationSourceId(relations);
+  const currentRecommendationItems = (() => {
+    if (!recommendations?.data) return [];
+
+    const seen = new Set<number>();
+    return [...recommendations.data]
+      .sort((a, b) => b.votes - a.votes)
+      .filter((rec) => {
+        const malId = rec.entry.mal_id;
+        if (seen.has(malId)) {
+          return false;
+        }
+        seen.add(malId);
+        return true;
+      })
+      .slice(0, 12);
+  })();
+  const shouldLoadFallbackRecommendations = Boolean(
+    shouldLoadRecommendations
+    && !loadingRec
+    && currentRecommendationItems.length === 0
+    && fallbackRecommendationSourceId
+    && fallbackRecommendationSourceId !== animeId,
+  );
+  const {
+    data: fallbackRecommendations,
+    isLoading: loadingFallbackRecommendations,
+  } = useAnimeRecommendations(fallbackRecommendationSourceId ?? 0, shouldLoadFallbackRecommendations);
   const isSeriesType = anime?.type === "TV" || anime?.type === "OVA" || anime?.type === "ONA" || anime?.type === "Special" || anime?.type === "TV Special";
   const isMovie = anime?.type === "Movie";
   const dedupedSupabaseEpisodes = dedupeSupabaseEpisodes(supabaseEpisodes)
@@ -81,6 +121,12 @@ export default function AnimeDetail() {
   const dedupedPublicEpisodes = dedupeJikanEpisodes(publicEpisodes);
   const hasSupabaseEpisodes = dedupedSupabaseEpisodes.length > 0;
   const hasPublicEpisodes = dedupedPublicEpisodes.length > 0;
+  const hasMovieReleaseWindowElapsed = anime && isMovie
+    ? hasAnimeReleaseDelayElapsed(anime)
+    : false;
+  const hasSeriesReleaseWindowElapsed = anime && isSeriesType
+    ? hasAnimeReleaseDelayElapsed(anime, SERIES_RELEASE_DELAY_MS)
+    : false;
   const hasMorePublicEpisodePages = Boolean(episodes?.pagination?.has_next_page);
   const loadingMoreEpisodes = Boolean(fetchingEp && episodePage > 1);
   const supabaseEpisodeMap = new Map(
@@ -88,7 +134,13 @@ export default function AnimeDetail() {
   );
   const firstPlayableSupabaseEpisode = dedupedSupabaseEpisodes.find((ep) => hasPlayableEpisodeData(ep)) ?? null;
   const firstSupabaseEpisode = dedupedSupabaseEpisodes[0] ?? null;
+  const firstPublicEpisode = dedupedPublicEpisodes[0] ?? null;
   const preferredMovieEpisodeNumber = firstPlayableSupabaseEpisode?.episode_number ?? firstSupabaseEpisode?.episode_number ?? 1;
+  const preferredSeriesEpisodeNumber =
+    firstPublicEpisode?.mal_id
+    ?? firstPlayableSupabaseEpisode?.episode_number
+    ?? firstSupabaseEpisode?.episode_number
+    ?? 1;
   const hasMovieMainPlayer = Boolean(
     (tmdbArtwork?.tmdbId && tmdbArtwork.mediaType === "movie")
     || aniListMedia?.id,
@@ -96,10 +148,9 @@ export default function AnimeDetail() {
   const canWatchMovie = Boolean(
     anime
     && isMovie
-    && hasAnimeAlreadyAired(anime)
-    && (hasMovieMainPlayer || hasPlayableEpisodeData(firstPlayableSupabaseEpisode)),
+    && hasMovieReleaseWindowElapsed
+    && (hasMovieMainPlayer || firstSupabaseEpisode),
   );
-  const canWatchSeries = Boolean(anime && isSeriesType && (hasSupabaseEpisodes || hasPublicEpisodes));
   const visiblePublicEpisodes = dedupedPublicEpisodes.slice(0, visibleEpisodeCount);
   const visibleSupabaseEpisodes = dedupedSupabaseEpisodes.slice(0, visibleEpisodeCount);
   const rawEpisodeRailItems = hasPublicEpisodes
@@ -126,34 +177,66 @@ export default function AnimeDetail() {
           filler: false,
         },
       }));
-  const episodeNumbers = rawEpisodeRailItems.map((item) => item.episodeNumber);
+  const requestedEpisodeNumbers = rawEpisodeRailItems.length > 0
+    ? rawEpisodeRailItems.map((item) => item.episodeNumber)
+    : anime && isSeriesType && hasSeriesReleaseWindowElapsed
+      ? [preferredSeriesEpisodeNumber]
+      : [];
   const { data: episodePreviewImageMap } = useAnimeEpisodePreviewImages(
     animeId,
     tmdbArtwork,
-    episodeNumbers,
-    canWatchSeries && !isMovie,
+    requestedEpisodeNumbers,
+    Boolean(anime && isSeriesType && hasSeriesReleaseWindowElapsed && requestedEpisodeNumbers.length > 0),
   );
   const { data: episodeImdbRatingMap } = useAnimeEpisodeImdbRatings(
     tmdbArtwork,
-    episodeNumbers,
-    canWatchSeries && !isMovie,
+    requestedEpisodeNumbers,
+    Boolean(anime && isSeriesType && hasSeriesReleaseWindowElapsed && requestedEpisodeNumbers.length > 0),
   );
-  const recommendationItems = (() => {
-    if (!recommendations?.data) return [];
+  const shouldShowFallbackFirstEpisode = Boolean(
+    anime
+    && isSeriesType
+    && hasSeriesReleaseWindowElapsed
+    && !hasSupabaseEpisodes
+    && !hasPublicEpisodes
+  );
+  const canWatchSeries = Boolean(
+    anime
+    && isSeriesType
+    && hasSeriesReleaseWindowElapsed,
+  );
+  const episodeRailSeedItems = rawEpisodeRailItems.length > 0
+    ? rawEpisodeRailItems
+    : shouldShowFallbackFirstEpisode
+      ? [{
+          episodeNumber: preferredSeriesEpisodeNumber,
+          title: `الحلقة ${preferredSeriesEpisodeNumber}`,
+          scoreLabel: null,
+          styleTarget: {
+            category: null,
+            tags: [],
+            filler: false,
+          },
+        }]
+      : [];
+  const recommendationItems = currentRecommendationItems.length > 0
+    ? currentRecommendationItems
+    : (() => {
+        if (!fallbackRecommendations?.data) return [];
 
-    const seen = new Set<number>();
-    return [...recommendations.data]
-      .sort((a, b) => b.votes - a.votes)
-      .filter((rec) => {
-        const malId = rec.entry.mal_id;
-        if (seen.has(malId)) {
-          return false;
-        }
-        seen.add(malId);
-        return true;
-      })
-      .slice(0, 12);
-  })();
+        const seen = new Set<number>();
+        return [...fallbackRecommendations.data]
+          .sort((a, b) => b.votes - a.votes)
+          .filter((rec) => {
+            const malId = rec.entry.mal_id;
+            if (seen.has(malId) || malId === animeId) {
+              return false;
+            }
+            seen.add(malId);
+            return true;
+          })
+          .slice(0, 12);
+      })();
   const recommendationAnime = dedupeAnimeList(recommendationItems.map((rec) => rec.entry as JikanAnime));
   const {
     data: recommendationArtworkMap,
@@ -356,7 +439,7 @@ export default function AnimeDetail() {
     ? null
     : tmdbPosterImage || resolveTitleArtworkUrl(null, anime, "poster");
   const episodeSeriesFallbackImage = bannerImage || posterImage;
-  const episodeRailItems = rawEpisodeRailItems.map((item) => {
+  const episodeRailItems = episodeRailSeedItems.map((item) => {
     const style = getEpisodeStyle(item.styleTarget);
     const previewImage = episodePreviewImageMap?.get(item.episodeNumber);
     const imdbRating = episodeImdbRatingMap?.get(item.episodeNumber) ?? previewImage?.imdbRating ?? null;
@@ -511,7 +594,7 @@ export default function AnimeDetail() {
               )}
               {canWatchSeries && (
                 <Button asChild>
-                  <Link to={`/watch/${anime.mal_id}/1`}>شاهد الحلقة 1</Link>
+                  <Link to={`/watch/${anime.mal_id}/${preferredSeriesEpisodeNumber}`}>{`شاهد الحلقة ${preferredSeriesEpisodeNumber}`}</Link>
                 </Button>
               )}
             </div>
@@ -527,7 +610,7 @@ export default function AnimeDetail() {
             loadingMore={loadingMoreEpisodes}
             items={episodeRailItems}
             emptyMessage="لا توجد حلقات متاحة"
-            headerActionHref={`/watch/${anime.mal_id}/1`}
+            headerActionHref={`/watch/${anime.mal_id}/${preferredSeriesEpisodeNumber}`}
             headerActionLabel="عرض كل الحلقات"
             onReachEnd={loadMoreEpisodes}
             hideControls
@@ -648,7 +731,12 @@ export default function AnimeDetail() {
         <div className="mt-10 space-y-4">
           <ContentRail
             title="أنمي مشابه"
-            loading={!shouldLoadRecommendations || loadingRec || (recommendationAnime.length > 0 && loadingRecommendationArtwork)}
+            loading={
+              !shouldLoadRecommendations
+              || loadingRec
+              || loadingFallbackRecommendations
+              || (recommendationAnime.length > 0 && loadingRecommendationArtwork)
+            }
             items={visibleRecommendationItems}
             emptyMessage="لا توجد توصيات متاحة"
             renderItem={(rec, index) => (
