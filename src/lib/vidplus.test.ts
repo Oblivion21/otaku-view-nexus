@@ -52,19 +52,19 @@ const tvArtwork: TmdbAnimeArtwork = {
 describe("vidplus helpers", () => {
   it("builds an anime episode embed from AniList id and episode number", () => {
     expect(buildVidplusAnimeEmbedUrl(baseMedia, 1)).toBe(
-      "https://player.vidplus.to/embed/anime/172463/1?autoplay=true&dub=false&episodelist=false&servericon=false&chromecast=false",
+      "https://player.vidplus.to/embed/anime/172463/1?autoplay=true&dub=false",
     );
   });
 
   it("builds a tmdb movie embed url", () => {
     expect(buildVidplusMovieEmbedUrl(movieArtwork)).toBe(
-      "https://player.vidplus.to/embed/movie/533535?autoplay=true&episodelist=false&servericon=false&chromecast=false",
+      "https://player.vidplus.to/embed/movie/533535?autoplay=true",
     );
   });
 
   it("builds a tmdb tv embed url with season and episode", () => {
     expect(buildVidplusTvEmbedUrl(tvArtwork, 1, 1)).toBe(
-      "https://player.vidplus.to/embed/tv/66732/1/1?autoplay=true&episodelist=false&servericon=false&chromecast=false",
+      "https://player.vidplus.to/embed/tv/66732/1/1?autoplay=true",
     );
   });
 
@@ -76,22 +76,22 @@ describe("vidplus helpers", () => {
 
   it("resolves anime content through AniList when available", () => {
     expect(resolveVidplusPlayerUrl(null, baseMedia, "TV", 7)).toBe(
-      "https://player.vidplus.to/embed/anime/172463/7?autoplay=true&dub=false&episodelist=false&servericon=false&chromecast=false",
+      "https://player.vidplus.to/embed/anime/172463/7?autoplay=true&dub=false",
     );
     expect(resolveVidplusPlayerUrl(movieArtwork, baseMedia, "Movie", 1)).toBe(
-      "https://player.vidplus.to/embed/anime/172463/1?autoplay=true&dub=false&episodelist=false&servericon=false&chromecast=false",
+      "https://player.vidplus.to/embed/anime/172463/1?autoplay=true&dub=false",
     );
   });
 
   it("falls back to the tv embed when AniList is unavailable but tmdb tv metadata exists", () => {
     expect(resolveVidplusPlayerUrl(tvArtwork, null, "TV", 3)).toBe(
-      "https://player.vidplus.to/embed/tv/66732/1/3?autoplay=true&episodelist=false&servericon=false&chromecast=false",
+      "https://player.vidplus.to/embed/tv/66732/1/3?autoplay=true",
     );
   });
 
   it("falls back to the movie embed when AniList is unavailable for movies", () => {
     expect(resolveVidplusPlayerUrl(movieArtwork, null, "Movie", 1)).toBe(
-      "https://player.vidplus.to/embed/movie/533535?autoplay=true&episodelist=false&servericon=false&chromecast=false",
+      "https://player.vidplus.to/embed/movie/533535?autoplay=true",
     );
   });
 });

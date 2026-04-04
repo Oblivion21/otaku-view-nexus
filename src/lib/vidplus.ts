@@ -8,10 +8,7 @@ type VidplusServer = string;
 type VidplusOptions = {
   autoplay?: boolean;
   dub?: boolean;
-  chromecast?: boolean;
-  episodeList?: boolean;
   server?: VidplusServer | null;
-  serverIcon?: boolean;
 };
 
 function buildVidplusParams(options: VidplusOptions = {}) {
@@ -24,10 +21,6 @@ function buildVidplusParams(options: VidplusOptions = {}) {
   if (typeof options.dub === "boolean") {
     params.set("dub", String(options.dub));
   }
-
-  params.set("episodelist", String(options.episodeList ?? false));
-  params.set("servericon", String(options.serverIcon ?? false));
-  params.set("chromecast", String(options.chromecast ?? false));
 
   if (options.server) {
     params.set("server", options.server);
