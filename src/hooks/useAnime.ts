@@ -25,6 +25,7 @@ import { getAnimeTmdbArtwork } from "@/lib/tmdb";
 import { getMultipleAnimeTmdbArtwork } from "@/lib/tmdb";
 import { getAnimeEpisodeStills } from "@/lib/tmdb";
 import { getAnimeEpisodePreviewImages } from "@/lib/tmdb";
+import { getAnimeEpisodeImdbRatings } from "@/lib/tmdb";
 import type { AnimeArtworkLookup } from "@/lib/tmdb";
 import { getFeaturedCarouselItems } from "@/lib/featuredCarousel";
 
@@ -154,6 +155,37 @@ export function useAnimeEpisodePreviewImages(
     queryFn: () => getAnimeEpisodePreviewImages(animeId, artwork, normalizedEpisodeNumbers),
     enabled: enabled
       && Boolean(animeId)
+      && normalizedEpisodeNumbers.length > 0,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+}
+
+export function useAnimeEpisodeImdbRatings(
+  artwork: Awaited<ReturnType<typeof getAnimeTmdbArtwork>>,
+  episodeNumbers: number[],
+  enabled = true,
+) {
+  const normalizedEpisodeNumbers = Array.from(
+    new Set(
+      episodeNumbers
+        .map((episodeNumber) => Number(episodeNumber))
+        .filter((episodeNumber) => Number.isInteger(episodeNumber) && episodeNumber > 0),
+    ),
+  ).sort((a, b) => a - b);
+
+  return useQuery({
+    queryKey: [
+      "anime-episode-imdb-ratings",
+      artwork?.tmdbId,
+      artwork?.mediaType,
+      artwork?.seasonNumber,
+      normalizedEpisodeNumbers,
+    ],
+    queryFn: () => getAnimeEpisodeImdbRatings(artwork, normalizedEpisodeNumbers),
+    enabled: enabled
+      && Boolean(artwork?.tmdbId)
+      && artwork?.mediaType === "tv"
+      && Boolean(artwork?.seasonNumber)
       && normalizedEpisodeNumbers.length > 0,
     staleTime: 24 * 60 * 60 * 1000,
   });

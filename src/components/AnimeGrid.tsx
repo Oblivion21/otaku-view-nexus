@@ -42,6 +42,7 @@ export default function AnimeGrid({ title, anime, isLoading, artworkMap: artwork
               key={a.mal_id}
               anime={a}
               artworkUrl={resolveTitleArtworkUrl(artworkMap?.get(a.mal_id), a, "poster")}
+              scoreValue={artworkMap?.get(a.mal_id)?.imdbRating ?? null}
             />
           ))}
         </div>

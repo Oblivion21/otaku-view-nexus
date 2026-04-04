@@ -6,6 +6,7 @@ const hookMocks = vi.hoisted(() => ({
   useAnimeById: vi.fn(),
   useAllAnimeEpisodes: vi.fn(),
   useAnimeAniListMedia: vi.fn(),
+  useAnimeEpisodeImdbRatings: vi.fn(),
   useAnimeTmdbArtwork: vi.fn(),
 }));
 
@@ -107,6 +108,9 @@ describe("EpisodeWatch", () => {
       data: null,
       isLoading: false,
       error: null,
+    });
+    hookMocks.useAnimeEpisodeImdbRatings.mockReturnValue({
+      data: new Map(),
     });
 
     jikanMocks.isBlockedAnime.mockReturnValue(false);

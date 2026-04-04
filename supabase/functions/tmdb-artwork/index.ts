@@ -9,6 +9,7 @@ const TMDB_API_URL = 'https://api.themoviedb.org/3'
 const TMDB_IMAGE_FALLBACK_BASE_URL = 'https://image.tmdb.org/t/p/'
 const DEFAULT_BACKDROP_SIZE = 'original'
 const DEFAULT_POSTER_SIZE = 'w780'
+const OMDB_API_URL = 'https://www.omdbapi.com/'
 
 type TmdbMediaType = 'movie' | 'tv'
 type TmdbMatchConfidence = 'high' | 'medium' | 'low'
@@ -30,6 +31,7 @@ type TmdbAnimeArtwork = {
   mediaType: TmdbMediaType
   posterUrl: string | null
   backdropUrl: string | null
+  imdbRating: number | null
   trailerYoutubeId: string | null
   matchedTitle: string | null
   seasonNumber: number | null
@@ -74,6 +76,10 @@ type TmdbTvDetailsResponse = {
   seasons?: TmdbTvSeason[]
 }
 
+type TmdbExternalIdsResponse = {
+  imdb_id?: string | null
+}
+
 type TmdbVideoResult = {
   site?: string | null
   key?: string | null
@@ -113,7 +119,10 @@ type TrailerRequest = {
 
 let configurationPromise: Promise<TmdbConfigurationResponse['images']> | null = null
 const artworkCache = new Map<number, Promise<TmdbAnimeArtwork | null>>()
+const tmdbImdbIdCache = new Map<string, Promise<string | null>>()
+const imdbRatingCache = new Map<string, Promise<number | null>>()
 let missingTokenLogged = false
+let missingOmdbKeyLogged = false
 
 function jsonResponse(data: object, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -124,6 +133,10 @@ function jsonResponse(data: object, status = 200) {
 
 function getTmdbReadAccessToken() {
   return Deno.env.get('TMDB_READ_ACCESS_TOKEN')?.trim() || ''
+}
+
+function getOmdbApiKey() {
+  return Deno.env.get('OMDB_API_KEY')?.trim() || ''
 }
 
 async function fetchTmdb<T>(
@@ -168,6 +181,100 @@ async function getTmdbConfiguration() {
   }
 
   return configurationPromise
+}
+
+function parseOmdbRating(value: unknown) {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const normalized = value.trim()
+  if (!normalized || normalized === 'N/A') {
+    return null
+  }
+
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+async function fetchOmdb(params: Record<string, string | number | undefined>) {
+  const apiKey = getOmdbApiKey()
+
+  if (!apiKey) {
+    if (!missingOmdbKeyLogged) {
+      missingOmdbKeyLogged = true
+      console.warn('OMDB_API_KEY secret is missing. Returning null IMDb ratings.')
+    }
+    return null
+  }
+
+  const url = new URL(OMDB_API_URL)
+  url.searchParams.set('apikey', apiKey)
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      url.searchParams.set(key, String(value))
+    }
+  })
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Accept: 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`OMDb API error: ${response.status}`)
+  }
+
+  const payload = await response.json() as Record<string, unknown>
+  if (payload.Response === 'False') {
+    return null
+  }
+
+  return payload
+}
+
+async function getTmdbImdbId(tmdbId: number, mediaType: TmdbMediaType) {
+  const cacheKey = `${mediaType}:${tmdbId}`
+  const cached = tmdbImdbIdCache.get(cacheKey)
+  if (cached) {
+    return cached
+  }
+
+  const request = fetchTmdb<TmdbExternalIdsResponse>(`/${mediaType}/${tmdbId}/external_ids`)
+    .then((response) => response.imdb_id?.trim() || null)
+    .catch((error) => {
+      tmdbImdbIdCache.delete(cacheKey)
+      console.error(`Failed to load TMDB external ids for ${cacheKey}:`, error)
+      return null
+    })
+
+  tmdbImdbIdCache.set(cacheKey, request)
+  return request
+}
+
+async function getImdbRatingForTmdbTitle(tmdbId: number, mediaType: TmdbMediaType) {
+  const imdbId = await getTmdbImdbId(tmdbId, mediaType)
+  if (!imdbId) {
+    return null
+  }
+
+  const cached = imdbRatingCache.get(imdbId)
+  if (cached) {
+    return cached
+  }
+
+  const request = fetchOmdb({ i: imdbId })
+    .then((payload) => parseOmdbRating(payload?.imdbRating))
+    .catch((error) => {
+      imdbRatingCache.delete(imdbId)
+      console.error(`Failed to load IMDb rating for ${imdbId}:`, error)
+      return null
+    })
+
+  imdbRatingCache.set(imdbId, request)
+  return request
 }
 
 function normalizeTitle(value: string) {
@@ -698,9 +805,13 @@ async function loadAnimeArtwork(anime: AnimeArtworkLookup): Promise<TmdbAnimeArt
           matchConfidence: getTmdbMatchConfidence(match.score),
         }
 
-    const [posterUrl, backdropUrl, trailerYoutubeId] = await Promise.all([
+    const [posterUrl, backdropUrl, imdbRating, trailerYoutubeId] = await Promise.all([
       buildImageUrl(match.result.poster_path, DEFAULT_POSTER_SIZE),
       buildImageUrl(match.result.backdrop_path, DEFAULT_BACKDROP_SIZE),
+      getImdbRatingForTmdbTitle(match.result.id, match.mediaType).catch((error) => {
+        console.error(`Failed to load IMDb rating for anime ${anime.mal_id}:`, error)
+        return null
+      }),
       getPreferredTrailerYoutubeId(match.mediaType, match.result.id, seasonContext.seasonNumber).catch((error) => {
         console.error(`Failed to load TMDB trailer for anime ${anime.mal_id}:`, error)
         return null
@@ -712,6 +823,7 @@ async function loadAnimeArtwork(anime: AnimeArtworkLookup): Promise<TmdbAnimeArt
       mediaType: match.mediaType,
       posterUrl,
       backdropUrl,
+      imdbRating,
       trailerYoutubeId,
       matchedTitle: getResultTitles(match.result)[0] || null,
       seasonNumber: seasonContext.seasonNumber,

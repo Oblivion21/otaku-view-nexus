@@ -15,6 +15,7 @@ const hookMocks = vi.hoisted(() => ({
   useAnimeRelations: vi.fn(),
   useAnimeTmdbArtwork: vi.fn(),
   useAnimeEpisodePreviewImages: vi.fn(),
+  useAnimeEpisodeImdbRatings: vi.fn(),
   useMultipleAnimeTmdbArtwork: vi.fn(),
 }));
 
@@ -48,6 +49,8 @@ type MockEpisodePreviewRailProps = {
   headerActionLabel: string;
   loadingMore?: boolean;
   onReachEnd?: () => void;
+  hideControls?: boolean;
+  hintSwipeOnMount?: boolean;
 };
 
 type MockAnimeCardProps = {
@@ -68,8 +71,12 @@ vi.mock("@/components/ContentRail", () => ({
   ),
 }));
 vi.mock("@/components/EpisodePreviewRail", () => ({
-  default: ({ title, items, emptyMessage, headerActionHref, headerActionLabel, loadingMore, onReachEnd }: MockEpisodePreviewRailProps) => (
-    <section data-testid="episode-preview-rail">
+  default: ({ title, items, emptyMessage, headerActionHref, headerActionLabel, loadingMore, onReachEnd, hideControls, hintSwipeOnMount }: MockEpisodePreviewRailProps) => (
+    <section
+      data-testid="episode-preview-rail"
+      data-hide-controls={hideControls ? "true" : "false"}
+      data-hint-swipe-on-mount={hintSwipeOnMount ? "true" : "false"}
+    >
       <div>{title}</div>
       <a href={headerActionHref}>{headerActionLabel}</a>
       <button type="button" onClick={onReachEnd}>Load more episodes</button>
@@ -199,6 +206,9 @@ describe("AnimeDetail", () => {
     hookMocks.useAnimeEpisodePreviewImages.mockReturnValue({
       data: new Map(),
     });
+    hookMocks.useAnimeEpisodeImdbRatings.mockReturnValue({
+      data: new Map(),
+    });
     hookMocks.useMultipleAnimeTmdbArtwork.mockReturnValue({
       data: new Map([
         [2, { posterUrl: "https://image.tmdb.org/t/p/w780/bleach-poster.jpg", backdropUrl: null }],
@@ -266,6 +276,8 @@ describe("AnimeDetail", () => {
 
     renderPage();
 
+    expect(screen.getByTestId("episode-preview-rail")).toHaveAttribute("data-hide-controls", "true");
+    expect(screen.getByTestId("episode-preview-rail")).toHaveAttribute("data-hint-swipe-on-mount", "true");
     expect(screen.getByTestId("episode-preview-24")).toBeInTheDocument();
     expect(screen.queryByTestId("episode-preview-25")).not.toBeInTheDocument();
 
@@ -456,7 +468,7 @@ describe("AnimeDetail", () => {
     expect(await screen.findByRole("heading", { name: "Naruto" })).toBeInTheDocument();
     expect(screen.getByTestId("episode-preview-97")).toHaveAttribute(
       "data-badges",
-      expect.stringContaining("فلر"),
+      expect.stringContaining("Filler"),
     );
   });
 

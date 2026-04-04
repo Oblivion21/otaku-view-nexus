@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAllAnimeEpisodes, useAnimeAniListMedia, useAnimeById, useAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { useAllAnimeEpisodes, useAnimeAniListMedia, useAnimeById, useAnimeEpisodeImdbRatings, useAnimeTmdbArtwork } from "@/hooks/useAnime";
 import { isBlockedAnime } from "@/lib/jikan";
 import { buildEpisodeDataFromScrape } from "@/lib/episodePlayback";
 import { getAnimeDetailPath } from "@/lib/animeRoutes";
@@ -15,6 +15,7 @@ import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { resolveVidplusPlayerUrl } from "@/lib/vidplus";
 import { resolveVidplaysPlayerUrl } from "@/lib/vidplays";
 import { getVideasyUnavailableReason, resolveVideasyMainPlayerUrl } from "@/lib/videasy";
+import { formatTenPointScoreLabel, resolveEpisodeScoreLabel } from "@/lib/scores";
 import {
   getEpisodeData,
   getAnimeEpisodes,
@@ -84,15 +85,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-function formatEpisodeScoreLabel(score: number | null | undefined) {
-  if (typeof score !== "number" || Number.isNaN(score) || score <= 0) {
-    return null;
-  }
-
-  const normalizedScore = score <= 5 ? score * 2 : score;
-  return normalizedScore.toFixed(1);
-}
-
 type PlayerTab = "main" | "backup" | "vidplays" | "vidplus";
 type MainPlayerStatus = "idle" | "loading" | "ready" | "unavailable" | "error";
 
@@ -146,7 +138,7 @@ export default function EpisodeWatch() {
           id: dbEpisode?.id || `jikan-${ep.mal_id}`,
           episode_number: ep.mal_id,
           title: ep.title || `الحلقة ${ep.mal_id}`,
-          scoreLabel: formatEpisodeScoreLabel(ep.score),
+          scoreLabel: resolveEpisodeScoreLabel(null, ep.score),
           filler: ep.filler || dbEpisode?.tags?.includes("filler") || false,
           category: dbEpisode?.category ?? null,
           tags: dbEpisode?.tags ?? [],
@@ -161,6 +153,12 @@ export default function EpisodeWatch() {
         category: ep.category ?? null,
         tags: ep.tags ?? [],
       }));
+  const episodeNumbers = displayEpisodes.map((ep) => ep.episode_number);
+  const { data: episodeImdbRatingMap } = useAnimeEpisodeImdbRatings(
+    tmdbArtwork,
+    episodeNumbers,
+    !isTrailer && !isMovie,
+  );
   const filteredEpisodes = displayEpisodes.filter((ep) => {
     const query = episodeSearchQuery.trim().toLowerCase();
     if (!query) return true;
@@ -842,6 +840,7 @@ export default function EpisodeWatch() {
                     {filteredEpisodes.map((ep) => {
                       const style = getEpisodeStyle(ep, animeId);
                       const isCurrentEpisode = ep.episode_number === epNum;
+                      const scoreLabel = formatTenPointScoreLabel(episodeImdbRatingMap?.get(ep.episode_number) ?? null) || ep.scoreLabel;
 
                       return (
                         <Link
@@ -859,7 +858,7 @@ export default function EpisodeWatch() {
                           <span className="min-w-0 flex-1 text-sm line-clamp-1">
                             {ep.title || `الحلقة ${ep.episode_number}`}
                           </span>
-                          {(ep.scoreLabel || ep.filler) && (
+                          {(scoreLabel || ep.filler) && (
                             <div className="shrink-0 flex flex-wrap items-center justify-end gap-2 self-center">
                               {ep.filler && (
                                 <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
@@ -870,13 +869,13 @@ export default function EpisodeWatch() {
                                   Filler
                                 </span>
                               )}
-                              {ep.scoreLabel && (
+                              {scoreLabel && (
                                 <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
                                   isCurrentEpisode
                                     ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground"
                                     : "border-amber-400/30 bg-amber-400/10 text-amber-300"
                                 }`}>
-                                  {ep.scoreLabel}
+                                  {scoreLabel}
                                 </span>
                               )}
                             </div>

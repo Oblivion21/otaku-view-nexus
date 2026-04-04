@@ -7,6 +7,7 @@ import { Star } from "lucide-react";
 import { TYPE_MAP, isBlockedAnime } from "@/lib/jikan";
 import { getAnimeDetailPath } from "@/lib/animeRoutes";
 import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import { formatTenPointScoreLabel, resolvePreferredScore } from "@/lib/scores";
 
 interface RelatedAnimeCardProps {
   mal_id: number;
@@ -52,7 +53,7 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
     return () => window.clearTimeout(timeoutId);
   }, [anime, failureCount, isError, refetch]);
 
-  if (!anime && (isLoading || isFetching || isError)) {
+  if (!anime && (isLoading || isFetching)) {
     return (
       <div className="group block rounded-lg overflow-hidden bg-card border border-border">
         <div className="relative aspect-[3/4] overflow-hidden">
@@ -66,31 +67,25 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
     );
   }
 
-  if (!anime) {
-    return null;
-  }
-
   if (anime && isBlockedAnime(anime)) {
     return null;
   }
 
   const isArtworkPending = Boolean(anime && loadingTmdbArtwork);
-  const imageUrl = isArtworkPending ? null : resolveTitleArtworkUrl(tmdbArtwork, anime, "poster");
-  const shouldHide = Boolean(anime && !isLoading && !loadingTmdbArtwork && !hasAnyTitleArtwork(anime, tmdbArtwork));
-  const releaseYear = getReleaseYear(anime);
-
-  if (shouldHide) {
-    return null;
-  }
+  const imageUrl = anime && !isArtworkPending ? resolveTitleArtworkUrl(tmdbArtwork, anime, "poster") : null;
+  const releaseYear = anime ? getReleaseYear(anime) : null;
+  const title = anime?.title || name;
+  const displayScore = formatTenPointScoreLabel(resolvePreferredScore(tmdbArtwork?.imdbRating, anime?.score));
+  const detailPath = getAnimeDetailPath({
+    mal_id,
+    title,
+    title_english: anime?.title_english,
+    title_japanese: anime?.title_japanese,
+  });
 
   return (
     <Link
-      to={getAnimeDetailPath({
-        mal_id,
-        title: anime?.title || name,
-        title_english: anime?.title_english,
-        title_japanese: anime?.title_japanese,
-      })}
+      to={detailPath}
       className="group block rounded-lg overflow-hidden bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5"
     >
       <div className="relative aspect-[3/4] overflow-hidden">
@@ -103,13 +98,19 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
           />
-        ) : null}
+        ) : (
+          <div className="flex h-full w-full items-end bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.18),_transparent_55%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] p-3">
+            <span className="line-clamp-3 text-sm font-semibold leading-6 text-foreground/90">
+              {title}
+            </span>
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
 
-        {anime?.score && (
+        {displayScore && (
           <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/70 rounded-md px-2 py-0.5">
             <Star className="h-3 w-3 fill-anime-gold text-anime-gold" />
-            <span className="text-xs font-bold text-anime-gold">{anime.score}</span>
+            <span className="text-xs font-bold text-anime-gold">{displayScore}</span>
           </div>
         )}
 
@@ -130,7 +131,7 @@ export default function RelatedAnimeCard({ mal_id, name, relationLabel }: Relate
 
       <div className="p-2.5">
         <h3 className="text-sm font-semibold line-clamp-2 leading-tight group-hover:text-primary transition-colors">
-          {name}
+          {title}
         </h3>
         <div className="mt-1.5 space-y-1.5">
           {releaseYear && (

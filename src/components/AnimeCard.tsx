@@ -4,10 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import type { JikanAnime } from "@/lib/jikan";
 import { GENRE_AR, TYPE_MAP, getVisibleGenres } from "@/lib/jikan";
 import { getAnimeDetailPath } from "@/lib/animeRoutes";
+import { formatTenPointScoreLabel, resolvePreferredScore } from "@/lib/scores";
 
 interface AnimeCardProps {
   anime: JikanAnime;
   artworkUrl?: string | null;
+  scoreValue?: number | null;
 }
 
 function getReleaseYear(anime: JikanAnime) {
@@ -20,9 +22,10 @@ function getReleaseYear(anime: JikanAnime) {
   return Number.isFinite(parsedYear) ? parsedYear : null;
 }
 
-export default function AnimeCard({ anime, artworkUrl = null }: AnimeCardProps) {
+export default function AnimeCard({ anime, artworkUrl = null, scoreValue = null }: AnimeCardProps) {
   const resolvedArtworkUrl = artworkUrl;
   const releaseYear = getReleaseYear(anime);
+  const displayScore = formatTenPointScoreLabel(resolvePreferredScore(scoreValue, anime.score));
 
   if (!resolvedArtworkUrl) {
     return null;
@@ -44,10 +47,10 @@ export default function AnimeCard({ anime, artworkUrl = null }: AnimeCardProps) 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
 
         {/* Score badge */}
-        {anime.score && (
+        {displayScore && (
           <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/70 rounded-md px-2 py-0.5">
             <Star className="h-3 w-3 fill-anime-gold text-anime-gold" />
-            <span className="text-xs font-bold text-anime-gold">{anime.score}</span>
+            <span className="text-xs font-bold text-anime-gold">{displayScore}</span>
           </div>
         )}
 

@@ -1,7 +1,7 @@
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const carouselMocks = vi.hoisted(() => ({
   carouselSpy: vi.fn(),
@@ -10,6 +10,8 @@ const carouselMocks = vi.hoisted(() => ({
   api: {
     on: vi.fn(),
     off: vi.fn(),
+    scrollPrev: vi.fn(),
+    scrollNext: vi.fn(),
     scrollSnapList: vi.fn(() => [0, 1, 2, 3]),
     selectedScrollSnap: vi.fn(() => 2),
   },
@@ -51,11 +53,30 @@ import EpisodePreviewRail from "@/components/EpisodePreviewRail";
 describe("EpisodePreviewRail", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
     carouselMocks.api.scrollSnapList.mockReturnValue([0, 1, 2, 3]);
     carouselMocks.api.selectedScrollSnap.mockReturnValue(2);
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: false,
+        media: "(prefers-reduced-motion: reduce)",
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
   });
 
-  it("keeps the episode rail RTL without hardcoded arrow positions", () => {
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  it("keeps the episode rail RTL and hides controls when requested", () => {
     render(
       <MemoryRouter>
         <EpisodePreviewRail
@@ -73,6 +94,7 @@ describe("EpisodePreviewRail", () => {
           emptyMessage="Nothing here"
           headerActionHref="/anime/1"
           headerActionLabel="View all"
+          hideControls
         />
       </MemoryRouter>,
     );
@@ -82,16 +104,10 @@ describe("EpisodePreviewRail", () => {
     expect(screen.getByText("EPISODE 1")).toBeInTheDocument();
     expect(screen.getByText("8.7")).toBeInTheDocument();
     expect(carouselMocks.carouselSpy).toHaveBeenCalledWith(expect.objectContaining({ dir: "rtl" }));
-    expect(carouselMocks.previousSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        className: expect.not.stringMatching(/\bleft-0\b|\bright-0\b/),
-      }),
-    );
-    expect(carouselMocks.nextSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        className: expect.not.stringMatching(/\bleft-0\b|\bright-0\b/),
-      }),
-    );
+    expect(screen.queryByRole("button", { name: "Previous" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next" })).not.toBeInTheDocument();
+    expect(carouselMocks.previousSpy).not.toHaveBeenCalled();
+    expect(carouselMocks.nextSpy).not.toHaveBeenCalled();
   });
 
   it("renders a neutral placeholder when an episode has no preview image", () => {
@@ -182,6 +198,99 @@ describe("EpisodePreviewRail", () => {
     selectHandler?.();
 
     expect(handleReachEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("plays a one-time swipe hint on mount when enabled", () => {
+    render(
+      <MemoryRouter>
+        <EpisodePreviewRail
+          title="Latest Episodes"
+          items={[
+            {
+              episodeNumber: 1,
+              title: "Episode 1",
+              href: "/watch/1/1",
+              imageUrl: "https://image.tmdb.org/t/p/w780/ep1.jpg",
+            },
+            {
+              episodeNumber: 2,
+              title: "Episode 2",
+              href: "/watch/1/2",
+              imageUrl: "https://image.tmdb.org/t/p/w780/ep2.jpg",
+            },
+          ]}
+          emptyMessage="Nothing here"
+          headerActionHref="/anime/1"
+          headerActionLabel="View all"
+          hintSwipeOnMount
+        />
+      </MemoryRouter>,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(449);
+    });
+    expect(carouselMocks.api.scrollNext).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(carouselMocks.api.scrollNext).toHaveBeenCalledTimes(1);
+    expect(carouselMocks.api.scrollPrev).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(carouselMocks.api.scrollPrev).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not play the swipe hint when reduced motion is enabled", () => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: true,
+        media: "(prefers-reduced-motion: reduce)",
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    render(
+      <MemoryRouter>
+        <EpisodePreviewRail
+          title="Latest Episodes"
+          items={[
+            {
+              episodeNumber: 1,
+              title: "Episode 1",
+              href: "/watch/1/1",
+              imageUrl: "https://image.tmdb.org/t/p/w780/ep1.jpg",
+            },
+            {
+              episodeNumber: 2,
+              title: "Episode 2",
+              href: "/watch/1/2",
+              imageUrl: "https://image.tmdb.org/t/p/w780/ep2.jpg",
+            },
+          ]}
+          emptyMessage="Nothing here"
+          headerActionHref="/anime/1"
+          headerActionLabel="View all"
+          hintSwipeOnMount
+        />
+      </MemoryRouter>,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+
+    expect(carouselMocks.api.scrollNext).not.toHaveBeenCalled();
+    expect(carouselMocks.api.scrollPrev).not.toHaveBeenCalled();
   });
 
   it("renders filler badges in English at the top-right of the preview image", () => {

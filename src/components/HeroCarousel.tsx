@@ -11,11 +11,13 @@ import { dedupeAnimeList } from "@/lib/listDeduping";
 import type { FeaturedCarouselAnime } from "@/lib/featuredCarousel";
 import { getMultipleAnimeTmdbArtwork, type TmdbAnimeArtwork } from "@/lib/tmdb";
 import { hasAnyTitleArtwork, resolveTitleArtworkUrl } from "@/lib/titleArtwork";
+import { formatTenPointScoreLabel, resolvePreferredScore } from "@/lib/scores";
 import { useState, useEffect, useRef } from "react";
 
 interface AnimeWithBanner {
   anime: FeaturedCarouselAnime
   bannerImage: string | null
+  artwork: TmdbAnimeArtwork | null
 }
 
 export default function HeroCarousel() {
@@ -53,6 +55,7 @@ export default function HeroCarousel() {
         return {
           anime,
           bannerImage: resolveTitleArtworkUrl(artwork, anime, "banner"),
+          artwork: artwork ?? null,
         };
       });
   }
@@ -254,7 +257,8 @@ export default function HeroCarousel() {
 
   if (items.length === 0) return null;
 
-  const { anime, bannerImage } = items[current];
+  const { anime, bannerImage, artwork } = items[current];
+  const displayScore = formatTenPointScoreLabel(resolvePreferredScore(artwork?.imdbRating, anime.score));
 
   return (
     <div
@@ -315,10 +319,10 @@ export default function HeroCarousel() {
       <div className="relative container h-full flex items-center">
         <div className="max-w-xl space-y-4">
           <div className="flex items-center gap-2 flex-wrap">
-            {anime.score && (
+            {displayScore && (
               <div className="flex items-center gap-1">
                 <Star className="h-4 w-4 fill-anime-gold text-anime-gold" />
-                <span className="text-sm font-bold text-anime-gold">{anime.score}</span>
+                <span className="text-sm font-bold text-anime-gold">{displayScore}</span>
               </div>
             )}
             {getVisibleGenres(anime).slice(0, 3).map((g) => (

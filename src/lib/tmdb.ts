@@ -6,12 +6,14 @@ export type TmdbMatchConfidence = "high" | "medium" | "low";
 export type EpisodePreviewArtwork = {
   episodeNumber: number;
   stillUrl: string | null;
+  imdbRating: number | null;
 };
 
 export type EpisodePreviewImage = {
   episodeNumber: number;
   imageUrl: string | null;
   fallbackImageUrl: string | null;
+  imdbRating: number | null;
   source: "tmdb" | "jikan" | "none";
 };
 
@@ -32,6 +34,7 @@ export interface TmdbAnimeArtwork {
   mediaType: TmdbMediaType;
   posterUrl: string | null;
   backdropUrl: string | null;
+  imdbRating: number | null;
   trailerYoutubeId: string | null;
   matchedTitle: string | null;
   seasonNumber: number | null;
@@ -45,7 +48,12 @@ interface TmdbArtworkResponse {
 }
 
 interface TmdbEpisodeStillResponse {
-  results?: Record<string, { stillUrl: string | null } | null>;
+  results?: Record<string, { stillUrl: string | null; imdbRating?: number | null } | null>;
+  error?: string;
+}
+
+interface TmdbEpisodeRatingsResponse {
+  results?: Record<string, { imdbRating: number | null } | null>;
   error?: string;
 }
 
@@ -226,12 +234,72 @@ export async function getAnimeEpisodeStills(
         {
           episodeNumber: Number(episodeNumber),
           stillUrl: result?.stillUrl ?? null,
+          imdbRating: result?.imdbRating ?? null,
         },
       ]),
     );
   } catch (error) {
     console.error("Failed to fetch TMDB episode stills via Supabase function:", error);
     return new Map<number, EpisodePreviewArtwork>();
+  }
+}
+
+export async function getAnimeEpisodeImdbRatings(
+  artwork: TmdbAnimeArtwork | null | undefined,
+  episodeNumbers: number[],
+) {
+  if (
+    !supabase ||
+    !artwork?.tmdbId ||
+    artwork.mediaType !== "tv" ||
+    !artwork.seasonNumber
+  ) {
+    return new Map<number, number | null>();
+  }
+
+  const uniqueEpisodeNumbers = Array.from(
+    new Set(
+      episodeNumbers
+        .map((episodeNumber) => Number(episodeNumber))
+        .filter((episodeNumber) => Number.isInteger(episodeNumber) && episodeNumber > 0),
+    ),
+  );
+
+  if (uniqueEpisodeNumbers.length === 0) {
+    return new Map<number, number | null>();
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke("tmdb-episode-ratings", {
+      body: {
+        tmdbId: artwork.tmdbId,
+        mediaType: artwork.mediaType,
+        seasonNumber: artwork.seasonNumber,
+        episodeNumbers: uniqueEpisodeNumbers,
+      },
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const payload = data as TmdbEpisodeRatingsResponse | null;
+    if (!payload?.results) {
+      if (payload?.error) {
+        throw new Error(payload.error);
+      }
+      return new Map<number, number | null>();
+    }
+
+    return new Map(
+      Object.entries(payload.results).map(([episodeNumber, result]) => [
+        Number(episodeNumber),
+        result?.imdbRating ?? null,
+      ]),
+    );
+  } catch (error) {
+    console.error("Failed to fetch TMDB episode IMDb ratings via Supabase function:", error);
+    return new Map<number, number | null>();
   }
 }
 
@@ -275,6 +343,7 @@ export async function getAnimeEpisodePreviewImages(
         episodeNumber,
         imageUrl: stillUrl,
         fallbackImageUrl: jikanImageUrl,
+        imdbRating: stillMap.get(episodeNumber)?.imdbRating ?? null,
         source: "tmdb",
       });
     }
@@ -291,6 +360,7 @@ export async function getAnimeEpisodePreviewImages(
         episodeNumber,
         imageUrl,
         fallbackImageUrl: null,
+        imdbRating: stillMap.get(episodeNumber)?.imdbRating ?? null,
         source: imageUrl ? "jikan" : "none",
       });
     });
@@ -302,6 +372,7 @@ export async function getAnimeEpisodePreviewImages(
         episodeNumber,
         imageUrl: null,
         fallbackImageUrl: null,
+        imdbRating: stillMap.get(episodeNumber)?.imdbRating ?? null,
         source: "none",
       });
     }

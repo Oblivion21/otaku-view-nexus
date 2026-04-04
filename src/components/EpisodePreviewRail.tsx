@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,8 @@ interface EpisodePreviewRailProps {
   accentLegend?: ReactNode;
   loadingMore?: boolean;
   onReachEnd?: () => void;
+  hideControls?: boolean;
+  hintSwipeOnMount?: boolean;
 }
 
 function EpisodePreviewCard({ item }: { item: EpisodePreviewRailItem }) {
@@ -122,8 +124,20 @@ export default function EpisodePreviewRail({
   accentLegend,
   loadingMore = false,
   onReachEnd,
+  hideControls = false,
+  hintSwipeOnMount = false,
 }: EpisodePreviewRailProps) {
   const [carouselApi, setCarouselApi] = useState<CarouselApi>();
+  const swipeHintPlayedRef = useRef(false);
+  const firstItemHref = items[0]?.href ?? "";
+  const carouselClassName = "px-1 sm:px-2 md:px-3 lg:px-4";
+  const itemClassName = "basis-[88%] min-[480px]:basis-[78%] md:basis-[48%] xl:basis-[31%]";
+  const previousControlClassName = "hidden h-11 w-11 border-border bg-card/95 text-foreground hover:bg-card lg:inline-flex lg:right-2 lg:left-auto";
+  const nextControlClassName = "hidden h-11 w-11 border-border bg-card/95 text-foreground hover:bg-card lg:inline-flex lg:left-2 lg:right-auto";
+
+  useEffect(() => {
+    swipeHintPlayedRef.current = false;
+  }, [firstItemHref]);
 
   useEffect(() => {
     if (!carouselApi || !onReachEnd || items.length === 0) {
@@ -150,6 +164,36 @@ export default function EpisodePreviewRail({
     };
   }, [carouselApi, items.length, onReachEnd]);
 
+  useEffect(() => {
+    if (!carouselApi || !hintSwipeOnMount || items.length < 2 || swipeHintPlayedRef.current) {
+      return undefined;
+    }
+
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      return undefined;
+    }
+
+    const snapCount = carouselApi.scrollSnapList().length;
+    if (snapCount < 2) {
+      return undefined;
+    }
+
+    swipeHintPlayedRef.current = true;
+
+    const forwardTimeout = window.setTimeout(() => {
+      carouselApi.scrollNext();
+    }, 450);
+
+    const backTimeout = window.setTimeout(() => {
+      carouselApi.scrollPrev();
+    }, 1050);
+
+    return () => {
+      window.clearTimeout(forwardTimeout);
+      window.clearTimeout(backTimeout);
+    };
+  }, [carouselApi, hintSwipeOnMount, items.length, firstItemHref]);
+
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -165,11 +209,11 @@ export default function EpisodePreviewRail({
         <Carousel
           dir="rtl"
           opts={{ align: "start", containScroll: "trimSnaps", dragFree: true }}
-          className="px-12 sm:px-14"
+          className={carouselClassName}
         >
           <CarouselContent>
             {Array.from({ length: 4 }).map((_, index) => (
-              <CarouselItem key={index} className="basis-[74%] sm:basis-[52%] lg:basis-[31%] xl:basis-[24%]">
+              <CarouselItem key={index} className={itemClassName}>
                 <div className="overflow-hidden rounded-2xl border border-border bg-card/90">
                   <Skeleton className="aspect-video w-full rounded-none" />
                   <div className="space-y-2.5 p-3">
@@ -180,27 +224,31 @@ export default function EpisodePreviewRail({
               </CarouselItem>
             ))}
           </CarouselContent>
-          <CarouselPrevious className="h-11 w-11 border-border bg-card/95 text-foreground hover:bg-card" />
-          <CarouselNext className="h-11 w-11 border-border bg-card/95 text-foreground hover:bg-card" />
+          {!hideControls ? (
+            <>
+              <CarouselPrevious className={previousControlClassName} />
+              <CarouselNext className={nextControlClassName} />
+            </>
+          ) : null}
         </Carousel>
       ) : items.length > 0 ? (
         <Carousel
           dir="rtl"
           opts={{ align: "start", containScroll: "trimSnaps", dragFree: true }}
           setApi={setCarouselApi}
-          className="px-12 sm:px-14"
+          className={carouselClassName}
         >
           <CarouselContent>
             {items.map((item) => (
               <CarouselItem
                 key={item.episodeNumber}
-                className="basis-[74%] sm:basis-[52%] lg:basis-[31%] xl:basis-[24%]"
+                className={itemClassName}
               >
                 <EpisodePreviewCard item={item} />
               </CarouselItem>
             ))}
             {loadingMore ? (
-              <CarouselItem className="basis-[74%] sm:basis-[52%] lg:basis-[31%] xl:basis-[24%]">
+              <CarouselItem className={itemClassName}>
                 <div className="overflow-hidden rounded-2xl border border-border bg-card/90">
                   <Skeleton className="aspect-video w-full rounded-none" />
                   <div className="space-y-2.5 p-3">
@@ -211,8 +259,12 @@ export default function EpisodePreviewRail({
               </CarouselItem>
             ) : null}
           </CarouselContent>
-          <CarouselPrevious className="h-11 w-11 border-border bg-card/95 text-foreground hover:bg-card" />
-          <CarouselNext className="h-11 w-11 border-border bg-card/95 text-foreground hover:bg-card" />
+          {!hideControls ? (
+            <>
+              <CarouselPrevious className={previousControlClassName} />
+              <CarouselNext className={nextControlClassName} />
+            </>
+          ) : null}
         </Carousel>
       ) : (
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>

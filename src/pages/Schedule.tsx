@@ -86,6 +86,7 @@ export default function Schedule() {
                   key={anime.mal_id}
                   anime={anime}
                   artworkUrl={resolveTitleArtworkUrl(artworkMap?.get(anime.mal_id), anime, "poster")}
+                  scoreValue={artworkMap?.get(anime.mal_id)?.imdbRating ?? null}
                 />
               ))}
             </div>

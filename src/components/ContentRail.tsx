@@ -26,6 +26,9 @@ export default function ContentRail<T>({
   skeletonCount = 6,
   itemClassName = DEFAULT_ITEM_CLASS_NAME,
 }: ContentRailProps<T>) {
+  const carouselClassName = "px-1 sm:px-2 md:px-3 lg:px-10";
+  const previousControlClassName = "hidden h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card lg:inline-flex lg:right-2 lg:left-auto";
+  const nextControlClassName = "hidden h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card lg:inline-flex lg:left-2 lg:right-auto";
   const visibleItems = items
     .map((item, index) => ({
       item,
@@ -47,7 +50,7 @@ export default function ContentRail<T>({
         <Carousel
           dir="rtl"
           opts={{ align: "start", dragFree: true }}
-          className="px-10 sm:px-12"
+          className={carouselClassName}
         >
           <CarouselContent>
             {Array.from({ length: skeletonCount }).map((_, index) => (
@@ -59,14 +62,14 @@ export default function ContentRail<T>({
               </CarouselItem>
             ))}
           </CarouselContent>
-          <CarouselPrevious className="h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
-          <CarouselNext className="h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
+          <CarouselPrevious className={previousControlClassName} />
+          <CarouselNext className={nextControlClassName} />
         </Carousel>
       ) : visibleItems.length > 0 ? (
         <Carousel
           dir="rtl"
           opts={{ align: "start", dragFree: true }}
-          className="px-10 sm:px-12"
+          className={carouselClassName}
         >
           <CarouselContent>
             {visibleItems.map(({ item, index, content }) => (
@@ -75,8 +78,8 @@ export default function ContentRail<T>({
               </CarouselItem>
             ))}
           </CarouselContent>
-          <CarouselPrevious className="h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
-          <CarouselNext className="h-9 w-9 border-border bg-card/90 text-foreground hover:bg-card" />
+          <CarouselPrevious className={previousControlClassName} />
+          <CarouselNext className={nextControlClassName} />
         </Carousel>
       ) : (
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>

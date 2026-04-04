@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import ContentRail from "@/components/ContentRail";
 import EpisodePreviewRail from "@/components/EpisodePreviewRail";
-import { useAnimeAniListMedia, useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeRelations, useAnimeTmdbArtwork, useAnimeEpisodePreviewImages, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
+import { useAnimeAniListMedia, useAnimeById, useAnimeEpisodes, useAnimeRecommendations, useAnimeCharacters, useAnimeRelations, useAnimeTmdbArtwork, useAnimeEpisodePreviewImages, useAnimeEpisodeImdbRatings, useMultipleAnimeTmdbArtwork } from "@/hooks/useAnime";
 import AnimeCard from "@/components/AnimeCard";
 import RelatedAnimeCard from "@/components/RelatedAnimeCard";
 import { TrailerBanner } from "@/components/TrailerBanner";
@@ -16,6 +16,7 @@ import { getTrailerYoutubeId } from "@/lib/trailerFallback";
 import { getAnimeEpisodes as getSupabaseEpisodes, type AnimeEpisode } from "@/lib/supabase";
 import { hasAnyTitleArtwork, resolveTitleArtworkUrl, resolveTmdbTitleArtworkUrl } from "@/lib/titleArtwork";
 import { getAnimeIdFromRouteParam } from "@/lib/animeRoutes";
+import { formatTenPointScoreLabel, resolveEpisodeScoreLabel, resolvePreferredScore } from "@/lib/scores";
 import { useState, useEffect } from "react";
 
 type EpisodeBadgeSource = {
@@ -47,15 +48,6 @@ function hasAnimeAlreadyAired(anime: Pick<JikanAnime, "status" | "aired">) {
   }
 
   return parsedAiredFrom <= Date.now();
-}
-
-function formatEpisodeScoreLabel(score: number | null | undefined) {
-  if (typeof score !== "number" || Number.isNaN(score) || score <= 0) {
-    return null;
-  }
-
-  const normalizedScore = score <= 5 ? score * 2 : score;
-  return normalizedScore.toFixed(1);
 }
 
 const HIDDEN_RELATION_TYPES = new Set(["Character", "Other"]);
@@ -112,7 +104,7 @@ export default function AnimeDetail() {
         return {
           episodeNumber: ep.mal_id,
           title: ep.title || `الحلقة ${ep.mal_id}`,
-          scoreLabel: formatEpisodeScoreLabel(ep.score),
+          scoreLabel: resolveEpisodeScoreLabel(null, ep.score),
           styleTarget: {
             category: dbEpisode?.category ?? null,
             tags: dbEpisode?.tags ?? [],
@@ -133,6 +125,11 @@ export default function AnimeDetail() {
   const episodeNumbers = rawEpisodeRailItems.map((item) => item.episodeNumber);
   const { data: episodePreviewImageMap } = useAnimeEpisodePreviewImages(
     animeId,
+    tmdbArtwork,
+    episodeNumbers,
+    canWatchSeries && !isMovie,
+  );
+  const { data: episodeImdbRatingMap } = useAnimeEpisodeImdbRatings(
     tmdbArtwork,
     episodeNumbers,
     canWatchSeries && !isMovie,
@@ -335,17 +332,19 @@ export default function AnimeDetail() {
   const episodeRailItems = rawEpisodeRailItems.map((item) => {
     const style = getEpisodeStyle(item.styleTarget);
     const previewImage = episodePreviewImageMap?.get(item.episodeNumber);
+    const imdbRating = episodeImdbRatingMap?.get(item.episodeNumber) ?? previewImage?.imdbRating ?? null;
 
     return {
       ...item,
       href: `/watch/${animeId}/${item.episodeNumber}`,
       imageUrl: previewImage?.imageUrl || episodeSeriesFallbackImage || null,
       fallbackImageUrl: previewImage?.fallbackImageUrl || episodeSeriesFallbackImage || null,
-      scoreLabel: item.scoreLabel,
+      scoreLabel: resolveEpisodeScoreLabel(imdbRating, null) || item.scoreLabel,
       badges: getEpisodeBadges(item.styleTarget),
       styleClassName: `${style.background} ${style.border}`,
     };
   });
+  const displayScore = formatTenPointScoreLabel(resolvePreferredScore(tmdbArtwork?.imdbRating, anime?.score));
   const relatedGroups = (relations?.data || [])
     .filter((group) => !HIDDEN_RELATION_TYPES.has(group.relation))
     .map((group) => {
@@ -367,10 +366,10 @@ export default function AnimeDetail() {
           fallbackYoutubeId={fallbackTrailerYoutubeId}
           posterUrl={bannerImage}
           title={anime.title}
-          height="400px"
+          height="clamp(260px, 56vw, 400px)"
         />
       ) : (
-        <div className="relative h-[300px] md:h-[400px] overflow-hidden">
+        <div className="relative h-[clamp(260px,56vw,400px)] overflow-hidden">
           {bannerImage ? (
             <div
               className="absolute inset-0 bg-cover bg-center"
@@ -381,29 +380,29 @@ export default function AnimeDetail() {
         </div>
       )}
 
-      <div className="container -mt-32 relative z-10 pb-8">
-        <div className="flex flex-col md:flex-row gap-6">
+      <div className="container relative z-10 -mt-16 pb-8 sm:-mt-20 md:-mt-24 lg:-mt-32">
+        <div className="flex flex-col items-center gap-5 text-center md:flex-row md:items-end md:gap-6 md:text-right lg:gap-8">
           {/* Poster */}
           {posterImage ? (
             <img
               src={posterImage}
               alt={anime.title}
-              className="w-48 aspect-[2/3] object-cover rounded-lg shadow-xl border border-border shrink-0"
+              className="w-36 shrink-0 rounded-lg border border-border object-cover shadow-xl aspect-[2/3] sm:w-44 md:w-48"
             />
           ) : null}
 
           {/* Info */}
-          <div className="space-y-3 flex-1">
+          <div className="w-full flex-1 space-y-3">
             <h1 className="text-2xl md:text-3xl font-extrabold">{anime.title}</h1>
             {anime.title_japanese && (
               <p className="text-muted-foreground">{anime.title_japanese}</p>
             )}
 
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              {anime.score && (
+            <div className="flex flex-wrap items-center justify-center gap-3 text-sm md:justify-start">
+              {displayScore && (
                 <div className="flex items-center gap-1">
                   <Star className="h-4 w-4 fill-anime-gold text-anime-gold" />
-                  <span className="font-bold text-anime-gold">{anime.score}</span>
+                  <span className="font-bold text-anime-gold">{displayScore}</span>
                 </div>
               )}
               <div className="flex items-center gap-1 text-muted-foreground">
@@ -432,7 +431,7 @@ export default function AnimeDetail() {
               {STATUS_MAP[anime.status] || anime.status}
             </Badge>
 
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap justify-center gap-1.5 md:justify-start">
               {getVisibleGenres(anime).map((g) => (
                 <Badge key={g.mal_id} variant="secondary" className="text-xs">
                   {GENRE_AR[g.name] || g.name}
@@ -440,7 +439,7 @@ export default function AnimeDetail() {
               ))}
             </div>
 
-            <div className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
+            <div className="mx-auto max-w-2xl text-sm leading-relaxed text-muted-foreground md:mx-0">
               <p className="line-clamp-4">
                 {anime.synopsis}
               </p>
@@ -457,7 +456,7 @@ export default function AnimeDetail() {
             </div>
 
             {/* Watch buttons */}
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap justify-center gap-2 md:justify-start">
               {trailerYoutubeId && (
                 <Button asChild variant="outline">
                   <Link to={`/watch/${anime.mal_id}/trailer`}>شاهد العرض الدعائي</Link>
@@ -494,6 +493,8 @@ export default function AnimeDetail() {
             headerActionHref={`/watch/${anime.mal_id}/1`}
             headerActionLabel="عرض كل الحلقات"
             onReachEnd={loadMoreEpisodes}
+            hideControls
+            hintSwipeOnMount
             accentLegend={isDetectiveConan && hasSupabaseEpisodes ? (
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <Badge variant="secondary" className="bg-green-500/15 text-green-100 border-green-500/30">القصة الرئيسية</Badge>
@@ -625,6 +626,7 @@ export default function AnimeDetail() {
                     rec.entry as JikanAnime,
                     "poster",
                   )}
+                  scoreValue={recommendationArtworkMap?.get(rec.entry.mal_id)?.imdbRating ?? null}
                 />
               </div>
             )}

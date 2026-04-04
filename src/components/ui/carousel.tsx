@@ -130,7 +130,7 @@ const Carousel = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEl
         <div
           ref={ref}
           onKeyDownCapture={handleKeyDown}
-          className={cn("relative", className)}
+          className={cn("relative min-w-0", className)}
           role="region"
           aria-roledescription="carousel"
           dir={dir}
@@ -149,7 +149,7 @@ const CarouselContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HT
     const { carouselRef, orientation, dir } = useCarousel();
 
     return (
-      <div ref={carouselRef} className="overflow-hidden">
+      <div ref={carouselRef} className="min-w-0 overflow-hidden touch-pan-y">
         <div
           ref={ref}
           className={cn(

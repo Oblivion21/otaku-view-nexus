@@ -50,12 +50,12 @@ describe("ContentRail", () => {
     expect(carouselMocks.carouselSpy).toHaveBeenCalledWith(expect.objectContaining({ dir: "rtl" }));
     expect(carouselMocks.previousSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        className: expect.not.stringMatching(/\bleft-0\b|\bright-0\b/),
+        className: expect.stringContaining("lg:right-2"),
       }),
     );
     expect(carouselMocks.nextSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        className: expect.not.stringMatching(/\bleft-0\b|\bright-0\b/),
+        className: expect.stringContaining("lg:left-2"),
       }),
     );
   });
