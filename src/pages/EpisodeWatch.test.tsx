@@ -422,7 +422,7 @@ describe("EpisodeWatch", () => {
     );
   });
 
-  it("uses the tmdb movie path for the VidPlus movie tab", async () => {
+  it("uses the AniList movie path for the VidPlus movie tab when AniList metadata is available", async () => {
     hookMocks.useAnimeById.mockReturnValue({
       data: {
         data: {
@@ -462,7 +462,7 @@ describe("EpisodeWatch", () => {
     const vidplusIframe = await screen.findByTitle("Kimi no Na wa. - VidPlus");
     expect(vidplusIframe).toHaveAttribute(
       "src",
-      expect.stringContaining("https://player.vidplus.to/embed/movie/299534?autoplay=true"),
+      expect.stringContaining("https://player.vidplus.to/embed/anime/21/1?autoplay=true&dub=false"),
     );
   });
 
@@ -510,7 +510,7 @@ describe("EpisodeWatch", () => {
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/145139?color=00D0FF"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/145139/1"));
-    expect(screen.queryByRole("tab", { name: "Second Player" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Second Player" })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Third Player" })).not.toBeInTheDocument();
   });
 
