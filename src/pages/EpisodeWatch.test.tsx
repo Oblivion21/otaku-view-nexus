@@ -128,8 +128,8 @@ describe("EpisodeWatch", () => {
 
     const mainTab = await screen.findByRole("tab", { name: "Main Player" });
     expect(mainTab).toHaveAttribute("data-state", "active");
-    expect(screen.getByRole("tab", { name: "VidPlus" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Videasy" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Second Player" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Third Player" })).toBeInTheDocument();
 
     const mainIframe = await screen.findByTitle("Naruto - Main Player");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://vidplays.fun/embed/anime/21/1/sub"));
@@ -156,7 +156,7 @@ describe("EpisodeWatch", () => {
   it("uses the AniList anime embed path for the VidPlus tab", async () => {
     renderPage();
 
-    const vidplusTab = screen.getByRole("tab", { name: "VidPlus" });
+    const vidplusTab = screen.getByRole("tab", { name: "Second Player" });
     activateTab(vidplusTab);
 
     await waitFor(() => {
@@ -312,8 +312,8 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
-    expect(screen.queryByRole("tab", { name: "VidPlus" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Videasy" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Second Player" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Third Player" })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");
@@ -370,19 +370,19 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
-    const videasyTab = await screen.findByRole("tab", { name: "Videasy" });
+    const videasyTab = await screen.findByRole("tab", { name: "Third Player" });
     activateTab(videasyTab);
 
     await waitFor(() => {
       expect(videasyTab).toHaveAttribute("data-state", "active");
     });
 
-    const mainIframe = await screen.findByTitle("Naruto - Videasy");
+    const mainIframe = await screen.findByTitle("Naruto - Third Player");
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/movie/299534?color=00D0FF"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/anime/145139"));
     expect(screen.getByRole("tab", { name: "Main Player" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "VidPlus" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Second Player" })).toBeInTheDocument();
   });
 
   it("uses the tmdb movie path for the Main Player movie tab", async () => {
@@ -452,7 +452,7 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
-    const vidplusTab = screen.getByRole("tab", { name: "VidPlus" });
+    const vidplusTab = screen.getByRole("tab", { name: "Second Player" });
     activateTab(vidplusTab);
 
     await waitFor(() => {
@@ -510,8 +510,8 @@ describe("EpisodeWatch", () => {
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("https://player.videasy.net/anime/145139?color=00D0FF"));
     expect(mainIframe).toHaveAttribute("src", expect.stringContaining("autoplay=1"));
     expect(mainIframe).not.toHaveAttribute("src", expect.stringContaining("/145139/1"));
-    expect(screen.queryByRole("tab", { name: "VidPlus" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Videasy" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Second Player" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Third Player" })).not.toBeInTheDocument();
   });
 
   it("switches to the backup player when neither tmdb nor anilist movie metadata is available", async () => {
@@ -563,8 +563,8 @@ describe("EpisodeWatch", () => {
 
     renderPage();
 
-    expect(screen.queryByRole("tab", { name: "VidPlus" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Videasy" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Second Player" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Third Player" })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: "Backup Player" })).toHaveAttribute("data-state", "active");

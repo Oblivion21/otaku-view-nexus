@@ -202,7 +202,8 @@ export default function EpisodeWatch() {
       ? anime?.title || ""
       : `${anime?.title || ""} — الحلقة ${epNum}`;
   const hasPrimaryVidplays = Boolean(vidplaysUrl);
-  const mainPlayerTabLabel = hasPrimaryVidplays ? "Videasy" : "Main Player";
+  const mainPlayerTabLabel = hasPrimaryVidplays ? "Third Player" : "Main Player";
+  const vidplusTabLabel = "Second Player";
 
   function fallbackToBackup(message: string) {
     setMainPlayerStatus("error");
@@ -764,7 +765,7 @@ export default function EpisodeWatch() {
               <div className="space-y-3">
                 <TabsList className="bg-slate-900/80 border border-primary/10">
                   {vidplaysUrl ? <TabsTrigger value="vidplays">Main Player</TabsTrigger> : null}
-                  {vidplusUrl ? <TabsTrigger value="vidplus">VidPlus</TabsTrigger> : null}
+                  {vidplusUrl ? <TabsTrigger value="vidplus">{vidplusTabLabel}</TabsTrigger> : null}
                   <TabsTrigger value="main">{mainPlayerTabLabel}</TabsTrigger>
                   <TabsTrigger value="backup">Backup Player</TabsTrigger>
                 </TabsList>
