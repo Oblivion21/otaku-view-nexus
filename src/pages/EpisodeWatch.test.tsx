@@ -142,7 +142,7 @@ describe("EpisodeWatch", () => {
       "sandbox",
       "allow-scripts allow-same-origin allow-forms allow-presentation",
     );
-    expect(screen.getByRole("link", { name: /الحلقة السابقة/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /الحلقة السابقة/ })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /الحلقة التالية/ })).toBeInTheDocument();
 
     await waitFor(() => {

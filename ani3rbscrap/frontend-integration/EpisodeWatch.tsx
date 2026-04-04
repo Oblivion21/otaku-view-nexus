@@ -442,13 +442,15 @@ export default function EpisodeWatch() {
           </h1>
 
           {!isTrailer && (
-            <div className="flex justify-between">
-              <Button variant="outline" size="sm" asChild disabled={epNum <= 1}>
-                <Link to={`/watch/${animeId}/${epNum - 1}`}>
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                  الحلقة السابقة
-                </Link>
-              </Button>
+            <div className={`flex ${epNum > 1 ? "justify-between" : "justify-end"}`}>
+              {epNum > 1 ? (
+                <Button variant="outline" size="sm" asChild>
+                  <Link to={`/watch/${animeId}/${epNum - 1}`}>
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                    الحلقة السابقة
+                  </Link>
+                </Button>
+              ) : null}
               <Button variant="outline" size="sm" asChild>
                 <Link to={`/watch/${animeId}/${epNum + 1}`}>
                   الحلقة التالية
